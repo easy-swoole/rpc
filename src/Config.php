@@ -10,10 +10,12 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Rpc\Bean\BroadcastList;
+use EasySwoole\Utility\Random;
 
 class Config
 {
-    private $serverPort = 9601;
+    private $servicePort = 9601;
+    private $serviceId;
     private $listenHost = '0.0.0.0';
     private $subServerMode = true;
     private $enableBroadcast = false;
@@ -25,20 +27,25 @@ class Config
     private $heartbeat_idle_time = 5;
     private $heartbeat_check_interval = 30;
 
-    /**
-     * @return int
-     */
-    public function getServerPort(): int
+    function __construct()
     {
-        return $this->serverPort;
+        $this->serviceId = Random::character(8);
     }
 
     /**
-     * @param int $serverPort
+     * @return int
      */
-    public function setServerPort(int $serverPort): void
+    public function getServicePort(): int
     {
-        $this->serverPort = $serverPort;
+        return $this->servicePort;
+    }
+
+    /**
+     * @param int $servicePort
+     */
+    public function setServicePort(int $servicePort): void
+    {
+        $this->servicePort = $servicePort;
     }
 
     /**
@@ -201,4 +208,19 @@ class Config
         $this->heartbeat_check_interval = $heartbeat_check_interval;
     }
 
+    /**
+     * @return mixed
+     */
+    public function getServiceId()
+    {
+        return $this->serviceId;
+    }
+
+    /**
+     * @param mixed $serviceId
+     */
+    public function setServiceId($serviceId): void
+    {
+        $this->serviceId = $serviceId;
+    }
 }

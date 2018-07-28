@@ -11,6 +11,7 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Singleton;
+use EasySwoole\Rpc\Bean\ServiceNode;
 
 class Rpc
 {
@@ -28,9 +29,16 @@ class Rpc
         $this->config = $config;
 
         $this->swooleTable = new \swoole_table($config->getMaxNodes());
+        $this->swooleTable->column('serviceName',\swoole_table::TYPE_STRING,45);
+        $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
+        $this->swooleTable->column('isLocal',\swoole_table::TYPE_INT,1);
+        $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
+        $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
+        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_STRING,10);
+        $this->swooleTable->create();
 
         if($config->isSubServerMode()){
-            $server = $server->addListener($config->getListenHost(),$config->getServerPort(),SWOOLE_TCP);
+            $server = $server->addListener($config->getListenHost(),$config->getServicePort(),SWOOLE_TCP);
         }
 
         $server->set(
@@ -59,6 +67,26 @@ class Rpc
 
             });
         }
+
+    }
+
+    function refreshServiceNode(ServiceNode $serviceNode)
+    {
+
+    }
+
+    function getAllServiceNodes()
+    {
+
+    }
+
+    function getServiceNodes(string $serviceName)
+    {
+
+    }
+
+    function getServiceNode(string $serviceName)
+    {
 
     }
 
