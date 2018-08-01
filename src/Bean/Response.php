@@ -19,6 +19,7 @@ class Response extends SplBean
     const STATUS_SERVICE_TIMEOUT = 'SERVICE_TIMEOUT';
     const STATUS_SERVICE_OK = 'OK';
 
+    const STATUS_RESPONSE_DETACH = 'RESPONSE_DETACH';//不响应客户端，可能是在异步时返回。
     protected $status;
     protected $result;
     protected $message;

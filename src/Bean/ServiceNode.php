@@ -18,7 +18,6 @@ class ServiceNode extends SplBean
     protected $ip;
     protected $port;
     protected $lastHeartBeat;
-    protected $isLocal = 0;
     /**
      * @return mixed
      */
@@ -99,20 +98,5 @@ class ServiceNode extends SplBean
         $this->lastHeartBeat = $lastHeartBeat;
     }
 
-    /**
-     * @return int
-     */
-    public function getisLocal(): int
-    {
-        return $this->isLocal;
-    }
-
-    /**
-     * @param int $isLocal
-     */
-    public function setIsLocal(int $isLocal): void
-    {
-        $this->isLocal = $isLocal;
-    }
 
 }

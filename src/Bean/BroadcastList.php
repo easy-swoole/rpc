@@ -9,12 +9,10 @@
 namespace EasySwoole\Rpc\Bean;
 
 
-use EasySwoole\Spl\SplBean;
-
-class BroadcastList extends SplBean
+class BroadcastList
 {
     protected $list = [
-        '255.255.255.255:9601'
+        '255.255.255.255:9602'
     ];
 
     function add($address,$port)
@@ -23,9 +21,9 @@ class BroadcastList extends SplBean
         return $this;
     }
 
-    function clear()
+    function set(array $list)
     {
-        $this->list = [];
+        $this->list = $list;
         return $this;
     }
 

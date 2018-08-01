@@ -11,7 +11,14 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Singleton;
+use EasySwoole\Rpc\AbstractInterface\AbstractService;
+use EasySwoole\Rpc\Bean\Caller;
+use EasySwoole\Rpc\Bean\IpWhiteList;
+use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
+use EasySwoole\Trigger\Trigger;
+use Swoole\Timer;
+use EasySwoole\Rpc\Bean\Client as ClientInfo;
 
 class Rpc
 {
@@ -20,89 +27,271 @@ class Rpc
     private $openssl = null;
     private $swooleTable;
     private $config;
+    private $serverPort = null;
 
     /*
-     * 请勿覆盖pack check方式
+     * 注册一个tcp服务作为RPC通讯服务
      */
-    function attach(\swoole_server $server,Config $config)
+    function attach(\swoole_server $server)
     {
-        $this->config = $config;
-
-        $this->swooleTable = new \swoole_table($config->getMaxNodes());
-        $this->swooleTable->column('serviceName',\swoole_table::TYPE_STRING,45);
-        $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
-        $this->swooleTable->column('isLocal',\swoole_table::TYPE_INT,1);
-        $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
-        $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
-        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_STRING,10);
-        $this->swooleTable->create();
-
-        if($config->isSubServerMode()){
-            $server = $server->addListener($config->getListenHost(),$config->getServicePort(),SWOOLE_TCP);
+        if(!$this->config instanceof Config){
+            throw new \Exception('Rpc Config is require');
         }
-
+        if($this->config->isSubServerMode()){
+            $server = $server->addListener($this->config->getListenHost(),$this->config->getServicePort(),SWOOLE_TCP);
+            $this->serverPort = $this->config->getServicePort();
+        }else{
+            $this->serverPort = $server->port;
+        }
+        /*
+         * 配置包结构
+         */
         $server->set(
             [
                 'open_length_check' => true,
                 'package_length_type'   => 'N',
                 'package_length_offset' => 0,
                 'package_body_offset'   => 4,
-                'package_max_length'    => $config->getMaxPackage(),
-                'heartbeat_idle_time' => $config->getHeartbeatIdleTime(),
-                'heartbeat_check_interval' => $config->getHeartbeatCheckInterval()
+                'package_max_length'    => $this->config->getMaxPackage(),
+                'heartbeat_idle_time' => $this->config->getHeartbeatIdleTime(),
+                'heartbeat_check_interval' => $this->config->getHeartbeatCheckInterval()
             ]
         );
-
-        if(!empty($config->getSecretKey())){
-            $this->openssl = new Openssl($config->getSecretKey());
+        //是否启用数据包加密
+        if(!empty($this->config->getSecretKey())){
+            $this->openssl = new Openssl($this->config->getSecretKey());
         }
-
+        //注册 onReceive 回调
         $server->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
-
+            $info = $server->connection_info($fd);
+            //这里做ip白名单过滤
+            if($this->config->getIpWhiteList() instanceof IpWhiteList){
+                if(!$this->config->getIpWhiteList()->check($info['remote_ip'])){
+                    $server->close($fd);
+                    return;
+                }
+            }
+            $data = self::dataUnPack($data);
+            if($this->openssl instanceof Openssl){
+                $data = $this->openssl->decrypt($data);
+            }
+            $data = json_decode($data,true);
+            $client = new ClientInfo();
+            $client->setFd($fd);
+            $client->setReactorId($reactor_id);
+            $client->setIp($info['remote_ip']);
+            if(is_array($data)){
+                $response = new Response();
+                $caller = new Caller($data);
+                $caller->setClient($client);
+                if(isset($this->serviceList[$caller->getService()])){
+                    $service = $this->serviceList[$caller->getService()];
+                    (new $service($caller,$response));
+                }else{
+                    $response->setStatus(Response::STATUS_SERVICE_NOT_FOUND);
+                }
+                if($response->getStatus() != Response::STATUS_RESPONSE_DETACH){
+                    $res = $response->__toString();
+                    if($this->openssl instanceof Openssl){
+                        $res = $this->openssl->encrypt($res);
+                    }
+                    $res = self::dataPack($res);
+                    $server->send($fd,$res);
+                }
+            }
+            $server->close($fd);
         });
-
-        if($config->isEnableBroadcast()){
-            $broadcast = $server->addListener($config->getListenHost(),$config->getBroadcastListenPort(),SWOOLE_UDP);
+        /*
+         * 如果配置了服务广播
+         */
+        if($this->config->isEnableBroadcast()){
+            $broadcast = $server->addListener($this->config->getListenHost(),$this->config->getBroadcastListenPort(),SWOOLE_UDP);
             $broadcast->on('packet',function (\swoole_server $server, string $data, array $client_info){
-
+                //这里做ip白名单过滤
+                if($this->config->getIpWhiteList() instanceof IpWhiteList){
+                    if(!$this->config->getIpWhiteList()->check($client_info['address'])){
+                        return;
+                    }
+                }
+                if($this->openssl instanceof Openssl){
+                    $data = $this->openssl->decrypt($data);
+                }
+                $json = json_decode($data,true);
+                if(is_array($json)){
+                    $node = new ServiceNode($json);
+                    $node->setIp($client_info['address']);
+                    $this->refreshServiceNode($node);
+                }
             });
-        }
 
+            $server->addProcess(new \swoole_process(function (\swoole_process $process){
+                pcntl_async_signals(true);
+                //服务正常关闭的时候，对外广播服务下线
+                $process::signal(SIGTERM,function ()use($process){
+                    swoole_event_del($process->pipe);
+                    $this->broadcastAllService(0);
+                    $process->exit(0);
+                });
+                swoole_event_add($process->pipe, function()use($process){
+                    $process->read(64 * 1024);
+                });
+                //服务启动后立即广播服务发现
+                Timer::after(500,function (){
+                    $this->broadcastAllService(time());
+                });
+                //默认5秒广播一次服务发现
+                Timer::tick(5000,function (){
+                    $this->broadcastAllService(time());
+                });
+            }));
+        }
+    }
+
+    /*
+     * 注册配置项的时候，创建swoole table
+     */
+    function setConfig(Config $config)
+    {
+        $this->config = $config;
+        $this->swooleTable = new \swoole_table($this->config->getMaxNodes());
+        $this->swooleTable->column('serviceName',\swoole_table::TYPE_STRING,45);
+        $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
+        $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
+        $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
+        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_STRING,10);
+        $this->swooleTable->create();
+        return $this;
     }
 
     function refreshServiceNode(ServiceNode $serviceNode)
     {
-
+        $this->swooleTable->set($serviceNode->getServiceId(),$serviceNode->toArray());
+        $this->gcServiceNodes();
     }
 
-    function getAllServiceNodes()
+    function getAllServiceNodes():array
     {
-
-    }
-
-    function getServiceNodes(string $serviceName)
-    {
-
-    }
-
-    function getServiceNode(string $serviceName)
-    {
-
-    }
-
-    function registerService(string $serviceName):Service
-    {
-        if(!isset($this->serviceList[$serviceName])){
-            $this->serviceList[$serviceName] = new Service($serviceName);
+        $res = [];
+        foreach ($this->swooleTable as $item){
+            array_push($res,new ServiceNode($item));
         }
-        return $this->serviceList[$serviceName];
+        return $res;
+    }
+
+    function getServiceNodes(string $serviceName):array
+    {
+        $res = [];
+        foreach ($this->swooleTable as $item){
+            if($item['serviceName'] == $serviceName){
+                array_push($res,new ServiceNode($item));
+            }
+        }
+        return $res;
+    }
+
+    function getServiceNode(string $serviceName):?ServiceNode
+    {
+        $list = $this->getServiceNodes($serviceName);
+        if(!empty($list)){
+            return array_rand($this->getServiceNodes($serviceName));
+        }else{
+            return null;
+        }
+    }
+
+    private function gcServiceNodes()
+    {
+        foreach ($this->swooleTable as $key => $item){
+            if(time() - $item['lastHeartBeat'] > 10){
+                $this->swooleTable->del($key);
+            }
+        }
+    }
+
+    function registerService(string $serviceName,string $serviceClass)
+    {
+        if(!$this->config instanceof Config){
+            throw new \Exception('Rpc Config is require');
+        }
+
+        if(!isset($this->serviceList[$serviceName])){
+            try{
+                $ref = new \ReflectionClass($serviceClass);
+                if($ref->isSubclassOf(AbstractService::class)){
+                    $this->serviceList[$serviceName] = $serviceClass;
+                }else{
+                    throw new \Exception("class {$serviceClass} is not a Rpc Service class");
+                }
+            }catch (\Throwable $throwable){
+                Trigger::throwable($throwable);
+            }
+        }
+        return $this;
     }
 
     function client():Client
     {
-        if(empty($this->config)){
-            throw new \Exception('Rpc Config is required');
+        if(!$this->config instanceof Config){
+            throw new \Exception('Rpc Config is require');
         }
         return new Client($this->config);
+    }
+
+    public static function dataPack(string $sendStr):string
+    {
+        return pack('N', strlen($sendStr)).$sendStr;
+    }
+
+    public static function dataUnPack(string $rawData)
+    {
+        $len = unpack('N',$rawData);
+        $data = substr($rawData,'4');
+        if(strlen($data) != $len[1]){
+            return null;
+        }else{
+            return $data;
+        }
+    }
+
+    /**
+     * @return null
+     */
+    public function getServerPort()
+    {
+        return $this->serverPort;
+    }
+
+    private function broadcast(string $msg,$addr,$port)
+    {
+        if($this->openssl instanceof Openssl){
+            $msg = $this->openssl->encrypt($msg);
+        }
+        if(!($sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP)))
+        {
+            $errorcode = socket_last_error();
+            $errormsg = socket_strerror($errorcode);
+            Trigger::error($errormsg);
+        }else{
+            socket_set_option($sock,65535,SO_BROADCAST,true);
+            socket_sendto($sock,$msg,strlen($msg),0,$addr,$port);
+            socket_close($sock);
+        }
+    }
+
+    private function broadcastAllService(int $time)
+    {
+        foreach ($this->serviceList as $serviceName => $serviceClass){
+            $node = new ServiceNode();
+            $node->setServiceName($serviceName);
+            $node->setPort($this->serverPort);
+            $node->setServiceId($this->config->getServiceId());
+            //时间正确为上线,0为下线
+            $node->setLastHeartBeat($time);
+            $msg = $node->__toString();
+            foreach ($this->config->getBroadcastList()->getList() as $address){
+                $address = explode(':',$address);
+                $this->broadcast($msg,$address[0],$address[1]);
+            }
+        }
     }
 }

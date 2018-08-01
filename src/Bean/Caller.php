@@ -21,7 +21,7 @@ class Caller extends SplBean
     /**
      * @return mixed
      */
-    public function getClient()
+    public function getClient():?Client
     {
         return $this->client;
     }
@@ -29,7 +29,7 @@ class Caller extends SplBean
     /**
      * @param mixed $client
      */
-    public function setClient($client): void
+    public function setClient(Client $client): void
     {
         $this->client = $client;
     }
@@ -61,7 +61,7 @@ class Caller extends SplBean
     /**
      * @param mixed $action
      */
-    public function setAction($action): void
+    public function setAction(string $action): void
     {
         $this->action = $action;
     }

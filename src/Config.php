@@ -10,6 +10,7 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Rpc\Bean\BroadcastList;
+use EasySwoole\Rpc\Bean\IpWhiteList;
 use EasySwoole\Utility\Random;
 
 class Config
@@ -24,12 +25,26 @@ class Config
     private $maxNodes = 2048;
     private $maxPackage = 1024*64;
     private $secretKey = '';
-    private $heartbeat_idle_time = 5;
-    private $heartbeat_check_interval = 30;
+    private $heartbeat_idle_time = 30;
+    private $heartbeat_check_interval = 5;
+    private $ipWhiteList = null;
 
     function __construct()
     {
         $this->serviceId = Random::character(8);
+    }
+
+    function getIpWhiteList():?IpWhiteList
+    {
+        return $this->ipWhiteList;
+    }
+
+    function setIpWhiteList():IpWhiteList
+    {
+        if(empty($this->ipWhiteList)){
+            $this->ipWhiteList = new IpWhiteList();
+        }
+        return $this->ipWhiteList;
     }
 
     /**

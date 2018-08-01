@@ -15,6 +15,7 @@ class Client extends SplArray
 {
     protected $fd;
     protected $reactorId;
+    protected $ip;
 
     /**
      * @return mixed
@@ -48,4 +49,19 @@ class Client extends SplArray
         $this->reactorId = $reactorId;
     }
 
+    /**
+     * @return mixed
+     */
+    public function getIp()
+    {
+        return $this->ip;
+    }
+
+    /**
+     * @param mixed $ip
+     */
+    public function setIp($ip): void
+    {
+        $this->ip = $ip;
+    }
 }
