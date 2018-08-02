@@ -7,8 +7,12 @@
  - Openssl加密
  - Ip白名单
  - 跨平台，跨语言支持
- 
+## Composer
+```
+composer require easyswoole/rpc
+``` 
 ## 示例代码
+
 ### 服务端
 ```php
 
