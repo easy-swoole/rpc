@@ -17,6 +17,7 @@ class Response extends SplBean
     const STATUS_CONNECT_FAIL = 'CONNECT_FAIL';
     const STATUS_SERVICE_ERROR = 'SERVICE_ERROR';
     const STATUS_SERVICE_TIMEOUT = 'SERVICE_TIMEOUT';
+    const STATUS_PACKAGE_ERROR = 'PACKAGE_ERROR';
     const STATUS_SERVICE_OK = 'OK';
 
     const STATUS_RESPONSE_DETACH = 'RESPONSE_DETACH';//不响应客户端，可能是在异步时返回。

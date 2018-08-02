@@ -16,6 +16,7 @@ use EasySwoole\Rpc\Bean\Caller;
 use EasySwoole\Rpc\Bean\IpWhiteList;
 use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
+use EasySwoole\Rpc\Client\Client;
 use EasySwoole\Trigger\Trigger;
 use Swoole\Timer;
 use EasySwoole\Rpc\Bean\Client as ClientInfo;
@@ -80,8 +81,8 @@ class Rpc
             $client->setFd($fd);
             $client->setReactorId($reactor_id);
             $client->setIp($info['remote_ip']);
+            $response = new Response();
             if(is_array($data)){
-                $response = new Response();
                 $caller = new Caller($data);
                 $caller->setClient($client);
                 if(isset($this->serviceList[$caller->getService()])){
@@ -90,15 +91,20 @@ class Rpc
                 }else{
                     $response->setStatus(Response::STATUS_SERVICE_NOT_FOUND);
                 }
-                if($response->getStatus() != Response::STATUS_RESPONSE_DETACH){
-                    $res = $response->__toString();
-                    if($this->openssl instanceof Openssl){
-                        $res = $this->openssl->encrypt($res);
-                    }
-                    $res = self::dataPack($res);
-                    $server->send($fd,$res);
+                //响应分离的时候，不回复任何消息，也不断开连接，该场景用于异步
+                if($response->getStatus() == Response::STATUS_RESPONSE_DETACH){
+                    return;
                 }
+            }else{
+                $response->setStatus(Response::STATUS_PACKAGE_ERROR);
             }
+            $res = $response->__toString();
+            if($this->openssl instanceof Openssl){
+                $res = $this->openssl->encrypt($res);
+            }
+            $res = self::dataPack($res);
+            $server->send($fd,$res);
+            //短链接
             $server->close($fd);
         });
         /*
@@ -120,10 +126,11 @@ class Rpc
                 if(is_array($json)){
                     $node = new ServiceNode($json);
                     $node->setIp($client_info['address']);
+                    //刷新节点
                     $this->refreshServiceNode($node);
                 }
             });
-
+            //添加自定义进程做定时广播
             $server->addProcess(new \swoole_process(function (\swoole_process $process){
                 pcntl_async_signals(true);
                 //服务正常关闭的时候，对外广播服务下线
@@ -158,17 +165,23 @@ class Rpc
         $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
         $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
         $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
-        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_STRING,10);
+        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_INT,8);
         $this->swooleTable->create();
         return $this;
     }
-
+    /*
+     * 刷新/注册一个服务节点
+     */
     function refreshServiceNode(ServiceNode $serviceNode)
     {
         $this->swooleTable->set($serviceNode->getServiceId(),$serviceNode->toArray());
-        $this->gcServiceNodes();
+        if($this->config->isEnableBroadcast()){
+            $this->gcServiceNodes();
+        }
     }
-
+    /*
+     * 获取全部服务节点
+     */
     function getAllServiceNodes():array
     {
         $res = [];
@@ -177,7 +190,9 @@ class Rpc
         }
         return $res;
     }
-
+    /*
+     * 获取某个服务的全部节点
+     */
     function getServiceNodes(string $serviceName):array
     {
         $res = [];
@@ -188,12 +203,16 @@ class Rpc
         }
         return $res;
     }
-
+    /*
+     * 获取某个服务的任意一个节点
+     */
     function getServiceNode(string $serviceName):?ServiceNode
     {
         $list = $this->getServiceNodes($serviceName);
         if(!empty($list)){
-            return array_rand($this->getServiceNodes($serviceName));
+            mt_srand();
+            $data = $this->getServiceNodes($serviceName);
+            return $data[mt_rand(0,count($data)-1)];
         }else{
             return null;
         }
@@ -207,7 +226,9 @@ class Rpc
             }
         }
     }
-
+    /*
+     * 注册一个服务控制器
+     */
     function registerService(string $serviceName,string $serviceClass)
     {
         if(!$this->config instanceof Config){
@@ -229,6 +250,9 @@ class Rpc
         return $this;
     }
 
+    /*
+     * 获取一个客户端
+     */
     function client():Client
     {
         if(!$this->config instanceof Config){
