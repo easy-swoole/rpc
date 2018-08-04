@@ -39,15 +39,16 @@ class Rpc
             throw new \Exception('Rpc Config is require');
         }
         if($this->config->isSubServerMode()){
-            $server = $server->addListener($this->config->getListenHost(),$this->config->getServicePort(),SWOOLE_TCP);
+            $subPort = $server->addListener($this->config->getListenHost(),$this->config->getServicePort(),SWOOLE_TCP);
             $this->serverPort = $this->config->getServicePort();
         }else{
             $this->serverPort = $server->port;
+            $subPort = $server;
         }
         /*
          * 配置包结构
          */
-        $server->set(
+        $subPort->set(
             [
                 'open_length_check' => true,
                 'package_length_type'   => 'N',
@@ -63,7 +64,7 @@ class Rpc
             $this->openssl = new Openssl($this->config->getSecretKey());
         }
         //注册 onReceive 回调
-        $server->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
+        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
             $info = $server->connection_info($fd);
             //这里做ip白名单过滤
             if($this->config->getIpWhiteList() instanceof IpWhiteList){
