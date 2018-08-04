@@ -175,7 +175,7 @@ class Rpc
      */
     function refreshServiceNode(ServiceNode $serviceNode)
     {
-        $this->swooleTable->set($serviceNode->getServiceId(),$serviceNode->toArray());
+        $this->swooleTable->set(substr(md5($serviceNode->getServiceId().$serviceNode->getServiceName()),8,16),$serviceNode->toArray());
         if($this->config->isEnableBroadcast()){
             $this->gcServiceNodes();
         }
