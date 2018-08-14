@@ -10,33 +10,44 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\Openssl;
-use EasySwoole\Component\Singleton;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Bean\Caller;
 use EasySwoole\Rpc\Bean\IpWhiteList;
 use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
 use EasySwoole\Rpc\Client\Client;
+use EasySwoole\Trace\Trigger;
 use Swoole\Timer;
 use EasySwoole\Rpc\Bean\Client as ClientInfo;
 
 class Rpc
 {
-    use Singleton;
+
+    private $trigger;
     private $serviceList = [];
     private $openssl = null;
     private $swooleTable;
     private $config;
     private $serverPort = null;
 
+    function __construct(Config $config,Trigger $trigger)
+    {
+        $this->trigger = $trigger;
+        $this->config = $config;
+        $this->swooleTable = new \swoole_table($this->config->getMaxNodes());
+        $this->swooleTable->column('serviceName',\swoole_table::TYPE_STRING,45);
+        $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
+        $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
+        $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
+        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_INT,8);
+        $this->swooleTable->create();
+    }
+
     /*
      * 注册一个tcp服务作为RPC通讯服务
      */
     function attach(\swoole_server $server)
     {
-        if(!$this->config instanceof Config){
-            throw new \Exception('Rpc Config is require');
-        }
         if($this->config->isSubServerMode()){
             $subPort = $server->addListener($this->config->getListenHost(),$this->config->getServicePort(),SWOOLE_TCP);
             $this->serverPort = $this->config->getServicePort();
@@ -87,7 +98,11 @@ class Rpc
                 $caller->setClient($client);
                 if(isset($this->serviceList[$caller->getService()])){
                     $service = $this->serviceList[$caller->getService()];
-                    (new $service($caller,$response));
+                    try{
+                        (new $service($caller,$response,$this->trigger));
+                    }catch (\Throwable $throwable){
+                        $this->trigger->throwable($throwable);
+                    }
                 }else{
                     $response->setStatus(Response::STATUS_SERVICE_NOT_FOUND);
                 }
@@ -152,22 +167,6 @@ class Rpc
                 });
             }));
         }
-    }
-
-    /*
-     * 注册配置项的时候，创建swoole table
-     */
-    function setConfig(Config $config)
-    {
-        $this->config = $config;
-        $this->swooleTable = new \swoole_table($this->config->getMaxNodes());
-        $this->swooleTable->column('serviceName',\swoole_table::TYPE_STRING,45);
-        $this->swooleTable->column('serviceId',\swoole_table::TYPE_STRING,8);
-        $this->swooleTable->column('ip',\swoole_table::TYPE_STRING,15);
-        $this->swooleTable->column('port',\swoole_table::TYPE_STRING,5);
-        $this->swooleTable->column('lastHeartBeat',\swoole_table::TYPE_INT,8);
-        $this->swooleTable->create();
-        return $this;
     }
     /*
      * 刷新/注册一个服务节点
@@ -237,10 +236,6 @@ class Rpc
      */
     function registerService(string $serviceName, string $serviceClass)
     {
-        if(!$this->config instanceof Config){
-            throw new \Exception('Rpc Config is require');
-        }
-
         if(!isset($this->serviceList[$serviceName])){
             $ref = new \ReflectionClass($serviceClass);
             if($ref->isSubclassOf(AbstractService::class)){
@@ -255,15 +250,9 @@ class Rpc
     /*
      * 获取一个客户端
      */
-    /**
-     * @throws \Exception
-     */
     function client():Client
     {
-        if(!$this->config instanceof Config){
-            throw new \Exception('Rpc Config is require');
-        }
-        return new Client($this->config);
+        return new Client($this->config,$this,$this->trigger);
     }
 
     public static function dataPack(string $sendStr):string
@@ -299,7 +288,7 @@ class Rpc
         {
             $errorcode = socket_last_error();
             $errormsg = socket_strerror($errorcode);
-            trigger_error($errormsg);
+            $this->trigger->error($errormsg);
         }else{
             socket_set_option($sock,65535,SO_BROADCAST,true);
             socket_sendto($sock,$msg,strlen($msg),0,$addr,$port);

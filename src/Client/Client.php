@@ -15,6 +15,7 @@ use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
+use EasySwoole\Trace\Trigger;
 use Swoole\Coroutine;
 
 class Client
@@ -24,10 +25,13 @@ class Client
     private $taskClients = [];
     private $openssl = null;
     private $cid = null;
-    private $onException;
-    function __construct(Config $config)
+    private $trigger;
+    private $rpcServer;
+    function __construct(Config $config,Rpc $rpcServer,Trigger $trigger)
     {
         $this->config = $config;
+        $this->trigger = $trigger;
+        $this->rpcServer = $rpcServer;
         if($config->getSecretKey()){
             $this->openssl = new Openssl($config->getSecretKey());
         }
@@ -44,9 +48,6 @@ class Client
         return $task;
     }
 
-    /**
-     * @throws \Throwable
-     */
     function exec(float $timeout = 0.5)
     {
         foreach ($this->tasks as $task){
@@ -75,12 +76,9 @@ class Client
         }
     }
 
-    /**
-     * @throws \Throwable
-     */
     private function buildConnect(Task $task,float $timeout)
     {
-        $serviceNode = Rpc::getInstance()->getServiceNode($task->getCaller()->getService());
+        $serviceNode = $this->rpcServer->getServiceNode($task->getCaller()->getService());
         if($serviceNode instanceof ServiceNode){
             $client = new \swoole_client(SWOOLE_SOCK_TCP,SWOOLE_SOCK_ASYNC);
             $client->set([
@@ -154,11 +152,6 @@ class Client
         }
     }
 
-    /**
-     * @param Task $task
-     * @param Response $response
-     * @throws \Throwable
-     */
     private function taskCallBack(Task $task, Response $response)
     {
         if($response->getStatus() == Response::STATUS_SERVICE_OK){
@@ -170,11 +163,7 @@ class Client
             try{
                 call_user_func($handler,$response);
             }catch (\Throwable $throwable){
-                if(is_callable($this->onException)){
-                    call_user_func($this->onException,$task,$response);
-                }else{
-                    throw $throwable;
-                }
+                $this->trigger->throwable($throwable);
             }
         }
         $this->removeTask($task);

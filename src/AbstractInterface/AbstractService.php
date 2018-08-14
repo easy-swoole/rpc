@@ -11,16 +11,19 @@ namespace EasySwoole\Rpc\AbstractInterface;
 
 use EasySwoole\Rpc\Bean\Caller;
 use EasySwoole\Rpc\Bean\Response;
+use EasySwoole\Trace\Trigger;
 
 abstract class AbstractService
 {
     private $caller;
     private $response;
+    private $trigger;
 
-    final function __construct(Caller $caller,Response $response)
+    final function __construct(Caller $caller,Response $response,Trigger $trigger)
     {
         $this->caller = $caller;
         $this->response = $response;
+        $this->trigger = $trigger;
         $this->__hook();
     }
 
@@ -49,6 +52,7 @@ abstract class AbstractService
     {
         $this->getResponse()->setStatus(Response::STATUS_SERVICE_ERROR);
         $this->getResponse()->setMessage($throwable->getMessage());
+        $this->trigger->throwable($throwable);
     }
 
     protected function actionNotFound(?string $action)
@@ -76,12 +80,13 @@ abstract class AbstractService
                 }
             }
         }catch (\Throwable $throwable){
+            //行为中的异常才触发
             $this->onException($throwable);
         }finally{
             try{
                 $this->afterAction($actionName);
             }catch (\Throwable $throwable){
-                $this->onException($throwable);
+               $this->trigger->throwable($throwable);
             }
         }
     }

@@ -17,6 +17,7 @@ composer require easyswoole/rpc
 ```php
 
 //实现一个Rpc控制器
+
 class Rpc extends \EasySwoole\Rpc\AbstractInterface\AbstractService
 {
     function test()
@@ -30,7 +31,7 @@ class Rpc extends \EasySwoole\Rpc\AbstractInterface\AbstractService
         $this->getResponse()->setStatus(\EasySwoole\Rpc\Bean\Response::STATUS_RESPONSE_DETACH);
     }
 }
-//实现一个Rpc控制器
+
 class Rpc2 extends \EasySwoole\Rpc\AbstractInterface\AbstractService
 {
     function fuck()
@@ -41,21 +42,26 @@ class Rpc2 extends \EasySwoole\Rpc\AbstractInterface\AbstractService
     function actionNotFound(?string $action)
     {
         $this->getResponse()->setMessage("{$action} action miss");
+        throw new \Exception('as');
     }
 }
 
-//实例化一个配置项
-$conf = new \EasySwoole\Rpc\Config();
-$conf->setSubServerMode(false);//设置为主服务模式
-$conf->setEnableBroadcast(true);//开启服务自动广播，可以修改广播地址，实现定向ip组广播
-$conf->setIpWhiteList()->set(['127.0.0.1','192.168.0.216']);//设置数据包白名单，默认允许127.0.0.1的
 
-$ser = new \swoole_server('0.0.0.0',9501);
+$conf = new \EasySwoole\Rpc\Config();
+$conf->setSubServerMode(true);
+$conf->setEnableBroadcast(true);
+$conf->setIpWhiteList()->set(['127.0.0.1','192.168.0.216']);//默认允许127.0.0.1的
+
+$ser = new \swoole_http_server('0.0.0.0',9501);
+$ser->on('request',function (){
+
+});
+$trigger = new \EasySwoole\Trace\Trigger();
+$rpc = new \EasySwoole\Rpc\Rpc($conf,$trigger);
 try{
-    \EasySwoole\Rpc\Rpc::getInstance()->setConfig($conf);
-    \EasySwoole\Rpc\Rpc::getInstance()->registerService('a',Rpc::class);
-    \EasySwoole\Rpc\Rpc::getInstance()->registerService('b',Rpc2::class);
-    \EasySwoole\Rpc\Rpc::getInstance()->attach($ser);
+    $rpc->registerService('a',Rpc::class);
+    $rpc->registerService('b',Rpc2::class);
+    $rpc->attach($ser);
     $ser->start();
 }catch (\Throwable $throwable){
     echo $throwable->getMessage();
@@ -68,36 +74,36 @@ try{
 #### EasySwoole 封装实现
 ```php
 //这里的go()是cli单元测试的时候，创建携程环境，在swoole4的onRequest，onReceive等携程环境中，不需要手动创建
-go(function (){
+$trigger = new \EasySwoole\Trace\Trigger();
+$rpc = new \EasySwoole\Rpc\Rpc(new \EasySwoole\Rpc\Config(),$trigger);
+
+go(function ()use($rpc){
     try{
-        //注册Rpc配置，并取得一个客户端实例
-        $client = \EasySwoole\Rpc\Rpc::getInstance()->setConfig(new \EasySwoole\Rpc\Config())
-            ->client();
-        //模拟在未开启服务广播发现的时候，注册已知节点，服务自主发现需要借助swoole server实现。
+        $client = $rpc->client();
+        //模拟在未开启服务广播发现的时候，注册已知节点
         $node = new \EasySwoole\Rpc\Bean\ServiceNode();
         $node->setIp('127.0.0.1');
-        $node->setPort(9501);
+        $node->setPort(9601);
         $node->setLastHeartBeat(time());
         $node->setServiceId('aaaaa');
         $node->setServiceName('a');
-        \EasySwoole\Rpc\Rpc::getInstance()->refreshServiceNode($node);
+        $rpc->refreshServiceNode($node);
 
         $node = new \EasySwoole\Rpc\Bean\ServiceNode();
         $node->setIp('127.0.0.1');
-        $node->setPort(9501);
+        $node->setPort(9601);
         $node->setLastHeartBeat(time());
         $node->setServiceId('bbbbb');
         $node->setServiceName('b');
-        \EasySwoole\Rpc\Rpc::getInstance()->refreshServiceNode($node);
+        $rpc->refreshServiceNode($node);
 
-        //添加服务调用
+
         $client->addCall('a','test')
             ->success(function (\EasySwoole\Rpc\Bean\Response $response){
                 var_dump('success');
             })->fail(function (){
                 var_dump('fail');
             });
-            
         $client->addCall('a','test2')
             ->success(function (){
                 var_dump('success2');
@@ -120,7 +126,6 @@ go(function (){
             });
 
         $t = microtime(true);
-        //默认超时0.5s
         $client->exec(0.1);
         var_dump(round(microtime(true) - $t,3));
     }catch (\Throwable $throwable){
