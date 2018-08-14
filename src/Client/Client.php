@@ -15,7 +15,6 @@ use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Trigger\Trigger;
 use Swoole\Coroutine;
 
 class Client
@@ -25,6 +24,7 @@ class Client
     private $taskClients = [];
     private $openssl = null;
     private $cid = null;
+    private $onException;
     function __construct(Config $config)
     {
         $this->config = $config;
@@ -44,6 +44,9 @@ class Client
         return $task;
     }
 
+    /**
+     * @throws \Throwable
+     */
     function exec(float $timeout = 0.5)
     {
         foreach ($this->tasks as $task){
@@ -72,6 +75,9 @@ class Client
         }
     }
 
+    /**
+     * @throws \Throwable
+     */
     private function buildConnect(Task $task,float $timeout)
     {
         $serviceNode = Rpc::getInstance()->getServiceNode($task->getCaller()->getService());
@@ -148,7 +154,12 @@ class Client
         }
     }
 
-    private function taskCallBack(Task $task,Response $response)
+    /**
+     * @param Task $task
+     * @param Response $response
+     * @throws \Throwable
+     */
+    private function taskCallBack(Task $task, Response $response)
     {
         if($response->getStatus() == Response::STATUS_SERVICE_OK){
             $handler = $task->getSuccess();
@@ -159,7 +170,11 @@ class Client
             try{
                 call_user_func($handler,$response);
             }catch (\Throwable $throwable){
-                Trigger::throwable($throwable);
+                if(is_callable($this->onException)){
+                    call_user_func($this->onException,$task,$response);
+                }else{
+                    throw $throwable;
+                }
             }
         }
         $this->removeTask($task);

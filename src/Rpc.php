@@ -17,7 +17,6 @@ use EasySwoole\Rpc\Bean\IpWhiteList;
 use EasySwoole\Rpc\Bean\Response;
 use EasySwoole\Rpc\Bean\ServiceNode;
 use EasySwoole\Rpc\Client\Client;
-use EasySwoole\Trigger\Trigger;
 use Swoole\Timer;
 use EasySwoole\Rpc\Bean\Client as ClientInfo;
 
@@ -230,22 +229,24 @@ class Rpc
     /*
      * 注册一个服务控制器
      */
-    function registerService(string $serviceName,string $serviceClass)
+    /**
+     * @param string $serviceName
+     * @param string $serviceClass
+     * @return $this
+     * @throws \Exception
+     */
+    function registerService(string $serviceName, string $serviceClass)
     {
         if(!$this->config instanceof Config){
             throw new \Exception('Rpc Config is require');
         }
 
         if(!isset($this->serviceList[$serviceName])){
-            try{
-                $ref = new \ReflectionClass($serviceClass);
-                if($ref->isSubclassOf(AbstractService::class)){
-                    $this->serviceList[$serviceName] = $serviceClass;
-                }else{
-                    throw new \Exception("class {$serviceClass} is not a Rpc Service class");
-                }
-            }catch (\Throwable $throwable){
-                Trigger::throwable($throwable);
+            $ref = new \ReflectionClass($serviceClass);
+            if($ref->isSubclassOf(AbstractService::class)){
+                $this->serviceList[$serviceName] = $serviceClass;
+            }else{
+                throw new \Exception("class {$serviceClass} is not a Rpc Service class");
             }
         }
         return $this;
@@ -253,6 +254,9 @@ class Rpc
 
     /*
      * 获取一个客户端
+     */
+    /**
+     * @throws \Exception
      */
     function client():Client
     {
@@ -295,7 +299,7 @@ class Rpc
         {
             $errorcode = socket_last_error();
             $errormsg = socket_strerror($errorcode);
-            Trigger::error($errormsg);
+            trigger_error($errormsg);
         }else{
             socket_set_option($sock,65535,SO_BROADCAST,true);
             socket_sendto($sock,$msg,strlen($msg),0,$addr,$port);

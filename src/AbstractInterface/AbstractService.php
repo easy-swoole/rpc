@@ -11,7 +11,6 @@ namespace EasySwoole\Rpc\AbstractInterface;
 
 use EasySwoole\Rpc\Bean\Caller;
 use EasySwoole\Rpc\Bean\Response;
-use EasySwoole\Trigger\Trigger;
 
 abstract class AbstractService
 {
@@ -50,7 +49,6 @@ abstract class AbstractService
     {
         $this->getResponse()->setStatus(Response::STATUS_SERVICE_ERROR);
         $this->getResponse()->setMessage($throwable->getMessage());
-        Trigger::throwable($throwable);
     }
 
     protected function actionNotFound(?string $action)
@@ -83,7 +81,7 @@ abstract class AbstractService
             try{
                 $this->afterAction($actionName);
             }catch (\Throwable $throwable){
-                Trigger::throwable($throwable);
+                $this->onException($throwable);
             }
         }
     }
