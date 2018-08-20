@@ -10,6 +10,7 @@ namespace EasySwoole\Rpc\Bean;
 
 
 use EasySwoole\Spl\SplBean;
+use EasySwoole\Utility\Random;
 
 class Response extends SplBean
 {
@@ -24,6 +25,7 @@ class Response extends SplBean
     protected $status;
     protected $result;
     protected $message;
+    protected $responseId;
 
     /**
      * @return mixed
@@ -71,6 +73,31 @@ class Response extends SplBean
     public function setMessage($message): void
     {
         $this->message = $message;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getResponseId()
+    {
+        return $this->responseId;
+    }
+
+    /**
+     * @param mixed $responseId
+     */
+    public function setResponseId($responseId): void
+    {
+        $this->responseId = $responseId;
+    }
+
+
+
+    protected function initialize(): void
+    {
+        if(empty($this->responseId)){
+            $this->responseId = Random::character(10);
+        }
     }
 
 }

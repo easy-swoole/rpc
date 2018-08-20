@@ -10,6 +10,7 @@ namespace EasySwoole\Rpc\Bean;
 
 
 use EasySwoole\Spl\SplBean;
+use EasySwoole\Utility\Random;
 
 class Caller extends SplBean
 {
@@ -17,6 +18,25 @@ class Caller extends SplBean
     protected $service;
     protected $action;
     protected $args = [];
+    protected $requestId;
+
+    /**
+     * @return mixed
+     */
+    public function getRequestId()
+    {
+        return $this->requestId;
+    }
+
+    /**
+     * @param mixed $requestId
+     */
+    public function setRequestId($requestId): void
+    {
+        $this->requestId = $requestId;
+    }
+
+
 
     /**
      * @return mixed
@@ -93,6 +113,13 @@ class Caller extends SplBean
             return $this->args[$key];
         }
         return null;
+    }
+
+    protected function initialize(): void
+    {
+        if(empty($this->requestId)){
+            $this->requestId = Random::character(10);
+        }
     }
 
 }
