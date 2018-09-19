@@ -290,7 +290,7 @@ class Rpc
             $errormsg = socket_strerror($errorcode);
             $this->trigger->error($errormsg);
         }else{
-            socket_set_option($sock,65535,SO_BROADCAST,true);
+            socket_set_option($sock,SOL_SOCKET,SO_BROADCAST,true);
             socket_sendto($sock,$msg,strlen($msg),0,$addr,$port);
             socket_close($sock);
         }
