@@ -147,7 +147,6 @@ class Rpc
             });
             //添加自定义进程做定时广播
             $server->addProcess(new \swoole_process(function (\swoole_process $process){
-                pcntl_async_signals(true);
                 //服务正常关闭的时候，对外广播服务下线
                 $process::signal(SIGTERM,function ()use($process){
                     swoole_event_del($process->pipe);
