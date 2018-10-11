@@ -50,6 +50,10 @@ class Client
 
     function exec(float $timeout = 0.5)
     {
+        //避免为0 的时候，永远挂起
+        if($timeout <= 0){
+            $timeout = 1.0;
+        }
         foreach ($this->tasks as $task){
             $this->buildConnect($task,$timeout);
         }
