@@ -9,44 +9,14 @@
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Rpc\Bean\BroadcastList;
-use EasySwoole\Rpc\Bean\IpWhiteList;
-use EasySwoole\Utility\Random;
 
 class Config
 {
     private $servicePort = 9601;
-    private $serviceId;
-    private $listenHost = '0.0.0.0';
-    private $subServerMode = true;
-    private $enableBroadcast = false;
-    private $broadcastListenPort = 9602;
-    private $broadcastList = null;
-    private $maxNodes = 2048;
-    private $maxPackage = 1024*64;
-    private $secretKey = '';
-    private $heartbeat_idle_time = 30;
-    private $heartbeat_check_interval = 5;
-    private $ipWhiteList = null;
-
-    function __construct()
-    {
-        $this->serviceId = Random::character(8);
-    }
-
-    function getIpWhiteList():?IpWhiteList
-    {
-        return $this->ipWhiteList;
-    }
-
-    function setIpWhiteList():IpWhiteList
-    {
-        if(empty($this->ipWhiteList)){
-            $this->ipWhiteList = new IpWhiteList();
-        }
-        return $this->ipWhiteList;
-    }
-
+    private $authKey;
+    private $isSubServerMode = true;
+    private $listenAddress = '0.0.0.0';
+    private $nodeId;
     /**
      * @return int
      */
@@ -64,178 +34,67 @@ class Config
     }
 
     /**
+     * @return mixed
+     */
+    public function getAuthKey()
+    {
+        return $this->authKey;
+    }
+
+    /**
+     * @param mixed $authKey
+     */
+    public function setAuthKey($authKey): void
+    {
+        $this->authKey = $authKey;
+    }
+
+    /**
      * @return bool
      */
     public function isSubServerMode(): bool
     {
-        return $this->subServerMode;
+        return $this->isSubServerMode;
     }
 
     /**
-     * @param bool $subServerMode
+     * @param bool $isSubServerMode
      */
-    public function setSubServerMode(bool $subServerMode): void
+    public function setIsSubServerMode(bool $isSubServerMode): void
     {
-        $this->subServerMode = $subServerMode;
-    }
-
-    /**
-     * @return bool
-     */
-    public function isEnableBroadcast(): bool
-    {
-        return $this->enableBroadcast;
-    }
-
-    /**
-     * @param bool $enableBroadcast
-     */
-    public function setEnableBroadcast(bool $enableBroadcast): void
-    {
-        $this->enableBroadcast = $enableBroadcast;
-    }
-
-    /**
-     * @return int
-     */
-    public function getBroadcastListenPort(): int
-    {
-        return $this->broadcastListenPort;
-    }
-
-    /**
-     * @param int $broadcastListenPort
-     */
-    public function setBroadcastListenPort(int $broadcastListenPort): void
-    {
-        $this->broadcastListenPort = $broadcastListenPort;
-    }
-
-    public function getBroadcastList():BroadcastList
-    {
-        if(!isset($this->broadcastList)){
-            $this->broadcastList = new BroadcastList();
-        }
-        return $this->broadcastList;
-    }
-
-    /**
-     * @param $broadcastList
-     */
-    public function setBroadcastList(BroadcastList $broadcastList): void
-    {
-        $this->broadcastList = $broadcastList;
-    }
-
-    /**
-     * @return int
-     */
-    public function getMaxNodes(): int
-    {
-        return $this->maxNodes;
-    }
-
-    /**
-     * @param int $maxNodes
-     */
-    public function setMaxNodes(int $maxNodes): void
-    {
-        $this->maxNodes = $maxNodes;
+        $this->isSubServerMode = $isSubServerMode;
     }
 
     /**
      * @return string
      */
-    public function getListenHost(): string
+    public function getListenAddress(): string
     {
-        return $this->listenHost;
+        return $this->listenAddress;
     }
 
     /**
-     * @param string $listenHost
+     * @param string $listenAddress
      */
-    public function setListenHost(string $listenHost): void
+    public function setListenAddress(string $listenAddress): void
     {
-        $this->listenHost = $listenHost;
-    }
-
-    /**
-     * @return float|int
-     */
-    public function getMaxPackage()
-    {
-        return $this->maxPackage;
-    }
-
-    /**
-     * @param float|int $maxPackage
-     */
-    public function setMaxPackage($maxPackage): void
-    {
-        $this->maxPackage = $maxPackage;
-    }
-
-    /**
-     * @return string
-     */
-    public function getSecretKey(): string
-    {
-        return $this->secretKey;
-    }
-
-    /**
-     * @param string $secretKey
-     */
-    public function setSecretKey(string $secretKey): void
-    {
-        $this->secretKey = $secretKey;
-    }
-
-    /**
-     * @return int
-     */
-    public function getHeartbeatIdleTime(): int
-    {
-        return $this->heartbeat_idle_time;
-    }
-
-    /**
-     * @param int $heartbeat_idle_time
-     */
-    public function setHeartbeatIdleTime(int $heartbeat_idle_time): void
-    {
-        $this->heartbeat_idle_time = $heartbeat_idle_time;
-    }
-
-    /**
-     * @return int
-     */
-    public function getHeartbeatCheckInterval(): int
-    {
-        return $this->heartbeat_check_interval;
-    }
-
-    /**
-     * @param int $heartbeat_check_interval
-     */
-    public function setHeartbeatCheckInterval(int $heartbeat_check_interval): void
-    {
-        $this->heartbeat_check_interval = $heartbeat_check_interval;
+        $this->listenAddress = $listenAddress;
     }
 
     /**
      * @return mixed
      */
-    public function getServiceId()
+    public function getNodeId()
     {
-        return $this->serviceId;
+        return $this->nodeId;
     }
 
     /**
-     * @param mixed $serviceId
+     * @param mixed $nodeId
      */
-    public function setServiceId($serviceId): void
+    public function setNodeId($nodeId): void
     {
-        $this->serviceId = $serviceId;
+        $this->nodeId = $nodeId;
     }
+
 }
