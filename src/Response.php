@@ -14,9 +14,10 @@ use EasySwoole\Spl\SplBean;
 class Response extends SplBean
 {
     const STATUS_OK = 'OK';
-    const STATUS_ERROR_NODES_EMPTY = 'NODES_EMPTY';
-    const STATUS_ERROR_CONNECT_TIMEOUT = 'CONNECT_TIMEOUT';
-    const STATUS_ERROR_SERVER_TIMEOUT = 'SERVER_TIMEOUT';
+    const STATUS_NODES_EMPTY = 'NODES_EMPTY';
+    const STATUS_CONNECT_TIMEOUT = 'CONNECT_TIMEOUT';
+    const STATUS_SERVER_TIMEOUT = 'SERVER_TIMEOUT';
+    const STATUS_SERVER_ERROR = 'SERVER_ERROR';
     protected $message;
     protected $status;
 

@@ -29,11 +29,12 @@ class Config
     function __construct()
     {
         $this->nodeId = Random::character(8);
-        $this->actionMiss = function (\swoole_server $server,int $fd,?string $action,Package $package){
+        $this->actionMiss = function (\swoole_server $server, int $fd, ?string $action, RequestPackage $package){
 
         };
-        $this->onException = function (\Throwable $throwable,\swoole_server $server,int $fd,?string $action,Package $package){
-
+        $this->onException = function (\Throwable $throwable, \swoole_server $server, int $fd, RequestPackage $package,Response $response){
+            $response->setStatus($response::STATUS_SERVER_ERROR);
+            $response->setMessage("{$throwable->getMessage()} at file {$throwable->getFile()} line {$throwable->getLine()}");
         };
     }
 

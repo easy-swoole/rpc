@@ -56,7 +56,7 @@ class Client
                         'package_max_length'    => $this->config->getMaxPackage(),
                     ]);
                     if($taskClient->connect($node->getIp(),$node->getPort(),$taskArray['task']->__getTimeout())){
-                        $package = new Package([
+                        $package = new RequestPackage([
                             'action'=>$taskArray['task']->__getAction(),
                             'arg'=>$taskArray['task']->__getArg(),
                             'nodeId'=>$this->config->getNodeId()
@@ -76,7 +76,7 @@ class Client
                         $channel->push(['taskArray'=>$taskArray,'serviceNode'=>$node]);
                     }else{
                         $taskArray['response'] = new Response([
-                            'status'=>Response::STATUS_ERROR_CONNECT_TIMEOUT
+                            'status'=>Response::STATUS_CONNECT_TIMEOUT
                         ]);
                         $this->hookCallBack($taskArray['task'],$taskArray['response'],$node);
 
@@ -84,7 +84,7 @@ class Client
                 });
             }else{
                 $taskArray['response'] = new Response([
-                    'status'=>Response::STATUS_ERROR_NODES_EMPTY
+                    'status'=>Response::STATUS_NODES_EMPTY
                 ]);
                 $this->hookCallBack($taskArray['taskArray']['task'],$taskArray['taskArray']['response'],$node);
             }
@@ -101,7 +101,7 @@ class Client
         }
         foreach ($this->taskList as $taskUid => $taskArray){
             $this->taskList[$taskUid]['response'] = $taskArray['response'] = new Response([
-                'status'=>Response::STATUS_ERROR_CONNECT_TIMEOUT
+                'status'=>Response::STATUS_CONNECT_TIMEOUT
             ]);
             $this->hookCallBack($taskArray['task'],$taskArray['response'],$taskArray['serviceNode']);
         }

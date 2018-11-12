@@ -59,27 +59,28 @@ class Rpc
         $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
             $json = json_decode(Pack::unpack($data),true);
             if(is_array($json)){
-                $package = new Package($json);
-                if(abs(time() - $package->getPackageTime()) < 2){
-                    if($package->getSignature() === $package->generateSignature($this->config->getAuthKey())){
-                        $action = $package->getAction();
+                $requestPackage = new RequestPackage($json);
+                if(abs(time() - $requestPackage->getPackageTime()) < 2){
+                    if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
+                        $response = new Response();
+                        $action = $requestPackage->getAction();
                         $callback = $this->actionList->__getAction($action);
                         if(!is_callable($callback)){
                             $callback = $this->config->getOnActionMiss();
                         }
                         try{
-                            $ret = call_user_func($callback, $server,$package,$fd);
+                            $ret = call_user_func($callback, $server,$requestPackage,$response,$fd);
                             if(!$ret instanceof Response){
-                                $ret = new Response([
+                                $response = new Response([
                                     'message'=>$ret,
                                     'status'=>Response::STATUS_OK
                                 ]);
                             }
-                            if($server->exist($fd)){
-                                $server->send($fd,Pack::pack((string)$ret));
-                            }
                         }catch (\Throwable $throwable){
-                            call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $action, $package);
+                            call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $requestPackage,$response);
+                        }
+                        if($server->exist($fd)){
+                            $server->send($fd,Pack::pack((string)$response));
                         }
                     }
                 }
