@@ -10,6 +10,8 @@ namespace EasySwoole\Rpc;
 
 
 
+use EasySwoole\Utility\Random;
+
 class Config
 {
     private $servicePort = 9601;
@@ -22,9 +24,11 @@ class Config
     private $heartbeatCheckInterval = 30;
     private $actionMiss;
     private $onException;
+    private $maxNodeNum = 4096;
 
     function __construct()
     {
+        $this->nodeId = Random::character(8);
         $this->actionMiss = function (\swoole_server $server,int $fd,?string $action,Package $package){
 
         };
@@ -188,5 +192,22 @@ class Config
     {
         $this->heartbeatCheckInterval = $heartbeatCheckInterval;
     }
+
+    /**
+     * @return int
+     */
+    public function getMaxNodeNum(): int
+    {
+        return $this->maxNodeNum;
+    }
+
+    /**
+     * @param int $maxNodeNum
+     */
+    public function setMaxNodeNum(int $maxNodeNum): void
+    {
+        $this->maxNodeNum = $maxNodeNum;
+    }
+
 
 }

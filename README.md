@@ -8,20 +8,20 @@ composer require easyswoole/rpc
 
 ### 服务端
 ```php
-
 $conf = new \EasySwoole\Rpc\Config();
 
 $ser = new \swoole_http_server('0.0.0.0',9501);
-$ser->set([
-    'worker_num'=>1
-]);
+
 $ser->on('request',function (){
 
 });
 $rpc = new \EasySwoole\Rpc\Rpc($conf);
+$rpc->getActionList()->register('a1',function (\swoole_server $server,\EasySwoole\Rpc\Package $package,int $fd){
+    \co::sleep(1);
+    return 'asas';
+});
 try{
-
-    $rpc->attach('test',$ser);
+    $rpc->attach($ser,'test');
     $ser->start();
 }catch (\Throwable $throwable){
     echo $throwable->getMessage();
@@ -32,35 +32,26 @@ try{
 
 #### EasySwoole 封装实现
 ```php
+$conf = new \EasySwoole\Rpc\Config();
+$rpc = new \EasySwoole\Rpc\Rpc($conf);
 
-$chan = new \Swoole\Coroutine\Channel(2);
+go(function ()use($rpc){
+    $client = $rpc->client();
+    $client->selectService('service',function (){
+        $node = new \EasySwoole\Rpc\ServiceNode();
+        $node->setIp('127.0.0.1');
+        $node->setPort(9601);
+        return $node;
+    })->setAction('a1')->setArg(
+        [
+            'callTime'=>time()
+        ]
+    )->onSuccess(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
+        var_dump('success');
+    })->onFail(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
+        var_dump('fail');
+    })->setTimeout(1.5);
+    $client->call(1.5);
 
-$package = new \EasySwoole\Rpc\Package();
-$package->setPackageTime(time());
-$package->generateSignature();
-
-go(function ()use($chan,$package){
-    $client = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
-    $client->connect('127.0.0.1',9601);
-    $client->send(\EasySwoole\Rpc\Pack::pack($package->__toString()));
-    $ret = \EasySwoole\Rpc\Pack::unpack($client->recv(2));
-    $chan->push(['1'=>$ret]);
-});
-
-go(function ()use($chan,$package){
-    $client = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
-    $client->connect('127.0.0.1',9601);
-    $client->send(\EasySwoole\Rpc\Pack::pack($package->__toString()));
-    $ret = \EasySwoole\Rpc\Pack::unpack($client->recv(2));
-    $chan->push(['2'=>$ret]);
-});
-
-go(function ()use($chan){
-    $result = [];
-    for ($i = 0; $i < 2; $i++)
-    {
-        $result += $chan->pop();
-    }
-    var_dump($result);
 });
 ```

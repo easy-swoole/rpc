@@ -14,18 +14,12 @@ use EasySwoole\Utility\Random;
 
 class Package extends SplBean
 {
-    const STATUS_OK = 200;
-    const STATUS_SERVER_ERROR = 500;
-    const STATUS_TEMPORARILY_MOVED = 302;
-    const STATUS_TIME_OUT = 408;//响应超时
-    const STATUS_BAD_GATEWAY = 502;//在无法连接上目标server或者是找不到注册的服务节点的时候
-    const STATUS_ACTION_NOT_FOUND = 404;
     protected $nodeId;
-    protected $status;
     protected $packageId;
     protected $action;
     protected $signature;
     protected $packageTime;
+    protected $arg;
 
     function generateSignature(string $key = null)
     {
@@ -36,22 +30,6 @@ class Package extends SplBean
     function getSignature():string
     {
         return $this->signature;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getStatus()
-    {
-        return $this->status;
-    }
-
-    /**
-     * @param mixed $status
-     */
-    public function setStatus($status): void
-    {
-        $this->status = $status;
     }
 
     /**
@@ -121,7 +99,6 @@ class Package extends SplBean
             $this->packageTime = time();
         }
     }
-
 
     protected function initialize(): void
     {

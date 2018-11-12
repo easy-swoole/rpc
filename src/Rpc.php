@@ -16,19 +16,26 @@ class Rpc
 
     private $config;
     private $client;
-
+    private $nodeManager;
+    private $actionList;
     function __construct(Config $config)
     {
         $this->config = $config;
+        $this->nodeManager = new NodeManager($config->getMaxNodeNum());
+        $this->actionList = new ActionList();
     }
 
+
+    public function getActionList():ActionList
+    {
+        return $this->actionList;
+    }
 
     /*
      * 注册一个tcp服务作为RPC通讯服务
      */
-    function attach(string $serviceName,\swoole_server $server):ActionList
+    function attach(\swoole_server $server,string $serviceName):void
     {
-        $serviceList = new ActionList();
         if($this->config->isSubServerMode()){
             $subPort = $server->addListener($this->config->getListenAddress(),$this->config->getServicePort(),SWOOLE_TCP);
         }else{
@@ -49,35 +56,38 @@ class Rpc
             ]
         );
         //注册 onReceive 回调
-        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data)use($serviceList){
+        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
             $json = json_decode(Pack::unpack($data),true);
             if(is_array($json)){
                 $package = new Package($json);
                 if(abs(time() - $package->getPackageTime()) < 2){
                     if($package->getSignature() === $package->generateSignature($this->config->getAuthKey())){
                         $action = $package->getAction();
-                        $callback = $serviceList->__getAction($action);
+                        $callback = $this->actionList->__getAction($action);
                         if(!is_callable($callback)){
                             $callback = $this->config->getOnActionMiss();
                         }
                         try{
-                            $ret = call_user_func($callback, $server ,$fd, $action, $package);
-                            if($ret !== null){
+                            $ret = call_user_func($callback, $server,$package,$fd);
+                            if(!$ret instanceof Response){
+                                $ret = new Response([
+                                    'message'=>$ret,
+                                    'status'=>Response::STATUS_OK
+                                ]);
+                            }
+                            if($server->exist($fd)){
                                 $server->send($fd,Pack::pack((string)$ret));
                             }
                         }catch (\Throwable $throwable){
                             call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $action, $package);
-                        }finally{
-                            goto rpcClose;
                         }
                     }
                 }
             }
-            rpcClose :{
+            if($server->exist($fd)){
                 $server->close($fd);
             }
         });
-        return $serviceList;
     }
     /*
      * 每个进程中的client互相隔离
@@ -85,9 +95,14 @@ class Rpc
     function client():Client
     {
         if(!$this->client){
-            $this->client = new Client($this->config);
+            $this->client = new Client($this->config,$this->nodeManager);
         }
-        return $this->client();
+        return $this->client;
+    }
+
+    function nodeManager():NodeManager
+    {
+        return $this->nodeManager;
     }
 
 
