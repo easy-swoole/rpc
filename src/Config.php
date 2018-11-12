@@ -17,6 +17,50 @@ class Config
     private $isSubServerMode = true;
     private $listenAddress = '0.0.0.0';
     private $nodeId;
+    private $maxPackage = 1024*1024;
+    private $heartbeatIdleTime = 30;
+    private $heartbeatCheckInterval = 30;
+    private $actionMiss;
+    private $onException;
+
+    function __construct()
+    {
+        $this->actionMiss = function (\swoole_server $server,int $fd,?string $action,Package $package){
+
+        };
+        $this->onException = function (\Throwable $throwable,\swoole_server $server,int $fd,?string $action,Package $package){
+
+        };
+    }
+
+    public function onException(callable $callback)
+    {
+        $this->onException = $callback;
+    }
+
+    public function onActionMiss(callable $callback)
+    {
+        $this->actionMiss = $callback;
+        return $this;
+    }
+
+    /**
+     * @return callable
+     */
+    public function getOnActionMiss()
+    {
+        return $this->actionMiss;
+    }
+
+    /**
+     * @return callable
+     */
+    public function getOnException()
+    {
+        return $this->onException;
+    }
+
+
     /**
      * @return int
      */
@@ -95,6 +139,54 @@ class Config
     public function setNodeId($nodeId): void
     {
         $this->nodeId = $nodeId;
+    }
+
+    /**
+     * @return float|int
+     */
+    public function getMaxPackage()
+    {
+        return $this->maxPackage;
+    }
+
+    /**
+     * @param float|int $maxPackage
+     */
+    public function setMaxPackage($maxPackage): void
+    {
+        $this->maxPackage = $maxPackage;
+    }
+
+    /**
+     * @return int
+     */
+    public function getHeartbeatIdleTime(): int
+    {
+        return $this->heartbeatIdleTime;
+    }
+
+    /**
+     * @param int $heartbeatIdleTime
+     */
+    public function setHeartbeatIdleTime(int $heartbeatIdleTime): void
+    {
+        $this->heartbeatIdleTime = $heartbeatIdleTime;
+    }
+
+    /**
+     * @return int
+     */
+    public function getHeartbeatCheckInterval(): int
+    {
+        return $this->heartbeatCheckInterval;
+    }
+
+    /**
+     * @param int $heartbeatCheckInterval
+     */
+    public function setHeartbeatCheckInterval(int $heartbeatCheckInterval): void
+    {
+        $this->heartbeatCheckInterval = $heartbeatCheckInterval;
     }
 
 }

@@ -19,7 +19,7 @@ class ActionList
         return $this;
     }
 
-    function __getAction(string $actionName):?callable
+    function __getAction(?string $actionName):?callable
     {
         if(isset($this->list[$actionName])){
             return $this->list[$actionName];

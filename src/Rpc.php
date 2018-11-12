@@ -17,12 +17,11 @@ class Rpc
     private $config;
     private $client;
 
-
     function __construct(Config $config)
     {
         $this->config = $config;
-
     }
+
 
     /*
      * 注册一个tcp服务作为RPC通讯服务
@@ -40,29 +39,43 @@ class Rpc
          */
         $subPort->set(
             [
-                'open_length_check' => false,
+                'open_length_check' => true,
                 'package_length_type'   => 'N',
                 'package_length_offset' => 0,
                 'package_body_offset'   => 4,
-//                'package_max_length'    => $this->config->getMaxPackage(),
-//                'heartbeat_idle_time' => $this->config->getHeartbeatIdleTime(),
-//                'heartbeat_check_interval' => $this->config->getHeartbeatCheckInterval()
+                'package_max_length'    => $this->config->getMaxPackage(),
+                'heartbeat_idle_time' => $this->config->getHeartbeatIdleTime(),
+                'heartbeat_check_interval' => $this->config->getHeartbeatCheckInterval()
             ]
         );
         //注册 onReceive 回调
-        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data)use($serviceName){
+        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data)use($serviceList){
             $json = json_decode(Pack::unpack($data),true);
             if(is_array($json)){
                 $package = new Package($json);
                 if(abs(time() - $package->getPackageTime()) < 2){
                     if($package->getSignature() === $package->generateSignature($this->config->getAuthKey())){
-                        $server->send($fd,Pack::pack('assa'));
-                        $server->send($fd,Pack::pack('bbbb'));
-                        return;
+                        $action = $package->getAction();
+                        $callback = $serviceList->__getAction($action);
+                        if(!is_callable($callback)){
+                            $callback = $this->config->getOnActionMiss();
+                        }
+                        try{
+                            $ret = call_user_func($callback, $server ,$fd, $action, $package);
+                            if($ret !== null){
+                                $server->send($fd,Pack::pack((string)$ret));
+                            }
+                        }catch (\Throwable $throwable){
+                            call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $action, $package);
+                        }finally{
+                            goto rpcClose;
+                        }
                     }
                 }
             }
-            $server->close($fd);
+            rpcClose :{
+                $server->close($fd);
+            }
         });
         return $serviceList;
     }
@@ -76,5 +89,6 @@ class Rpc
         }
         return $this->client();
     }
+
 
 }
