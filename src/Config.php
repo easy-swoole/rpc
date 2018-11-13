@@ -14,9 +14,8 @@ use EasySwoole\Utility\Random;
 
 class Config
 {
-    private $servicePort = 9601;
+    private $listenPort = 9601;
     private $authKey;
-    private $isSubServerMode = true;
     private $listenAddress = '0.0.0.0';
     private $nodeId;
     private $maxPackage = 1024*1024;
@@ -25,6 +24,21 @@ class Config
     private $actionMiss;
     private $onException;
     private $maxNodeNum = 4096;
+    private $protocolSetting = [
+        'open_length_check' => true,
+        'package_length_type'   => 'N',
+        'package_length_offset' => 0,
+        'package_body_offset'   => 4,
+    ];
+
+    function getProtocolSetting():array
+    {
+        return $this->protocolSetting + [
+                'package_max_length'    => $this->maxPackage,
+                'heartbeat_idle_time' => $this->heartbeatIdleTime,
+                'heartbeat_check_interval' => $this->heartbeatCheckInterval
+            ];
+    }
 
     function __construct()
     {
@@ -65,21 +79,20 @@ class Config
         return $this->onException;
     }
 
-
     /**
      * @return int
      */
-    public function getServicePort(): int
+    public function getListenPort()
     {
-        return $this->servicePort;
+        return $this->listenPort;
     }
 
     /**
-     * @param int $servicePort
+     * @param int $listenPort
      */
-    public function setServicePort(int $servicePort): void
+    public function setListenPort($listenPort): void
     {
-        $this->servicePort = $servicePort;
+        $this->listenPort = $listenPort;
     }
 
     /**
@@ -96,22 +109,6 @@ class Config
     public function setAuthKey($authKey): void
     {
         $this->authKey = $authKey;
-    }
-
-    /**
-     * @return bool
-     */
-    public function isSubServerMode(): bool
-    {
-        return $this->isSubServerMode;
-    }
-
-    /**
-     * @param bool $isSubServerMode
-     */
-    public function setIsSubServerMode(bool $isSubServerMode): void
-    {
-        $this->isSubServerMode = $isSubServerMode;
     }
 
     /**

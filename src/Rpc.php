@@ -11,6 +11,8 @@ namespace EasySwoole\Rpc;
 
 
 
+use Swoole\Process;
+
 class Rpc
 {
 
@@ -31,65 +33,67 @@ class Rpc
         return $this->actionList;
     }
 
-    /*
-     * 注册一个tcp服务作为RPC通讯服务
-     */
-    function attach(\swoole_server $server,string $serviceName):void
+
+    public function onRpcRequest(\swoole_server $server, int $fd, int $reactor_id, string $data):void
     {
-        if($this->config->isSubServerMode()){
-            $subPort = $server->addListener($this->config->getListenAddress(),$this->config->getServicePort(),SWOOLE_TCP);
-        }else{
-            $subPort = $server;
-        }
-        /*
-         * 配置包结构
-         */
-        $subPort->set(
-            [
-                'open_length_check' => true,
-                'package_length_type'   => 'N',
-                'package_length_offset' => 0,
-                'package_body_offset'   => 4,
-                'package_max_length'    => $this->config->getMaxPackage(),
-                'heartbeat_idle_time' => $this->config->getHeartbeatIdleTime(),
-                'heartbeat_check_interval' => $this->config->getHeartbeatCheckInterval()
-            ]
-        );
-        //注册 onReceive 回调
-        $subPort->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data){
-            $json = json_decode(Pack::unpack($data),true);
-            if(is_array($json)){
-                $requestPackage = new RequestPackage($json);
-                if(abs(time() - $requestPackage->getPackageTime()) < 2){
-                    if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
-                        $response = new Response();
-                        $action = $requestPackage->getAction();
-                        $callback = $this->actionList->__getAction($action);
-                        if(!is_callable($callback)){
-                            $callback = $this->config->getOnActionMiss();
+        $json = json_decode(Pack::unpack($data),true);
+        if(is_array($json)){
+            $requestPackage = new RequestPackage($json);
+            if(abs(time() - $requestPackage->getPackageTime()) < 2){
+                if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
+                    $response = new Response();
+                    $action = $requestPackage->getAction();
+                    $callback = $this->actionList->__getAction($action);
+                    if(!is_callable($callback)){
+                        $callback = $this->config->getOnActionMiss();
+                    }
+                    try{
+                        $ret = call_user_func($callback, $server,$requestPackage,$response,$fd);
+                        if(!$ret instanceof Response){
+                            $response = new Response([
+                                'message'=>$ret,
+                                'status'=>Response::STATUS_OK
+                            ]);
                         }
-                        try{
-                            $ret = call_user_func($callback, $server,$requestPackage,$response,$fd);
-                            if(!$ret instanceof Response){
-                                $response = new Response([
-                                    'message'=>$ret,
-                                    'status'=>Response::STATUS_OK
-                                ]);
-                            }
-                        }catch (\Throwable $throwable){
-                            call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $requestPackage,$response);
-                        }
-                        if($server->exist($fd)){
-                            $server->send($fd,Pack::pack((string)$response));
-                        }
+                    }catch (\Throwable $throwable){
+                        call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $requestPackage,$response);
+                    }
+                    if($server->exist($fd)){
+                        $server->send($fd,Pack::pack((string)$response));
                     }
                 }
             }
-            if($server->exist($fd)){
-                $server->close($fd);
+        }
+        if($server->exist($fd)){
+            $server->close($fd);
+        }
+    }
+
+    public function onRpcBroadcast(\swoole_server $server, string $data, array $client_info)
+    {
+
+    }
+
+    public function getRpcBroadcastProcess(string $processName = 'RPC'):Process
+    {
+        return new Process(function (Process $process)use($processName){
+            if(PHP_OS != 'Darwin'){
+                $process->name($processName);
             }
+            if (extension_loaded('pcntl')) {
+                pcntl_async_signals(true);
+            }
+            Process::signal(SIGTERM,function ()use($process){
+                //在节点关闭的时候，对外广播下线通知
+                swoole_event_del($process->pipe);
+                $process->exit(0);
+            });
+            swoole_event_add($process->pipe, function()use($process){
+                $process->read(64 * 1024);
+            });
         });
     }
+
     /*
      * 每个进程中的client互相隔离
      */

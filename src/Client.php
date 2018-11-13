@@ -48,13 +48,7 @@ class Client
             if($node instanceof ServiceNode){
                 go(function ()use($channel,$node,$taskArray,$taskUid,$maxWaitTime){
                     $taskClient = new SwooleClient(SWOOLE_SOCK_TCP);
-                    $taskClient->set([
-                        'open_length_check' => true,
-                        'package_length_type'   => 'N',
-                        'package_length_offset' => 0,
-                        'package_body_offset'   => 4,
-                        'package_max_length'    => $this->config->getMaxPackage(),
-                    ]);
+                    $taskClient->set($this->config->getProtocolSetting());
                     if($taskClient->connect($node->getIp(),$node->getPort(),$taskArray['task']->__getTimeout())){
                         $package = new RequestPackage([
                             'action'=>$taskArray['task']->__getAction(),

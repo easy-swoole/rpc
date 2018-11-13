@@ -8,24 +8,28 @@ composer require easyswoole/rpc
 
 ### 服务端
 ```php
-$conf = new \EasySwoole\Rpc\Config();
+use EasySwoole\Rpc\RequestPackage;
+use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Response;
+$conf = new Config();
 
 $ser = new \swoole_http_server('0.0.0.0',9501);
 
-$ser->on('request',function (){
-
+$ser->on('request',function ($request,$response){
+    $response->write('hello world');
+    $response->end();
 });
 $rpc = new \EasySwoole\Rpc\Rpc($conf);
-$rpc->getActionList()->register('a1',function (\swoole_server $server,\EasySwoole\Rpc\Package $package,int $fd){
-    \co::sleep(1);
+$ser->addProcess($rpc->getRpcBroadcastProcess());
+$rpc->getActionList()->register('a1',function (\swoole_server $server, RequestPackage $package, Response $response,int $fd){
     return 'asas';
 });
-try{
-    $rpc->attach($ser,'test');
-    $ser->start();
-}catch (\Throwable $throwable){
-    echo $throwable->getMessage();
-}
+$sub = $ser->addListener($conf->getListenAddress(),$conf->getListenPort(),SWOOLE_TCP);
+$sub->set($conf->getProtocolSetting());
+$sub->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data)use($rpc){
+    $rpc->onRpcRequest( $server,  $fd,  $reactor_id,  $data);
+});
+$ser->start();
 ``` 
 
 ### 客户端
@@ -47,9 +51,9 @@ go(function ()use($rpc){
             'callTime'=>time()
         ]
     )->onSuccess(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
-        var_dump('success');
+        var_dump('success'.$response->getMessage());
     })->onFail(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
-        var_dump('fail');
+        var_dump('fail'.$response->getMessage());
     })->setTimeout(1.5);
     $client->call(1.5);
 
