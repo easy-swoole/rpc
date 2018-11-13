@@ -20,11 +20,13 @@ class Rpc
     private $client;
     private $nodeManager;
     private $actionList;
+    private $broadcast;
     function __construct(Config $config)
     {
         $this->config = $config;
         $this->nodeManager = new NodeManager($config->getMaxNodeNum());
         $this->actionList = new ActionList();
+        $this->broadcast = new Broadcast($config);
     }
 
 
@@ -91,7 +93,15 @@ class Rpc
             swoole_event_add($process->pipe, function()use($process){
                 $process->read(64 * 1024);
             });
+            swoole_timer_tick($this->config->getBroadcastTTL(),function (){
+
+            });
         });
+    }
+
+    function broadcast(RequestPackage $requestPackage)
+    {
+
     }
 
     /*

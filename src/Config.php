@@ -31,14 +31,11 @@ class Config
         'package_body_offset'   => 4,
     ];
 
-    function getProtocolSetting():array
-    {
-        return $this->protocolSetting + [
-                'package_max_length'    => $this->maxPackage,
-                'heartbeat_idle_time' => $this->heartbeatIdleTime,
-                'heartbeat_check_interval' => $this->heartbeatCheckInterval
-            ];
-    }
+    private $broadcastAddress = [];
+    private $broadcastListenAddress = '0.0.0.0';
+    private $broadcastListenPort = 9600;//广播服务端的UDP监听端口
+    private $broadcastTTL = 15;//多久执行一次广播
+    private $nodeExpire = 18;//表示我自身节点过多久失效
 
     function __construct()
     {
@@ -50,6 +47,112 @@ class Config
             $response->setStatus($response::STATUS_SERVER_ERROR);
             $response->setMessage("{$throwable->getMessage()} at file {$throwable->getFile()} line {$throwable->getLine()}");
         };
+    }
+
+    /**
+     * @return \Closure
+     */
+    public function getActionMiss(): \Closure
+    {
+        return $this->actionMiss;
+    }
+
+    /**
+     * @param \Closure $actionMiss
+     */
+    public function setActionMiss(\Closure $actionMiss): void
+    {
+        $this->actionMiss = $actionMiss;
+    }
+
+    /**
+     * @return array
+     */
+    public function getBroadcastAddress(): array
+    {
+        return $this->broadcastAddress;
+    }
+
+    /**
+     * @param array $broadcastAddress
+     */
+    public function setBroadcastAddress(array $broadcastAddress): void
+    {
+        $this->broadcastAddress = $broadcastAddress;
+    }
+
+    /**
+     * @return string
+     */
+    public function getBroadcastListenAddress(): string
+    {
+        return $this->broadcastListenAddress;
+    }
+
+    /**
+     * @param string $broadcastListenAddress
+     */
+    public function setBroadcastListenAddress(string $broadcastListenAddress): void
+    {
+        $this->broadcastListenAddress = $broadcastListenAddress;
+    }
+
+    /**
+     * @return int
+     */
+    public function getBroadcastListenPort(): int
+    {
+        return $this->broadcastListenPort;
+    }
+
+    /**
+     * @param int $broadcastListenPort
+     */
+    public function setBroadcastListenPort(int $broadcastListenPort): void
+    {
+        $this->broadcastListenPort = $broadcastListenPort;
+    }
+
+    /**
+     * @return int
+     */
+    public function getBroadcastTTL(): int
+    {
+        return $this->broadcastTTL;
+    }
+
+    /**
+     * @param int $broadcastTTL
+     */
+    public function setBroadcastTTL(int $broadcastTTL): void
+    {
+        $this->broadcastTTL = $broadcastTTL;
+    }
+
+    /**
+     * @return int
+     */
+    public function getNodeExpire(): int
+    {
+        return $this->nodeExpire;
+    }
+
+    /**
+     * @param int $nodeExpire
+     */
+    public function setNodeExpire(int $nodeExpire): void
+    {
+        $this->nodeExpire = $nodeExpire;
+    }
+
+
+    function getProtocolSetting():array
+    {
+        return $this->protocolSetting + [
+                'package_max_length'    => $this->maxPackage,
+                'heartbeat_idle_time' => $this->heartbeatIdleTime,
+                'heartbeat_check_interval' => $this->heartbeatCheckInterval
+            ];
     }
 
     public function onException(callable $callback)
