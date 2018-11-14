@@ -10,7 +10,6 @@ namespace EasySwoole\Rpc;
 
 
 
-
 use Swoole\Process;
 
 class Rpc
@@ -73,7 +72,15 @@ class Rpc
 
     public function onRpcBroadcast(\swoole_server $server, string $data, array $client_info)
     {
+        $data = json_decode($data,true);
+        if(is_array($data)){
+            $requestPackage = new RequestPackage($data);
+            if(abs(time() - $requestPackage->getPackageTime()) < 2){
+                if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
 
+                }
+            }
+        }
     }
 
     public function getRpcBroadcastProcess(string $processName = 'RPC'):Process
