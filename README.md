@@ -41,12 +41,7 @@ $rpc = new \EasySwoole\Rpc\Rpc($conf);
 
 go(function ()use($rpc){
     $client = $rpc->client();
-    $client->selectService('service',function (){
-        $node = new \EasySwoole\Rpc\ServiceNode();
-        $node->setIp('127.0.0.1');
-        $node->setPort(9601);
-        return $node;
-    })->setAction('a1')->setArg(
+    $client->selectService('service')->setAction('a1')->setArg(
         [
             'callTime'=>time()
         ]
