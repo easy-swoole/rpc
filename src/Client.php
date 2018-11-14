@@ -22,13 +22,12 @@ class Client
         $this->nodeManager = $nodeManager;
     }
 
-    function selectService(string $serviceName,callable $selectHandler = null)
+    function selectService(string $serviceName,string $version = null)
     {
-        $this->defaultSelectHandler($selectHandler);
         $task = new Task();
         $this->taskList[spl_object_hash($task)] = [
             'serviceName'=>$serviceName,
-            'selectHandler'=>$selectHandler,
+            'version'=>$version,
             'task'=>$task
         ];
         return $task;
@@ -43,8 +42,7 @@ class Client
         $channel = new Channel(count($this->taskList)+1);
 
         foreach ($this->taskList as $taskUid => $taskArray){
-            $allNodes = $this->nodeManager->getServiceNodes($taskArray['serviceName']);
-            $node = call_user_func($taskArray['selectHandler'],$allNodes,$taskArray['serviceName'],$taskUid);
+            $node = $this->nodeManager->getServiceNode($taskArray['serviceName'],$taskArray['version']);
             if($node instanceof ServiceNode){
                 go(function ()use($channel,$node,$taskArray,$taskUid,$maxWaitTime){
                     $taskClient = new SwooleClient(SWOOLE_SOCK_TCP);
@@ -117,25 +115,5 @@ class Client
         if(is_callable($call)){
             call_user_func($call,$task,$response,$serviceNode);
         }
-    }
-
-    private function reset()
-    {
-        $this->taskList = [];
-    }
-
-    private function defaultSelectHandler($selectHandler)
-    {
-        if(!is_callable($selectHandler)){
-            $selectHandler = function (?array $allServiceNodes){
-                if(empty($allServiceNodes)){
-                    return null;
-                }
-                mt_srand();
-                $key = array_rand($allServiceNodes);
-                return $allServiceNodes[$key];
-            };
-        }
-        return $selectHandler;
     }
 }

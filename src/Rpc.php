@@ -23,7 +23,8 @@ class Rpc
     function __construct(Config $config)
     {
         $this->config = $config;
-        $this->nodeManager = new NodeManager($config->getMaxNodeNum());
+        $manager =  $config->getNodeManager();
+        $this->nodeManager = new $manager;
         $this->actionList = new ActionList();
         $this->broadcast = new Broadcast($config);
     }

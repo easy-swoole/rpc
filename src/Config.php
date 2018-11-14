@@ -23,7 +23,7 @@ class Config
     private $heartbeatCheckInterval = 30;
     private $actionMiss;
     private $onException;
-    private $maxNodeNum = 4096;
+
     private $protocolSetting = [
         'open_length_check' => true,
         'package_length_type'   => 'N',
@@ -37,6 +37,11 @@ class Config
     private $broadcastTTL = 15;//多久执行一次广播
     private $nodeExpire = 18;//表示我自身节点过多久失效
 
+    private $serviceName;
+    private $serviceVersion = '1.0.0';
+
+    private $nodeManager = NodeManager::class;
+
     function __construct()
     {
         $this->nodeId = Random::character(8);
@@ -47,6 +52,54 @@ class Config
             $response->setStatus($response::STATUS_SERVER_ERROR);
             $response->setMessage("{$throwable->getMessage()} at file {$throwable->getFile()} line {$throwable->getLine()}");
         };
+    }
+
+    /**
+     * @return string
+     */
+    public function getNodeManager(): string
+    {
+        return $this->nodeManager;
+    }
+
+    public function setNodeManager(string $nodeManager): void
+    {
+        $ref = new \ReflectionClass($nodeManager);
+        if($ref->implementsInterface(NodeManagerInterface::class)){
+            $this->nodeManager = $nodeManager;
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getServiceName()
+    {
+        return $this->serviceName;
+    }
+
+    /**
+     * @param mixed $serviceName
+     */
+    public function setServiceName($serviceName): void
+    {
+        $this->serviceName = $serviceName;
+    }
+
+    /**
+     * @return string
+     */
+    public function getServiceVersion(): string
+    {
+        return $this->serviceVersion;
+    }
+
+    /**
+     * @param string $serviceVersion
+     */
+    public function setServiceVersion(string $serviceVersion): void
+    {
+        $this->serviceVersion = $serviceVersion;
     }
 
     /**
@@ -294,21 +347,6 @@ class Config
         $this->heartbeatCheckInterval = $heartbeatCheckInterval;
     }
 
-    /**
-     * @return int
-     */
-    public function getMaxNodeNum(): int
-    {
-        return $this->maxNodeNum;
-    }
-
-    /**
-     * @param int $maxNodeNum
-     */
-    public function setMaxNodeNum(int $maxNodeNum): void
-    {
-        $this->maxNodeNum = $maxNodeNum;
-    }
 
 
 }
