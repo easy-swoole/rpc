@@ -91,7 +91,7 @@ class Rpc
                 if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
                     //忽略自己的广播
                     if($requestPackage->getNodeId() == $this->config->getNodeId()){
-//                        return;
+                        return;
                     }
                     if($requestPackage->getAction() == 'NODE_BROADCAST'){
                         $info = $requestPackage->getArg();
@@ -136,9 +136,12 @@ class Rpc
                     'servicePort'=>$this->config->getListenPort(),
                     'serviceBroadcastPort'=>$this->config->getBroadcastListenPort(),
                     'nodeExpire'=>$this->config->getNodeExpire(),
-                    'serviceIp'=>$this->config->getServiceIp()
+                    'serviceIp'=>$this->config->getServiceIp(),
                 ]);
                 $this->broadcast($package);
+                if(is_callable($this->config->getOnBroadcast())){
+                    call_user_func($this->config->getOnBroadcast(),$this->config);
+                }
             });
         });
     }
@@ -163,6 +166,17 @@ class Rpc
         }
     }
 
+    function sendTo(string $msg,ServiceNode $serviceNode):?int
+    {
+        if(!($sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP)))
+        {
+            return null;
+        }
+        $len = socket_sendto($sock, $msg , strlen($msg) , 0 , $serviceNode->getServiceIp() , $serviceNode->getServiceBroadcastPort());
+        socket_close($sock);
+        return $len;
+    }
+
     /*
      * 每个进程中的client互相隔离
      */
@@ -178,6 +192,5 @@ class Rpc
     {
         return $this->nodeManager;
     }
-
 
 }

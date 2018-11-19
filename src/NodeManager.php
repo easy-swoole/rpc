@@ -23,6 +23,7 @@ class NodeManager implements NodeManagerInterface
         $this->swooleTable->column('serviceVersion',Table::TYPE_STRING,8);
         $this->swooleTable->column('serviceIp',Table::TYPE_STRING,15);
         $this->swooleTable->column('servicePort',Table::TYPE_INT);
+        $this->swooleTable->column('serviceBroadcastPort',Table::TYPE_INT);
         $this->swooleTable->column('lastHeartBeat',Table::TYPE_INT);
         $this->swooleTable->column('nodeExpire',Table::TYPE_INT);
         $this->swooleTable->create();
@@ -35,6 +36,7 @@ class NodeManager implements NodeManagerInterface
             if($item['serviceName'] == $serviceName){
                 //检测过期
                 if(abs(time() - $item['lastHeartBeat']) > $item['nodeExpire']){
+                    $this->swooleTable->del($key);
                     continue;
                 }
                 if(($version !== null) && ($item['serviceVersion'] != $version)){
@@ -49,18 +51,14 @@ class NodeManager implements NodeManagerInterface
     function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
     {
         // TODO: Implement getServiceNode() method.
-//        $allNodes = $this->getServiceNodes($serviceName,$version);
-//        if(!empty($allNodes)){
-//            mt_srand();
-//            $key = array_rand($allNodes);
-//            return $allNodes[$key];
-//        }else{
-//            return null;
-//        }
-        return new ServiceNode([
-            'serviceIp'=>'127.0.0.1',
-            'servicePort'=>9601
-        ]);
+        $allNodes = $this->getServiceNodes($serviceName,$version);
+        if(!empty($allNodes)){
+            mt_srand();
+            $key = array_rand($allNodes);
+            return $allNodes[$key];
+        }else{
+            return null;
+        }
     }
 
     function refreshServiceNode(ServiceNode $serviceNode)
@@ -71,4 +69,17 @@ class NodeManager implements NodeManagerInterface
         $this->swooleTable->set($serviceNode->getNodeId(),$array);
     }
 
+    function allServiceNodes():array
+    {
+        // TODO: Implement allServiceNodes() method.
+        $ret = [];
+        foreach ($this->swooleTable as $key => $item){
+            if(abs(time() - $item['lastHeartBeat']) > $item['nodeExpire']){
+                $this->swooleTable->del($key);
+                continue;
+            }
+            array_push($ret,new ServiceNode($item));
+        }
+        return $ret;
+    }
 }
