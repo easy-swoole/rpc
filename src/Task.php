@@ -12,12 +12,12 @@ namespace EasySwoole\Rpc;
 class Task
 {
     private $action;
-    private $arg;
+    private $arg = [];
     private $onSuccess;
     private $onFail;
     private $timeout = 0.5;
 
-    public function setAction(string $action): Task
+    public function callAction(string $action): Task
     {
         $this->action = $action;
         return $this;

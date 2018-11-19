@@ -14,15 +14,18 @@ use EasySwoole\Utility\Random;
 
 class Config
 {
-    private $listenPort = 9601;
     private $authKey;
+    private $listenPort = 9601;
     private $listenAddress = '0.0.0.0';
     private $nodeId;
+    private $serviceIp;
     private $maxPackage = 1024*1024;
     private $heartbeatIdleTime = 30;
     private $heartbeatCheckInterval = 30;
-    private $actionMiss;
+    private $onActionMiss;
     private $onException;
+    private $onBroadcast;
+    private $onBroadcastReceive;
 
     private $protocolSetting = [
         'open_length_check' => true,
@@ -31,11 +34,11 @@ class Config
         'package_body_offset'   => 4,
     ];
 
-    private $broadcastAddress = [];
+    private $broadcastAddress = ['255.255.255.255:9600'];
     private $broadcastListenAddress = '0.0.0.0';
     private $broadcastListenPort = 9600;//广播服务端的UDP监听端口
     private $broadcastTTL = 15;//多久执行一次广播
-    private $nodeExpire = 18;//表示我自身节点过多久失效
+    private $nodeExpire = 18;//表示节点过多久失效
 
     private $serviceName;
     private $serviceVersion = '1.0.0';
@@ -45,7 +48,7 @@ class Config
     function __construct()
     {
         $this->nodeId = Random::character(8);
-        $this->actionMiss = function (\swoole_server $server, int $fd, ?string $action, RequestPackage $package){
+        $this->onActionMiss = function (\swoole_server $server, int $fd, ?string $action, RequestPackage $package){
 
         };
         $this->onException = function (\Throwable $throwable, \swoole_server $server, int $fd, RequestPackage $package,Response $response){
@@ -53,6 +56,55 @@ class Config
             $response->setMessage("{$throwable->getMessage()} at file {$throwable->getFile()} line {$throwable->getLine()}");
         };
     }
+
+    /**
+     * @return mixed
+     */
+    public function getServiceIp()
+    {
+        return $this->serviceIp;
+    }
+
+    /**
+     * @param mixed $serviceIp
+     */
+    public function setServiceIp($serviceIp): void
+    {
+        $this->serviceIp = $serviceIp;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getOnBroadcast()
+    {
+        return $this->onBroadcast;
+    }
+
+    /**
+     * @param mixed $onBroadcast
+     */
+    public function setOnBroadcast(callable $onBroadcast): void
+    {
+        $this->onBroadcast = $onBroadcast;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getOnBroadcastReceive()
+    {
+        return $this->onBroadcastReceive;
+    }
+
+    /**
+     * @param mixed $onBroadcastReceive
+     */
+    public function setOnBroadcastReceive(callable $onBroadcastReceive): void
+    {
+        $this->onBroadcastReceive = $onBroadcastReceive;
+    }
+
 
     /**
      * @return string
@@ -102,21 +154,7 @@ class Config
         $this->serviceVersion = $serviceVersion;
     }
 
-    /**
-     * @return \Closure
-     */
-    public function getActionMiss(): \Closure
-    {
-        return $this->actionMiss;
-    }
 
-    /**
-     * @param \Closure $actionMiss
-     */
-    public function setActionMiss(\Closure $actionMiss): void
-    {
-        $this->actionMiss = $actionMiss;
-    }
 
     /**
      * @return array
@@ -215,7 +253,7 @@ class Config
 
     public function onActionMiss(callable $callback)
     {
-        $this->actionMiss = $callback;
+        $this->onActionMiss = $callback;
         return $this;
     }
 
@@ -224,7 +262,7 @@ class Config
      */
     public function getOnActionMiss()
     {
-        return $this->actionMiss;
+        return $this->onActionMiss;
     }
 
     /**
@@ -346,7 +384,4 @@ class Config
     {
         $this->heartbeatCheckInterval = $heartbeatCheckInterval;
     }
-
-
-
 }

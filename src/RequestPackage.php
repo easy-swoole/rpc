@@ -19,11 +19,12 @@ class RequestPackage extends SplBean
     protected $action;
     protected $signature;
     protected $packageTime;
-    protected $arg;
+    protected $arg = [];
 
     function generateSignature(string $key = null)
     {
-        $this->signature = md5($this->packageId.$key.$this->packageTime);
+        //对请求参数也签名
+        $this->signature = md5($this->packageId.$key.$this->packageTime.implode(':',$this->arg));
         return $this->signature;
     }
 
@@ -100,12 +101,27 @@ class RequestPackage extends SplBean
         }
     }
 
+    /**
+     * @return mixed
+     */
+    public function getArg()
+    {
+        return $this->arg;
+    }
+
+    /**
+     * @param mixed $arg
+     */
+    public function setArg(array $arg): void
+    {
+        $this->arg = $arg;
+    }
+
     protected function initialize(): void
     {
         if(empty($this->packageId)){
             $this->packageId = Random::character(8);
         }
     }
-
 
 }

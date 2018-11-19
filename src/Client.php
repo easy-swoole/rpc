@@ -8,6 +8,7 @@
 
 namespace EasySwoole\Rpc;
 
+use EasySwoole\Component\Openssl;
 use Swoole\Coroutine\Channel;
 use Swoole\Coroutine\Client as SwooleClient;
 
@@ -16,10 +17,14 @@ class Client
     private $config;
     private $taskList = [];
     private $nodeManager;
+    private $openssl;
     function __construct(Config $config,NodeManager $nodeManager)
     {
         $this->config = $config;
         $this->nodeManager = $nodeManager;
+        if(!empty($this->config->getAuthKey())){
+            $this->openssl = new Openssl($this->config->getAuthKey());
+        }
     }
 
     function selectService(string $serviceName,string $version = null)
@@ -47,7 +52,7 @@ class Client
                 go(function ()use($channel,$node,$taskArray,$taskUid,$maxWaitTime){
                     $taskClient = new SwooleClient(SWOOLE_SOCK_TCP);
                     $taskClient->set($this->config->getProtocolSetting());
-                    if($taskClient->connect($node->getIp(),$node->getPort(),$taskArray['task']->__getTimeout())){
+                    if($taskClient->connect($node->getServiceIp(),$node->getServicePort(),$taskArray['task']->__getTimeout())){
                         $package = new RequestPackage([
                             'action'=>$taskArray['task']->__getAction(),
                             'arg'=>$taskArray['task']->__getArg(),
@@ -55,11 +60,18 @@ class Client
                         ]);
                         $package->setPackageTime();
                         $package->generateSignature($this->config->getAuthKey());
-                        $taskClient->send(Pack::pack((string)$package));
+                        $msg = (string)$package;
+                        if($this->openssl){
+                            $msg = $this->openssl->encrypt($msg);
+                        }
+                        $taskClient->send(Pack::pack($msg));
                         $this->taskList[$taskUid]['taskClient'] = $taskClient;
                         $this->taskList[$taskUid]['serviceNode'] = $node;
                         $time = $maxWaitTime > $taskArray['task']->__getTimeout() ? $taskArray['task']->__getTimeout() : $maxWaitTime;
                         $data = Pack::unpack($taskClient->recv($time));
+                        if($this->openssl){
+                            $data = $this->openssl->decrypt($data);
+                        }
                         $raw = json_decode($data,true);
                         if(!is_array($raw)){
                             $raw = [];
@@ -78,7 +90,7 @@ class Client
                 $taskArray['response'] = new Response([
                     'status'=>Response::STATUS_NODES_EMPTY
                 ]);
-                $this->hookCallBack($taskArray['taskArray']['task'],$taskArray['taskArray']['response'],$node);
+                $this->hookCallBack($taskArray['task'],$taskArray['response'],$node);
             }
         }
         //执行调度
@@ -100,7 +112,7 @@ class Client
 
     }
 
-    private function hookCallBack(Task $task,Response $response ,? ServiceNode $serviceNode)
+    private function hookCallBack(Task $task,Response $response ,?ServiceNode $serviceNode)
     {
         $hash = spl_object_hash($task);
         if(isset($this->taskList[$hash]['taskClient'])){

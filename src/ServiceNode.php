@@ -9,41 +9,111 @@
 namespace EasySwoole\Rpc;
 
 
-class ServiceNode
+use EasySwoole\Spl\SplBean;
+
+class ServiceNode extends SplBean
 {
-    protected $ip;
-    protected $port;
+    protected $serviceIp;
+    protected $servicePort;
+    protected $serviceVersion;
+    protected $serviceName;
+    protected $nodeExpire;
+    protected $nodeId;
 
     /**
      * @return mixed
      */
-    public function getIp()
+    public function getServiceIp()
     {
-        return $this->ip;
+        return $this->serviceIp;
     }
 
     /**
-     * @param mixed $ip
+     * @param mixed $serviceIp
      */
-    public function setIp($ip): void
+    public function setServiceIp($serviceIp): void
     {
-        $this->ip = $ip;
+        $this->serviceIp = $serviceIp;
     }
 
     /**
      * @return mixed
      */
-    public function getPort()
+    public function getServicePort()
     {
-        return $this->port;
+        return $this->servicePort;
     }
 
     /**
-     * @param mixed $port
+     * @param mixed $servicePort
      */
-    public function setPort($port): void
+    public function setServicePort($servicePort): void
     {
-        $this->port = $port;
+        $this->servicePort = $servicePort;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getServiceVersion()
+    {
+        return $this->serviceVersion;
+    }
+
+    /**
+     * @param mixed $serviceVersion
+     */
+    public function setServiceVersion($serviceVersion): void
+    {
+        $this->serviceVersion = $serviceVersion;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getServiceName()
+    {
+        return $this->serviceName;
+    }
+
+    /**
+     * @param mixed $serviceName
+     */
+    public function setServiceName($serviceName): void
+    {
+        $this->serviceName = $serviceName;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getNodeExpire()
+    {
+        return $this->nodeExpire;
+    }
+
+    /**
+     * @param mixed $nodeExpire
+     */
+    public function setNodeExpire($nodeExpire): void
+    {
+        $this->nodeExpire = $nodeExpire;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getNodeId()
+    {
+        return $this->nodeId;
+    }
+
+    /**
+     * @param mixed $nodeId
+     */
+    public function setNodeId($nodeId): void
+    {
+        $this->nodeId = $nodeId;
     }
 
 }

@@ -10,23 +10,25 @@ namespace EasySwoole\Rpc;
 
 
 
+use EasySwoole\Component\Openssl;
 use Swoole\Process;
 
 class Rpc
 {
-
     private $config;
     private $client;
     private $nodeManager;
     private $actionList;
-    private $broadcast;
+    private $openssl;
     function __construct(Config $config)
     {
         $this->config = $config;
         $manager =  $config->getNodeManager();
         $this->nodeManager = new $manager;
         $this->actionList = new ActionList();
-        $this->broadcast = new Broadcast($config);
+        if(!empty($this->config->getAuthKey())){
+            $this->openssl = new Openssl($this->config->getAuthKey());
+        }
     }
 
 
@@ -38,7 +40,11 @@ class Rpc
 
     public function onRpcRequest(\swoole_server $server, int $fd, int $reactor_id, string $data):void
     {
-        $json = json_decode(Pack::unpack($data),true);
+        $data = Pack::unpack($data);
+        if($this->openssl){
+            $data = $this->openssl->decrypt($data);
+        }
+        $json = json_decode($data,true);
         if(is_array($json)){
             $requestPackage = new RequestPackage($json);
             if(abs(time() - $requestPackage->getPackageTime()) < 2){
@@ -52,16 +58,18 @@ class Rpc
                     try{
                         $ret = call_user_func($callback, $server,$requestPackage,$response,$fd);
                         if(!$ret instanceof Response){
-                            $response = new Response([
-                                'message'=>$ret,
-                                'status'=>Response::STATUS_OK
-                            ]);
+                            $response->setMessage($ret);
+                            $response->setStatus(Response::STATUS_OK);
                         }
                     }catch (\Throwable $throwable){
                         call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $requestPackage,$response);
                     }
                     if($server->exist($fd)){
-                        $server->send($fd,Pack::pack((string)$response));
+                        $msg = $response->__toString();
+                        if($this->openssl){
+                            $msg = $this->openssl->encrypt($msg);
+                        }
+                        $server->send($fd,Pack::pack($msg));
                     }
                 }
             }
@@ -73,12 +81,29 @@ class Rpc
 
     public function onRpcBroadcast(\swoole_server $server, string $data, array $client_info)
     {
+        if($this->openssl){
+            $data = $this->openssl->decrypt($data);
+        }
         $data = json_decode($data,true);
         if(is_array($data)){
             $requestPackage = new RequestPackage($data);
             if(abs(time() - $requestPackage->getPackageTime()) < 2){
                 if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
-
+                    //忽略自己的广播
+                    if($requestPackage->getNodeId() == $this->config->getNodeId()){
+//                        return;
+                    }
+                    if($requestPackage->getAction() == 'NODE_BROADCAST'){
+                        $info = $requestPackage->getArg();
+                        //若对方节点没有主动告知ip，则以网关ip为准
+                        if(empty($info['serviceIp'])){
+                            $info['serviceIp'] = $client_info['address'];
+                        }
+                        $serviceNode = new ServiceNode($info);
+                        $this->nodeManager()->refreshServiceNode($serviceNode);
+                    }else if(is_callable($this->config->getOnBroadcastReceive())){
+                        call_user_func($this->config->getOnBroadcastReceive(),$server,$requestPackage,$client_info);
+                    }
                 }
             }
         }
@@ -101,15 +126,41 @@ class Rpc
             swoole_event_add($process->pipe, function()use($process){
                 $process->read(64 * 1024);
             });
-            swoole_timer_tick($this->config->getBroadcastTTL(),function (){
-
+            swoole_timer_tick($this->config->getBroadcastTTL()*1000,function (){
+                $package = new RequestPackage();
+                $package->setAction('NODE_BROADCAST');
+                $package->setArg([
+                    'nodeId'=>$this->config->getNodeId(),
+                    'serviceName'=>$this->config->getServiceName(),
+                    'serviceVersion'=>$this->config->getServiceVersion(),
+                    'servicePort'=>$this->config->getListenPort(),
+                    'serviceBroadcastPort'=>$this->config->getBroadcastListenPort(),
+                    'nodeExpire'=>$this->config->getNodeExpire(),
+                    'serviceIp'=>$this->config->getServiceIp()
+                ]);
+                $this->broadcast($package);
             });
         });
     }
 
     function broadcast(RequestPackage $requestPackage)
     {
-
+        $requestPackage->setPackageTime(time());
+        $requestPackage->setNodeId($this->config->getNodeId());
+        $requestPackage->generateSignature($this->config->getAuthKey());
+        $msg = $requestPackage->__toString();
+        if($this->openssl){
+            $msg = $this->openssl->encrypt($msg);
+        }
+        foreach ($this->config->getBroadcastAddress() as $broadcastAddress){
+            $broadcastAddress = explode(':',$broadcastAddress);
+            if(($sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP)))
+            {
+                socket_set_option($sock,SOL_SOCKET,SO_BROADCAST,true);
+                socket_sendto($sock,$msg,strlen($msg),0,$broadcastAddress[0],$broadcastAddress[1]);
+                socket_close($sock);
+            }
+        }
     }
 
     /*
