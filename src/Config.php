@@ -26,6 +26,9 @@ class Config
     private $onException;
     private $onBroadcast;
     private $onBroadcastReceive;
+    private $onShutdown;
+    private $onRequest;
+    private $afterRequest;
 
     private $protocolSetting = [
         'open_length_check' => true,
@@ -104,6 +107,54 @@ class Config
     public function setOnBroadcastReceive(callable $onBroadcastReceive): void
     {
         $this->onBroadcastReceive = $onBroadcastReceive;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getOnShutdown()
+    {
+        return $this->onShutdown;
+    }
+
+    /**
+     * @param mixed $onShutdown
+     */
+    public function setOnShutdown(callable $onShutdown): void
+    {
+        $this->onShutdown = $onShutdown;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getOnRequest()
+    {
+        return $this->onRequest;
+    }
+
+    /**
+     * @param mixed $onRequest
+     */
+    public function setOnRequest(callable $onRequest): void
+    {
+        $this->onRequest = $onRequest;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getAfterRequest()
+    {
+        return $this->afterRequest;
+    }
+
+    /**
+     * @param mixed $afterRequest
+     */
+    public function setAfterRequest(callable $afterRequest): void
+    {
+        $this->afterRequest = $afterRequest;
     }
 
 

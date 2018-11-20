@@ -50,6 +50,15 @@ class Rpc
             if(abs(time() - $requestPackage->getPackageTime()) < 2){
                 if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
                     $response = new Response();
+                    //如果返回false  那么拦截请求
+                    if(is_callable($this->config->getOnRequest())){
+                       if(call_user_func($this->config->getOnRequest(),$requestPackage,$response,$this->config,$server,$fd) === false){
+                           if($server->exist($fd)){
+                               $server->close($fd);
+                           }
+                           return;
+                       };
+                    }
                     $action = $requestPackage->getAction();
                     $callback = $this->actionList->__getAction($action);
                     if(!is_callable($callback)){
@@ -63,6 +72,9 @@ class Rpc
                         }
                     }catch (\Throwable $throwable){
                         call_user_func($this->config->getOnException(),$throwable, $requestPackage,$response,$server,$fd);
+                    }
+                    if(is_callable($this->config->getAfterRequest())){
+                        call_user_func($this->config->getAfterRequest(),$requestPackage,$response,$this->config,$server,$fd);
                     }
                     if($server->exist($fd)){
                         $msg = $response->__toString();
@@ -101,6 +113,14 @@ class Rpc
                         }
                         $serviceNode = new ServiceNode($info);
                         $this->nodeManager()->refreshServiceNode($serviceNode);
+                    }else if($requestPackage->getAction() == 'NODE_OFFLINE'){
+                        $info = $requestPackage->getArg();
+                        //若对方节点没有主动告知ip，则以网关ip为准
+                        if(empty($info['serviceIp'])){
+                            $info['serviceIp'] = $client_info['address'];
+                        }
+                        $serviceNode = new ServiceNode($info);
+                        $this->nodeManager()->offlineServiceNode($serviceNode);
                     }else if(is_callable($this->config->getOnBroadcastReceive())){
                         call_user_func($this->config->getOnBroadcastReceive(),$server,$requestPackage,$client_info);
                     }
@@ -120,6 +140,21 @@ class Rpc
             }
             Process::signal(SIGTERM,function ()use($process){
                 //在节点关闭的时候，对外广播下线通知
+                $package = new RequestPackage();
+                $package->setAction('NODE_OFFLINE');
+                $package->setArg([
+                    'nodeId'=>$this->config->getNodeId(),
+                    'serviceName'=>$this->config->getServiceName(),
+                    'serviceVersion'=>$this->config->getServiceVersion(),
+                    'servicePort'=>$this->config->getListenPort(),
+                    'serviceBroadcastPort'=>$this->config->getBroadcastListenPort(),
+                    'nodeExpire'=>$this->config->getNodeExpire(),
+                    'serviceIp'=>$this->config->getServiceIp(),
+                ]);
+                $this->broadcast($package);
+                if(is_callable($this->config->getOnShutdown())){
+                    call_user_func($this->config->getOnShutdown(),$this->config);
+                }
                 swoole_event_del($process->pipe);
                 $process->exit(0);
             });

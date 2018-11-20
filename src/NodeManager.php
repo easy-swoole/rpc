@@ -82,4 +82,11 @@ class NodeManager implements NodeManagerInterface
         }
         return $ret;
     }
+
+    function offlineServiceNode(ServiceNode $serviceNode)
+    {
+        // TODO: Implement offlineServiceNode() method.
+        $this->swooleTable->del($serviceNode->getNodeId());
+    }
+    
 }
