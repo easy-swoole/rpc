@@ -56,13 +56,13 @@ class Rpc
                         $callback = $this->config->getOnActionMiss();
                     }
                     try{
-                        $ret = call_user_func($callback, $server,$requestPackage,$response,$fd);
+                        $ret = call_user_func($callback, $requestPackage,$response,$server,$fd);
                         if(!$ret instanceof Response){
                             $response->setMessage($ret);
                             $response->setStatus(Response::STATUS_OK);
                         }
                     }catch (\Throwable $throwable){
-                        call_user_func($this->config->getOnException(), $throwable, $server ,$fd, $requestPackage,$response);
+                        call_user_func($this->config->getOnException(),$throwable, $requestPackage,$response,$server,$fd);
                     }
                     if($server->exist($fd)){
                         $msg = $response->__toString();

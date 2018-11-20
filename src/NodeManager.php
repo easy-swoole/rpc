@@ -35,7 +35,7 @@ class NodeManager implements NodeManagerInterface
         foreach ($this->swooleTable as $key => $item){
             if($item['serviceName'] == $serviceName){
                 //检测过期
-                if(abs(time() - $item['lastHeartBeat']) > $item['nodeExpire']){
+                if(($item['nodeExpire'] != 0) && (abs(time() - $item['lastHeartBeat']) > $item['nodeExpire'])){
                     $this->swooleTable->del($key);
                     continue;
                 }

@@ -18,6 +18,7 @@ class Response extends SplBean
     const STATUS_CONNECT_TIMEOUT = 'CONNECT_TIMEOUT';
     const STATUS_SERVER_TIMEOUT = 'SERVER_TIMEOUT';
     const STATUS_SERVER_ERROR = 'SERVER_ERROR';
+    const STATUS_SERVER_ACTION_MISS = 'ACTION_MISS';
     protected $message;
     protected $status;
 

@@ -48,10 +48,11 @@ class Config
     function __construct()
     {
         $this->nodeId = Random::character(8);
-        $this->onActionMiss = function (\swoole_server $server, int $fd, ?string $action, RequestPackage $package){
-
+        $this->onActionMiss = function (\swoole_server $server,RequestPackage $requestPackage,Response $response,int $fd){
+                $response->setStatus($response::STATUS_SERVER_ACTION_MISS);
+                $response->setMessage("action : {$requestPackage->getAction()} miss");
         };
-        $this->onException = function (\Throwable $throwable, \swoole_server $server, int $fd, RequestPackage $package,Response $response){
+        $this->onException = function (\Throwable $throwable,RequestPackage $package,Response $response, \swoole_server $server, int $fd){
             $response->setStatus($response::STATUS_SERVER_ERROR);
             $response->setMessage("{$throwable->getMessage()} at file {$throwable->getFile()} line {$throwable->getLine()}");
         };
