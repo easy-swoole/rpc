@@ -24,7 +24,7 @@ class RequestPackage extends SplBean
     function generateSignature(string $key = null)
     {
         //对请求参数也签名
-        $this->signature = md5($this->packageId.$key.$this->packageTime.implode(':',$this->arg));
+        $this->signature = md5($this->packageId.$key.$this->packageTime.implode('',$this->arg));
         return $this->signature;
     }
 
