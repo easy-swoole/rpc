@@ -463,3 +463,108 @@ go(function ()use($rpc){
     $client->call(1.5);
 });
 ```
+
+
+### 原生PHP
+```
+//以下例子为未启用数据openssl加密
+
+$authKey  = null; //RPC鉴权秘钥，默认null
+
+$data = [
+    'nodeId'=>'xxx',//节点id，如果没有做节点过滤，那么随意构造
+    'packageId'=>'xxxxx',//包Id,随意构造
+    'action'=>'a1',//行为名称
+    'packageTime'=>time(),//包请求时间
+    'arg'=>[
+        'args1'=>'args1',
+        'args2'=>'args2'
+    ]
+];
+
+$data['signature'] = md5($data['packageId'].$authKey.$data['packageTime'].implode('',$data['arg']));
+
+$raw = json_encode($data);
+//如果启用了openssl ，请在此处对$raw 加密 ，加密方法为 DES-EDE3
+
+
+$fp = stream_socket_client('tcp://127.0.0.1:9601');
+fwrite($fp,pack('N', strlen($raw)).$raw);
+
+$data = fread($fp,65533);
+//做长度头部校验
+$len = unpack('N',$data);
+$data = substr($data,'4');
+if(strlen($data) != $len[1]){
+    echo 'data error';
+}else{
+    $json = json_decode($data,true);
+    //这就是服务端返回的结果，
+    var_dump($json);
+}
+fclose($fp);
+```
+
+## NodeJs 
+```
+var net = require('net');
+var pack = require('php-pack').pack;
+var unpack = require('php-pack').unpack;
+var md5 = require("md5");
+
+var authKey = '';
+
+var json = {
+    'nodeId':'xxx',//节点id，如果没有做节点过滤，那么随意构造
+    'packageId':'xxxxx',//包Id,随意构造
+    'action':'a1',//行为名称
+    'packageTime':'',//包请求时间
+    'arg':{
+        'argKey1':'arg1',
+        'argKey2':'arg2'
+    },
+    'signature':'xxx'//包签名
+};
+
+
+json.packageTime = parseInt(Date.now()/1000);
+
+var argString = '';
+
+for(var key in json.arg){
+    argString += json.arg[key];
+}
+
+console.log(json.packageId + authKey + json.packageTime + argString);
+
+
+json.signature = md5(json.packageId + authKey + json.packageTime + argString);
+
+console.log(json.signature);
+
+var send = JSON.stringify(json);
+//
+send = Buffer.concat([pack("N",send.length), Buffer.from(send)]);
+
+var client = new net.Socket();
+client.connect(9601, '127.0.0.1', function() {
+    console.log('Connected');
+    client.write(send);
+});
+
+client.on('data', function(data) {
+    console.log('Received: ' + data);
+    var ret = JSON.parse(data.toString().substr(4));
+    console.log('status: ' +  ret.status);
+    client.destroy()
+});
+
+client.on('close', function() {
+    console.log('Connection closed');
+    client.destroy()
+});
+client.on('error',function (error) {
+    console.log(error);
+    client.destroy()
+});
+```
