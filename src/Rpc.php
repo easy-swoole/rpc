@@ -26,7 +26,7 @@ class Rpc
         $manager =  $config->getNodeManager();
         $this->nodeManager = new $manager;
         $this->actionList = new ActionList();
-        if(!empty($this->config->getAuthKey())){
+        if(!empty($this->config->getAuthKey()) && $config->isEnableOpenssl()){
             $this->openssl = new Openssl($this->config->getAuthKey());
         }
     }

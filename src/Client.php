@@ -22,7 +22,7 @@ class Client
     {
         $this->config = $config;
         $this->nodeManager = $nodeManager;
-        if(!empty($this->config->getAuthKey())){
+        if(!empty($this->config->getAuthKey()) && $config->isEnableOpenssl()){
             $this->openssl = new Openssl($this->config->getAuthKey());
         }
     }

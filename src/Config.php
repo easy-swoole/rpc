@@ -15,6 +15,7 @@ use EasySwoole\Utility\Random;
 class Config
 {
     private $authKey;
+    private $enableOpenssl = false;
     private $listenPort = 9601;
     private $listenAddress = '0.0.0.0';
     private $nodeId;
@@ -61,6 +62,21 @@ class Config
         };
     }
 
+    /**
+     * @return bool
+     */
+    public function isEnableOpenssl(): bool
+    {
+        return $this->enableOpenssl;
+    }
+
+    /**
+     * @param bool $enableOpenssl
+     */
+    public function setEnableOpenssl(bool $enableOpenssl): void
+    {
+        $this->enableOpenssl = $enableOpenssl;
+    }
     /**
      * @return mixed
      */
