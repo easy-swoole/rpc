@@ -223,7 +223,7 @@ class Rpc
         return $this->client;
     }
 
-    function nodeManager():NodeManager
+    function nodeManager():NodeManagerInterface
     {
         return $this->nodeManager;
     }
