@@ -3,7 +3,7 @@
  * Created by PhpStorm.
  * User: yf
  * Date: 2018/11/7
- * Time: 8:57 PM
+ * Time: 8:41 PM
  */
 
 namespace EasySwoole\Rpc;
@@ -12,25 +12,29 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Spl\SplBean;
 use EasySwoole\Utility\Random;
 
-class RequestPackage extends SplBean
+class ProtocolPackage extends SplBean
 {
     protected $nodeId;
     protected $packageId;
     protected $action;
-    protected $signature;
-    protected $packageTime;
-    protected $arg = [];
+    protected $arg;
+    protected $fd;
+    protected $rawData;
 
-    function generateSignature(string $key = null)
+    /**
+     * @return mixed
+     */
+    public function getNodeId()
     {
-        //对请求参数也签名
-        $this->signature = md5($this->packageId.$key.$this->packageTime.implode('',$this->arg));
-        return $this->signature;
+        return $this->nodeId;
     }
 
-    function getSignature():string
+    /**
+     * @param mixed $nodeId
+     */
+    public function setNodeId($nodeId): void
     {
-        return $this->signature;
+        $this->nodeId = $nodeId;
     }
 
     /**
@@ -68,42 +72,6 @@ class RequestPackage extends SplBean
     /**
      * @return mixed
      */
-    public function getNodeId()
-    {
-        return $this->nodeId;
-    }
-
-    /**
-     * @param mixed $nodeId
-     */
-    public function setNodeId($nodeId): void
-    {
-        $this->nodeId = $nodeId;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getPackageTime()
-    {
-        return $this->packageTime;
-    }
-
-    /**
-     * @param mixed $packageTime
-     */
-    public function setPackageTime(int $packageTime = null): void
-    {
-        if($packageTime){
-            $this->packageTime = $packageTime;
-        }else{
-            $this->packageTime = time();
-        }
-    }
-
-    /**
-     * @return mixed
-     */
     public function getArg()
     {
         return $this->arg;
@@ -112,16 +80,57 @@ class RequestPackage extends SplBean
     /**
      * @param mixed $arg
      */
-    public function setArg(array $arg): void
+    public function setArg($arg): void
     {
         $this->arg = $arg;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getFd()
+    {
+        return $this->fd;
+    }
+
+    /**
+     * @param mixed $fd
+     */
+    public function setFd($fd): void
+    {
+        $this->fd = $fd;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getRawData()
+    {
+        return $this->rawData;
+    }
+
+    /**
+     * @param mixed $rawData
+     */
+    public function setRawData($rawData): void
+    {
+        $this->rawData = $rawData;
+    }
+
+    public static function pack(string $data):string
+    {
+        return pack('N', strlen($data)).$data;
+    }
+
+    public static function unpack(string $data):string
+    {
+        return substr($data,'4');
     }
 
     protected function initialize(): void
     {
         if(empty($this->packageId)){
-            $this->packageId = Random::character(8);
+            $this->packageId = Random::character(32);
         }
     }
-
 }

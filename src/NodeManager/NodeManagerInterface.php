@@ -2,12 +2,14 @@
 /**
  * Created by PhpStorm.
  * User: yf
- * Date: 2018/11/14
- * Time: 12:56 PM
+ * Date: 2019-01-25
+ * Time: 20:52
  */
 
-namespace EasySwoole\Rpc;
+namespace EasySwoole\Rpc\NodeManager;
 
+
+use EasySwoole\Rpc\ServiceNode;
 
 interface NodeManagerInterface
 {

@@ -47,7 +47,10 @@ class Task
         return $this;
     }
 
-    public function __getAction():?string
+    /**
+     * @return mixed
+     */
+    public function getAction()
     {
         return $this->action;
     }
@@ -55,15 +58,15 @@ class Task
     /**
      * @return array
      */
-    public function __getArg():?array
+    public function getArg(): array
     {
         return $this->arg;
     }
 
     /**
-     * @return callable
+     * @return mixed
      */
-    public function __getOnSuccess():?callable
+    public function getOnSuccess()
     {
         return $this->onSuccess;
     }
@@ -71,7 +74,7 @@ class Task
     /**
      * @return mixed
      */
-    public function __getOnFail():?callable
+    public function getOnFail()
     {
         return $this->onFail;
     }
@@ -79,10 +82,8 @@ class Task
     /**
      * @return float
      */
-    public function __getTimeout(): float
+    public function getTimeout(): float
     {
         return $this->timeout;
     }
-
-
 }

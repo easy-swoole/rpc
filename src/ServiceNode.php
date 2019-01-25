@@ -15,8 +15,7 @@ class ServiceNode extends SplBean
 {
     protected $serviceIp;
     protected $servicePort;
-    protected $serviceBroadcastPort;
-    protected $serviceVersion;
+    protected $serviceVersion = '1.0.0';
     protected $serviceName;
     protected $nodeExpire;
     protected $nodeId;
@@ -115,22 +114,6 @@ class ServiceNode extends SplBean
     public function setNodeId($nodeId): void
     {
         $this->nodeId = $nodeId;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getServiceBroadcastPort()
-    {
-        return $this->serviceBroadcastPort;
-    }
-
-    /**
-     * @param mixed $serviceBroadcastPort
-     */
-    public function setServiceBroadcastPort($serviceBroadcastPort): void
-    {
-        $this->serviceBroadcastPort = $serviceBroadcastPort;
     }
 
 }

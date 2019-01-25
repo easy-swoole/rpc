@@ -2,16 +2,17 @@
 /**
  * Created by PhpStorm.
  * User: yf
- * Date: 2018/11/12
- * Time: 10:34 PM
+ * Date: 2019-01-25
+ * Time: 20:54
  */
 
-namespace EasySwoole\Rpc;
+namespace EasySwoole\Rpc\NodeManager;
 
 
+use EasySwoole\Rpc\ServiceNode;
 use Swoole\Table;
 
-class NodeManager implements NodeManagerInterface
+class SwooleTable implements NodeManagerInterface
 {
     private $swooleTable;
 
@@ -88,5 +89,4 @@ class NodeManager implements NodeManagerInterface
         // TODO: Implement offlineServiceNode() method.
         $this->swooleTable->del($serviceNode->getNodeId());
     }
-    
 }

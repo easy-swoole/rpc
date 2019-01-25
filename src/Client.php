@@ -64,11 +64,11 @@ class Client
                         if($this->openssl){
                             $msg = $this->openssl->encrypt($msg);
                         }
-                        $taskClient->send(Pack::pack($msg));
+                        $taskClient->send(ProtocolPackage::pack($msg));
                         $this->taskList[$taskUid]['taskClient'] = $taskClient;
                         $this->taskList[$taskUid]['serviceNode'] = $node;
                         $time = $maxWaitTime > $taskArray['task']->__getTimeout() ? $taskArray['task']->__getTimeout() : $maxWaitTime;
-                        $data = Pack::unpack($taskClient->recv($time));
+                        $data = ProtocolPackage::unpack($taskClient->recv($time));
                         if($this->openssl){
                             $data = $this->openssl->decrypt($data);
                         }
