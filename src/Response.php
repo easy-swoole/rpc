@@ -20,7 +20,7 @@ class Response extends SplBean
     const STATUS_SERVER_ERROR = 'SERVER_ERROR';
     const STATUS_SERVER_ACTION_MISS = 'ACTION_MISS';
     protected $message;
-    protected $status;
+    protected $status = self::STATUS_OK;
     protected $nodeId;
 
     /**
