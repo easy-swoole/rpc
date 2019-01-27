@@ -123,7 +123,7 @@ class Rpc
                 if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
                     $response = serialize($response);
                 }else{
-                    $response = json_encode($response->toArray(),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+                    $response = $response->__toString();
                 }
                 $response = ProtocolPackage::pack($response);
                 $server->send($fd,$response);

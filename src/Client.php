@@ -42,7 +42,9 @@ class Client
         if(empty($this->taskList)){
             return [];
         }
-        $taskQueue = [];
+        $successTaskId = [];
+        $channel = new Channel(512);
+        $channelNum = 0;
         /** @var  $serviceTaskList Service */
         foreach ($this->taskList as $serviceTaskList){
             $taskList = $serviceTaskList->getTaskList();
@@ -59,18 +61,84 @@ class Client
                 /** @var  $task TaskObject */
                 foreach ($taskList as $task){
                     $task->setExecNode($serviceNode);
-                    $taskQueue[] = $task;
+                    $channelNum++;
+                    //create swoole client and connect to serviceNode
+                    go(function ()use($task,$channel){
+                        $client = new SwooleClient(SWOOLE_TCP);
+                        $client->set(Config::$PACKAGE_SETTING);
+                        if(!$client->connect($task->getExecNode()->getServiceIp(),$task->getExecNode()->getServicePort(),$task->getTimeout())){
+                            $response = new Response();
+                            $response->setNodeId($task->getExecNode()->getNodeId());
+                            $response->setStatus($response::STATUS_CONNECT_TIMEOUT);
+                            $channel->push([
+                                'response'=>$response,
+                                'taskObject'=>$task
+                            ]);
+                        }else{
+                            if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
+                                $data = serialize($task);
+                            }else{
+                                $data = $task->__toString();
+                            }
+                            $data = ProtocolPackage::pack($data);
+                            $client->send($data);
+                            $response = $client->recv($task->getTimeout());
+                            if(empty($response)){
+                                $response = new Response();
+                                $response->setStatus($response::STATUS_SERVER_TIMEOUT);
+                                $response->setNodeId($task->getExecNode()->getNodeId());
+                            }else{
+                                $response = ProtocolPackage::unpack($response);
+                                if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
+                                    $response = unserialize($response);
+                                }else{
+                                    $response = json_decode($response,true);
+                                }
+                            }
+                            $channel->push([
+                                'response'=>$response,
+                                'taskObject'=>$task
+                            ]);
+                        }
+                    });
                 }
             }
-            //create swoole client and connect to serviceNode
         }
-        $successTaskId = [];
+        $start = round(microtime(true),4);
+        while ($maxTime > 0){
+            $ret = $channel->pop($maxTime);
+            if(is_array($ret)){
+                /** @var TaskObject $task */
+                $task = $ret['taskObject'];
+                /** @var Response $response */
+                $response = $ret['response'];
+                $successTaskId[] = $task->getTaskId();
+                //run it at another go
+                go(function ()use($task,$response){
+                    $this->hookCallBack($response,$task);
+                });
+            }
+            if(count($successTaskId) == $channelNum){
+                $maxTime = -1;
+            }else{
+                //leftMaxTime = maxTime - current loop spend time
+                $maxTime = $maxTime - (round(microtime(true),4) - $start);
+                $start = round(microtime(true),4);
+            }
+        }
         return $successTaskId;
     }
 
     protected function hookCallBack(Response $response,TaskObject $taskObject)
     {
-
+        if($response->getStatus() == $response::STATUS_OK){
+            $call = $taskObject->getOnSuccess();
+        }else{
+            $call = $taskObject->getOnFail();
+        }
+        if(is_callable($call)){
+            call_user_func($call,$response,$taskObject);
+        }
     }
 
 }

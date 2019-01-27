@@ -17,7 +17,7 @@ class Config extends ServiceNode
 {
     const SERIALIZE_TYPE_JSON = 1;
     const SERIALIZE_TYPE_RAW = 2;
-    const PACKAGE_SETTING = [
+    public static $PACKAGE_SETTING = [
         'open_length_check' => true,
         'package_length_type'   => 'N',
         'package_length_offset' => 0,
