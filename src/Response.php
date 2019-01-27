@@ -21,6 +21,7 @@ class Response extends SplBean
     const STATUS_SERVER_ACTION_MISS = 'ACTION_MISS';
     protected $message;
     protected $status;
+    protected $nodeId;
 
     /**
      * @return mixed
@@ -54,4 +55,19 @@ class Response extends SplBean
         $this->status = $status;
     }
 
+    /**
+     * @return mixed
+     */
+    public function getNodeId()
+    {
+        return $this->nodeId;
+    }
+
+    /**
+     * @param mixed $nodeId
+     */
+    public function setNodeId($nodeId): void
+    {
+        $this->nodeId = $nodeId;
+    }
 }

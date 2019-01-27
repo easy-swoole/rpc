@@ -67,6 +67,7 @@ class Rpc
         $data = ProtocolPackage::unpack($data);
         $request = null;
         $response = new Response();
+        $response->setNodeId($this->config->getNodeId());
         if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
             $request = unserialize($data);
         }else{

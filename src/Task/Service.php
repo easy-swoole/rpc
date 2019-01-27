@@ -62,7 +62,7 @@ class Service
         return $task;
     }
 
-    public function getTask():array
+    public function getTaskList():array
     {
         return $this->task;
     }

@@ -9,6 +9,7 @@
 namespace EasySwoole\Rpc\Task;
 
 
+use EasySwoole\Rpc\ServiceNode;
 use EasySwoole\Spl\SplBean;
 use EasySwoole\Utility\Random;
 
@@ -20,6 +21,8 @@ class TaskObject extends SplBean
     protected $onFail;
     protected $timeout = 3.0;
     protected $taskId;
+    /** @var $execNode ServiceNode */
+    protected $execNode = null;
 
     /**
      * @return mixed
@@ -128,6 +131,23 @@ class TaskObject extends SplBean
         $this->taskId = $taskId;
         return $this;
     }
+
+    /**
+     * @return ServiceNode
+     */
+    public function getExecNode(): ?ServiceNode
+    {
+        return $this->execNode;
+    }
+
+    /**
+     * @param ServiceNode $execNode
+     */
+    public function setExecNode(?ServiceNode $execNode = null): void
+    {
+        $this->execNode = $execNode;
+    }
+
 
     protected function initialize(): void
     {

@@ -10,6 +10,7 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Rpc\Task\Service;
+use EasySwoole\Rpc\Task\TaskObject;
 use Swoole\Coroutine\Channel;
 use Swoole\Coroutine\Client as SwooleClient;
 
@@ -41,8 +42,35 @@ class Client
         if(empty($this->taskList)){
             return [];
         }
+        $taskQueue = [];
+        /** @var  $serviceTaskList Service */
+        foreach ($this->taskList as $serviceTaskList){
+            $taskList = $serviceTaskList->getTaskList();
+            //find nodes to Call
+            $serviceNode = $this->nodeManager->getServiceNode($serviceTaskList->getServiceName(),$serviceTaskList->getVersion());
+            if(!$serviceNode){
+                $response = new Response();
+                $response->setStatus($response::STATUS_NODES_EMPTY);
+                /** @var  $task TaskObject */
+                foreach ($taskList as $task){
+                    $this->hookCallBack(clone $response,$task);
+                }
+            }else{
+                /** @var  $task TaskObject */
+                foreach ($taskList as $task){
+                    $task->setExecNode($serviceNode);
+                    $taskQueue[] = $task;
+                }
+            }
+            //create swoole client and connect to serviceNode
+        }
         $successTaskId = [];
         return $successTaskId;
+    }
+
+    protected function hookCallBack(Response $response,TaskObject $taskObject)
+    {
+
     }
 
 }
