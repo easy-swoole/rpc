@@ -33,7 +33,7 @@ class Config extends ServiceNode
     /**
      * @return NodeManagerInterface
      */
-    public function getNodeManager(): ?NodeManagerInterface
+    public function getNodeManager(): NodeManagerInterface
     {
         return $this->nodeManager;
     }
