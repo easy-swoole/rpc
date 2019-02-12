@@ -57,18 +57,19 @@ class RedisManager implements NodeManagerInterface
         // TODO: Implement getServiceNode() method.
     }
 
-    function refreshServiceNode(ServiceNode $serviceNode)
-    {
-        // TODO: Implement refreshServiceNode() method.
-    }
-
     function allServiceNodes(): array
     {
         // TODO: Implement allServiceNodes() method.
     }
 
-    function offlineServiceNode(ServiceNode $serviceNode)
+    function deleteServiceNode(ServiceNode $serviceNode)
     {
-        // TODO: Implement offlineServiceNode() method.
+        // TODO: Implement deleteServiceNode() method.
     }
+
+    function registerServiceNode(ServiceNode $serviceNode)
+    {
+        // TODO: Implement registerServiceNode() method.
+    }
+
 }

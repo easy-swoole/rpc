@@ -16,6 +16,7 @@ class Config extends SplBean
     protected $host;
     protected $auth;
     protected $port;
+    protected $keyPrefix = 'Rpc';
 
     /**
      * @return mixed
@@ -63,5 +64,21 @@ class Config extends SplBean
     public function setPort($port): void
     {
         $this->port = $port;
+    }
+
+    /**
+     * @return string
+     */
+    public function getKeyPrefix(): string
+    {
+        return $this->keyPrefix;
+    }
+
+    /**
+     * @param string $keyPrefix
+     */
+    public function setKeyPrefix(string $keyPrefix): void
+    {
+        $this->keyPrefix = $keyPrefix;
     }
 }
