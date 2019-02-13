@@ -89,7 +89,7 @@ class Config extends ServiceNode
     /**
      * @return string
      */
-    public function getAutoFindListenAddress(): string
+    public function getAutoFindListenAddress(): ?string
     {
         return $this->autoFindListenAddress;
     }
@@ -97,7 +97,7 @@ class Config extends ServiceNode
     /**
      * @param string $autoFindListenAddress
      */
-    public function setAutoFindListenAddress(string $autoFindListenAddress): void
+    public function setAutoFindListenAddress(?string $autoFindListenAddress): void
     {
         $this->autoFindListenAddress = $autoFindListenAddress;
     }
@@ -105,7 +105,7 @@ class Config extends ServiceNode
     /**
      * @return int
      */
-    public function getAutoFindListenPort(): ?int
+    public function getAutoFindListenPort(): int
     {
         return $this->autoFindListenPort;
     }
@@ -113,7 +113,7 @@ class Config extends ServiceNode
     /**
      * @param int $autoFindListenPort
      */
-    public function setAutoFindListenPort(?int $autoFindListenPort = null): void
+    public function setAutoFindListenPort(int $autoFindListenPort): void
     {
         $this->autoFindListenPort = $autoFindListenPort;
     }
