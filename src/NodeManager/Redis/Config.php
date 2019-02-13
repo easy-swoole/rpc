@@ -13,10 +13,10 @@ use EasySwoole\Spl\SplBean;
 
 class Config extends SplBean
 {
-    protected $host;
+    protected $host = '127.0.0.1';
     protected $auth;
-    protected $port;
-    protected $keyPrefix = 'Rpc';
+    protected $port = 6379;
+    protected $keyName = '__Rpc';
 
     /**
      * @return mixed
@@ -69,16 +69,16 @@ class Config extends SplBean
     /**
      * @return string
      */
-    public function getKeyPrefix(): string
+    public function getKeyName(): string
     {
-        return $this->keyPrefix;
+        return $this->keyName;
     }
 
     /**
-     * @param string $keyPrefix
+     * @param string $keyName
      */
-    public function setKeyPrefix(string $keyPrefix): void
+    public function setKeyName(string $keyName): void
     {
-        $this->keyPrefix = $keyPrefix;
+        $this->keyName = $keyName;
     }
 }

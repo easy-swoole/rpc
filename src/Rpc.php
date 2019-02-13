@@ -10,14 +10,14 @@ namespace EasySwoole\Rpc;
 
 
 
+use EasySwoole\Component\Process\AbstractProcess;
+use EasySwoole\Rpc\AutoFind\Process;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
-use Swoole\Process;
 
 class Rpc
 {
     private $config;
     private $client;
-    private $nodeManager;
     private $actionList = [];
     private $onRequest;
     private $afterRequest;
@@ -27,8 +27,6 @@ class Rpc
     function __construct(Config $config)
     {
         $this->config = $config;
-        $manager =  $config->getNodeManager();
-        $this->nodeManager = new $manager;
     }
 
     function onRequest(callable $call):Rpc
@@ -132,7 +130,11 @@ class Rpc
         }
     }
 
-
+    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):AbstractProcess
+    {
+        $p = new AutoFIndProcess($processName,$this->config);
+        return $p;
+    }
 
     /*
      * 每个进程中的client互相隔离
@@ -140,14 +142,14 @@ class Rpc
     function client():Client
     {
         if(!$this->client){
-            $this->client = new Client($this->config,$this->nodeManager);
+            $this->client = new Client($this->config,$this->config->getNodeManager());
         }
         return $this->client;
     }
 
     function nodeManager():NodeManagerInterface
     {
-        return $this->nodeManager;
+        return $this->config->getNodeManager();
     }
 
     private function hookCallback($call,...$arg)

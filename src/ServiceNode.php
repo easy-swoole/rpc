@@ -17,7 +17,7 @@ class ServiceNode extends SplBean
     protected $servicePort;
     protected $serviceVersion = '1.0.0';
     protected $serviceName;
-    protected $nodeExpire;
+    protected $nodeExpire = 0;
     protected $nodeId;
 
     /**

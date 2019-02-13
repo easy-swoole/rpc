@@ -30,6 +30,14 @@ class Config extends ServiceNode
 
     protected $serializeType = self::SERIALIZE_TYPE_RAW;
 
+    protected $autoFindBroadcastAddress = [
+        '127.0.0.1'
+    ];
+
+    protected $autoFindListenAddress = '127.0.0.1';
+
+    protected $autoFindListenPort = 9600;
+
     /**
      * @return NodeManagerInterface
      */
@@ -60,6 +68,54 @@ class Config extends ServiceNode
     public function setSerializeType(int $serializeType): void
     {
         $this->serializeType = $serializeType;
+    }
+
+    /**
+     * @return array
+     */
+    public function getAutoFindBroadcastAddress(): array
+    {
+        return $this->autoFindBroadcastAddress;
+    }
+
+    /**
+     * @param array $autoFindBroadcastAddress
+     */
+    public function setAutoFindBroadcastAddress(array $autoFindBroadcastAddress): void
+    {
+        $this->autoFindBroadcastAddress = $autoFindBroadcastAddress;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAutoFindListenAddress(): string
+    {
+        return $this->autoFindListenAddress;
+    }
+
+    /**
+     * @param string $autoFindListenAddress
+     */
+    public function setAutoFindListenAddress(string $autoFindListenAddress): void
+    {
+        $this->autoFindListenAddress = $autoFindListenAddress;
+    }
+
+    /**
+     * @return int
+     */
+    public function getAutoFindListenPort(): ?int
+    {
+        return $this->autoFindListenPort;
+    }
+
+    /**
+     * @param int $autoFindListenPort
+     */
+    public function setAutoFindListenPort(?int $autoFindListenPort = null): void
+    {
+        $this->autoFindListenPort = $autoFindListenPort;
     }
 
     protected function initialize(): void
