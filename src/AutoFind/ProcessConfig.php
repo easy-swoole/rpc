@@ -63,11 +63,6 @@ class ProcessConfig extends SplBean
 
     public function setEncryptKey($encryptKey): void
     {
-        if(extension_loaded('openssl')){
-            $this->encryptKey = $encryptKey;
-        }else{
-            throw new Exception('ext-openssl miss');
-        }
-
+        $this->encryptKey = $encryptKey;
     }
 }

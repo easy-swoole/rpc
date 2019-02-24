@@ -14,7 +14,7 @@ use EasySwoole\Spl\SplBean;
 class ServiceNode extends SplBean
 {
     protected $serviceIp;
-    protected $servicePort;
+    protected $servicePort = 9600;
     protected $serviceVersion = '1.0.0';
     protected $serviceName;
     protected $nodeExpire = 0;

@@ -12,6 +12,7 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Rpc\AutoFind\Process;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
+use Swoole\Server\Port;
 
 class Rpc
 {
@@ -59,7 +60,48 @@ class Rpc
     }
 
 
-    public function onRpcReceive(\swoole_server $server, int $fd, int $reactor_id, string $data):void
+
+
+    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):Process
+    {
+        $p = new Process($processName,$this->config,false,2,true);
+        return $p;
+    }
+
+    /*
+     * 每个进程中的client互相隔离
+     */
+    function client():Client
+    {
+        if(!$this->client){
+            $this->client = new Client($this->config,$this->config->getNodeManager());
+        }
+        return $this->client;
+    }
+
+    function nodeManager():NodeManagerInterface
+    {
+        return $this->config->getNodeManager();
+    }
+    /**
+     * @param $server \swoole_server Port
+     */
+    public function attachToServer($server)
+    {
+        $server->set($this->config->getPackageSetting());
+        $server->on('receive',function ($server, int $fd, int $reactor_id, string $data){
+            $this->onRpcReceive($server,$fd,$reactor_id,$data);
+        });
+        $this->config->setServicePort($server->port);
+    }
+
+    /**
+     * @param $server \swoole_server
+     * @param int $fd
+     * @param int $reactor_id
+     * @param string $data
+     */
+    private function onRpcReceive($server, int $fd, int $reactor_id, string $data):void
     {
         $data = ProtocolPackage::unpack($data);
         $request = null;
@@ -128,29 +170,6 @@ class Rpc
             }
         }
     }
-
-    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):Process
-    {
-        $p = new Process($processName,$this->config,false,2,true);
-        return $p;
-    }
-
-    /*
-     * 每个进程中的client互相隔离
-     */
-    function client():Client
-    {
-        if(!$this->client){
-            $this->client = new Client($this->config,$this->config->getNodeManager());
-        }
-        return $this->client;
-    }
-
-    function nodeManager():NodeManagerInterface
-    {
-        return $this->config->getNodeManager();
-    }
-
     private function hookCallback($call,...$arg)
     {
         if(is_callable($call)){
