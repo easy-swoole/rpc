@@ -130,9 +130,9 @@ class Rpc
         }
     }
 
-    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):AbstractProcess
+    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):Process
     {
-        $p = new AutoFIndProcess($processName,$this->config);
+        $p = new Process($processName,$this->config,false,2,true);
         return $p;
     }
 

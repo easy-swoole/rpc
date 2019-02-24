@@ -10,6 +10,7 @@ namespace EasySwoole\Rpc;
 
 
 
+use EasySwoole\Rpc\AutoFind\ProcessConfig;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Utility\Random;
 
@@ -30,13 +31,7 @@ class Config extends ServiceNode
 
     protected $serializeType = self::SERIALIZE_TYPE_RAW;
 
-    protected $autoFindBroadcastAddress = [
-        '127.0.0.1'
-    ];
-
-    protected $autoFindListenAddress = '127.0.0.1';
-
-    protected $autoFindListenPort = 9600;
+    protected $autoFindConfig;
 
     /**
      * @return NodeManagerInterface
@@ -70,58 +65,18 @@ class Config extends ServiceNode
         $this->serializeType = $serializeType;
     }
 
-    /**
-     * @return array
-     */
-    public function getAutoFindBroadcastAddress(): array
+    public function getAutoFindConfig():ProcessConfig
     {
-        return $this->autoFindBroadcastAddress;
-    }
-
-    /**
-     * @param array $autoFindBroadcastAddress
-     */
-    public function setAutoFindBroadcastAddress(array $autoFindBroadcastAddress): void
-    {
-        $this->autoFindBroadcastAddress = $autoFindBroadcastAddress;
-    }
-
-    /**
-     * @return string
-     */
-    public function getAutoFindListenAddress(): ?string
-    {
-        return $this->autoFindListenAddress;
-    }
-
-    /**
-     * @param string $autoFindListenAddress
-     */
-    public function setAutoFindListenAddress(?string $autoFindListenAddress): void
-    {
-        $this->autoFindListenAddress = $autoFindListenAddress;
-    }
-
-    /**
-     * @return int
-     */
-    public function getAutoFindListenPort(): int
-    {
-        return $this->autoFindListenPort;
-    }
-
-    /**
-     * @param int $autoFindListenPort
-     */
-    public function setAutoFindListenPort(int $autoFindListenPort): void
-    {
-        $this->autoFindListenPort = $autoFindListenPort;
+        return $this->autoFindConfig;
     }
 
     protected function initialize(): void
     {
         if(empty($this->nodeId)){
            $this->nodeId = Random::character(8);
+        }
+        if(empty($this->autoFindConfig)){
+            $this->autoFindConfig = new ProcessConfig();
         }
     }
 }
