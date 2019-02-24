@@ -10,7 +10,6 @@ namespace EasySwoole\Rpc;
 
 
 
-use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\AutoFind\Process;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 

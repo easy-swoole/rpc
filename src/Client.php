@@ -65,7 +65,7 @@ class Client
                     //create swoole client and connect to serviceNode
                     go(function ()use($task,$channel){
                         $client = new SwooleClient(SWOOLE_TCP);
-                        $client->set(Config::$PACKAGE_SETTING);
+                        $client->set($this->config->getPackageSetting());
                         if(!$client->connect($task->getExecNode()->getServiceIp(),$task->getExecNode()->getServicePort(),$task->getTimeout())){
                             $response = new Response();
                             $response->setNodeId($task->getExecNode()->getNodeId());

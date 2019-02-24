@@ -20,6 +20,7 @@ class ProtocolPackage extends SplBean
     protected $arg;
     protected $fd;
     protected $rawData;
+    protected $requestTime;
 
     /**
      * @return mixed
@@ -127,10 +128,29 @@ class ProtocolPackage extends SplBean
         return substr($data,'4');
     }
 
+    /**
+     * @return mixed
+     */
+    public function getRequestTime()
+    {
+        return $this->requestTime;
+    }
+
+    /**
+     * @param mixed $requestTime
+     */
+    public function setRequestTime($requestTime): void
+    {
+        $this->requestTime = $requestTime;
+    }
+
     protected function initialize(): void
     {
         if(empty($this->packageId)){
             $this->packageId = Random::character(32);
+        }
+        if(empty($this->requestTime)){
+            $this->requestTime = time();
         }
     }
 }

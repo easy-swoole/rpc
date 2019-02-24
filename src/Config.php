@@ -18,7 +18,7 @@ class Config extends ServiceNode
 {
     const SERIALIZE_TYPE_JSON = 1;
     const SERIALIZE_TYPE_RAW = 2;
-    public static $PACKAGE_SETTING = [
+    protected $packageSetting = [
         'open_length_check' => true,
         'package_length_type'   => 'N',
         'package_length_offset' => 0,
@@ -70,6 +70,19 @@ class Config extends ServiceNode
         return $this->autoFindConfig;
     }
 
+    /**
+     * @return array
+     */
+    public function getPackageSetting(): array
+    {
+        return $this->packageSetting;
+    }
+
+    public function setMaxPackageLength(int $len)
+    {
+        $this->packageSetting['package_max_length'] = $len;
+    }
+
     protected function initialize(): void
     {
         if(empty($this->nodeId)){
@@ -79,4 +92,5 @@ class Config extends ServiceNode
             $this->autoFindConfig = new ProcessConfig();
         }
     }
+
 }
