@@ -9,6 +9,7 @@
 namespace EasySwoole\Rpc\AutoFind;
 
 
+use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\ProtocolPackage;
@@ -32,6 +33,10 @@ class Process extends AbstractProcess
             $data = new ProtocolPackage();
             $data->setAction(self::UDP_ACTION_HEART_BEAT);
             $data = serialize($data);
+            if($this->config->getAutoFindConfig()->getEncryptKey()){
+                $openssl = new Openssl($this->config->getAutoFindConfig()->getEncryptKey());
+                $data = $openssl->encrypt($data);
+            }
             foreach ($this->config->getAutoFindConfig()->getAutoFindBroadcastAddress() as $address){
                 $address = explode(':',$address);
                 $client->sendto($address[0],$address[1],$data);
@@ -43,10 +48,16 @@ class Process extends AbstractProcess
             $socketServer->bind($address[0],$address[1]);
             while (1){
                 $peer = null;
-                $request = unserialize($socketServer->recvfrom($peer));
+                $data = $socketServer->recvfrom($peer);
+                if($this->config->getAutoFindConfig()->getEncryptKey()){
+                    $openssl = new Openssl($this->config->getAutoFindConfig()->getEncryptKey());
+                    $data = $openssl->decrypt($data);
+                }
+                $request = unserialize($data);
                 if($request instanceof ProtocolPackage){
                     switch ($request->getAction()){
                         case self::UDP_ACTION_HEART_BEAT:{
+                            var_dump('s');
 //                                $node = $request->getArg();
 //                                $this->config->getNodeManager()->registerServiceNode($node);
                             break;

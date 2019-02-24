@@ -9,6 +9,7 @@
 namespace EasySwoole\Rpc\AutoFind;
 
 
+use EasySwoole\Rpc\Exception\Exception;
 use EasySwoole\Spl\SplBean;
 
 class ProcessConfig extends SplBean
@@ -18,6 +19,8 @@ class ProcessConfig extends SplBean
     ];
 
     protected $autoFindListenAddress = '127.0.0.1:9600';
+
+    protected $encryptKey = null;
     /**
      * @return array
      */
@@ -48,5 +51,23 @@ class ProcessConfig extends SplBean
     public function setAutoFindListenAddress(?string $autoFindListenAddress = null): void
     {
         $this->autoFindListenAddress = $autoFindListenAddress;
+    }
+
+    /**
+     * @return null
+     */
+    public function getEncryptKey()
+    {
+        return $this->encryptKey;
+    }
+
+    public function setEncryptKey($encryptKey): void
+    {
+        if(extension_loaded('openssl')){
+            $this->encryptKey = $encryptKey;
+        }else{
+            throw new Exception('ext-openssl miss');
+        }
+
     }
 }
