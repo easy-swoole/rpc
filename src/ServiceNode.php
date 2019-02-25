@@ -17,7 +17,7 @@ class ServiceNode extends SplBean
     protected $servicePort = 9600;
     protected $serviceVersion = '1.0.0';
     protected $serviceName;
-    protected $nodeExpire = 0;
+    protected $nodeExpire = null;
     protected $nodeId;
 
     /**
@@ -114,6 +114,13 @@ class ServiceNode extends SplBean
     public function setNodeId($nodeId): void
     {
         $this->nodeId = $nodeId;
+    }
+
+    protected function initialize(): void
+    {
+        if($this->nodeExpire === null){
+            $this->nodeExpire = time()+15;
+        }
     }
 
 }

@@ -31,7 +31,7 @@ class FileManager implements NodeManagerInterface
         $ret = [];
         foreach ($list as $item){
             $temp = new ServiceNode($item);
-            if($temp->getNodeExpire() != 0 && time() > $temp->getNodeExpire()){
+            if($temp->getNodeExpire() !== 0 && time() > $temp->getNodeExpire()){
                 $this->deleteServiceNode($temp);
                 continue;
             }

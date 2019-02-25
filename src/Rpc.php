@@ -59,10 +59,7 @@ class Rpc
         return $this;
     }
 
-
-
-
-    public function autoFindProcess($processName = 'RPC_AUTO_FIND_PROCESS'):Process
+    public function autoFindProcess($processName = 'EASYSWOOLE_RPC_AUTO_FIND_PROCESS'):Process
     {
         $p = new Process($processName,$this->config,false,2,true);
         return $p;
