@@ -84,7 +84,7 @@ class Rpc
         return $this->config->getNodeManager();
     }
     /**
-     * @param $server \swoole_server Port
+     * @param $server \swoole_server |Port
      */
     public function attachToServer($server)
     {

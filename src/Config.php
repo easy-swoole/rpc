@@ -11,6 +11,8 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Rpc\AutoFind\ProcessConfig;
+use EasySwoole\Rpc\Exception\Exception;
+use EasySwoole\Rpc\NodeManager\FileManager;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Utility\Random;
 
@@ -27,26 +29,33 @@ class Config extends ServiceNode
     /**
      * @var $nodeManager NodeManagerInterface
      */
-    protected $nodeManager;
+    protected $nodeManager = FileManager::class;
 
     protected $serializeType = self::SERIALIZE_TYPE_RAW;
 
     protected $autoFindConfig;
+
+    protected $extra = [];
 
     /**
      * @return NodeManagerInterface
      */
     public function getNodeManager(): NodeManagerInterface
     {
+        if(is_string($this->nodeManager)){
+            $this->nodeManager = new $this->nodeManager($this);
+        }
         return $this->nodeManager;
     }
 
-    /**
-     * @param NodeManagerInterface $nodeManager
-     */
-    public function setNodeManager(NodeManagerInterface $nodeManager): void
+    public function setNodeManager(string $nodeManager): void
     {
-        $this->nodeManager = $nodeManager;
+        $ref = new \ReflectionClass($nodeManager);
+        if($ref->implementsInterface(NodeManagerInterface::class)){
+            $this->nodeManager = $nodeManager;
+        }else{
+            throw new Exception("{$nodeManager} not a class of nodeManagerInterface");
+        }
     }
 
     /**
@@ -83,6 +92,22 @@ class Config extends ServiceNode
         $this->packageSetting['package_max_length'] = $len;
     }
 
+    /**
+     * @return array
+     */
+    public function getExtra(): array
+    {
+        return $this->extra;
+    }
+
+    /**
+     * @param array $extra
+     */
+    public function setExtra(array $extra): void
+    {
+        $this->extra = $extra;
+    }
+
     protected function initialize(): void
     {
         if(empty($this->nodeId)){
@@ -92,5 +117,4 @@ class Config extends ServiceNode
             $this->autoFindConfig = new ProcessConfig();
         }
     }
-
 }
