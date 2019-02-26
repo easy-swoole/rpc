@@ -32,7 +32,7 @@
 
 粗暴来理解，例如某个服务器最多同时仅能处理100个请求，或者是cpu负载达到百分之80的时候，为了保护服务的稳定性，则不在希望继续收到
 新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
-监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。
+监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。  
 
 ## 例子
 ### Server
@@ -59,6 +59,7 @@ $sub = $http->addlistener("127.0.0.1", 9502,SWOOLE_TCP);
 $rpc->attachToServer($sub);
 $http->on("request", function ($request, $response) {
     $response->end("Hello World\n");
+    
 });
 
 $http->start();
