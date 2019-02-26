@@ -12,7 +12,7 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Spl\SplBean;
 use EasySwoole\Utility\Random;
 
-class ProtocolPackage extends SplBean
+class Request extends SplBean
 {
     protected $nodeId;
     protected $packageId;

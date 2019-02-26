@@ -100,20 +100,21 @@ class Rpc
      */
     private function onRpcReceive($server, int $fd, int $reactor_id, string $data):void
     {
-        $data = ProtocolPackage::unpack($data);
+        $data = Request::unpack($data);
         $request = null;
         $response = new Response();
         $response->setNodeId($this->config->getNodeId());
         if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
-            $request = unserialize($data);
+            $data = unserialize($data);
         }else{
             $data = json_decode($data,true);
-            if(is_array($data)){
-                $request = new ProtocolPackage($data);
+            if(!is_array($data)){
+                $data = [];
             }
         }
-        if(!$request instanceof ProtocolPackage){
-            $request = new ProtocolPackage();
+        $request = new Request($data);
+        if(!$request instanceof Request){
+            $request = new Request();
         }
         $request->setFd($fd);
         $request->setRawData($data);
@@ -161,7 +162,7 @@ class Rpc
                 }else{
                     $response = $response->__toString();
                 }
-                $response = ProtocolPackage::pack($response);
+                $response = Request::pack($response);
                 $server->send($fd,$response);
                 $server->close($fd);
             }

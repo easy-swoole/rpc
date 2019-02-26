@@ -75,12 +75,13 @@ class Client
                                 'taskObject'=>$task
                             ]);
                         }else{
+                            $data = $task->toArray(['arg','action']);
                             if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
-                                $data = serialize($task);
+                                $data = serialize($data);
                             }else{
-                                $data = $task->__toString();
+                                $data = json_encode($data,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
                             }
-                            $data = ProtocolPackage::pack($data);
+                            $data = Request::pack($data);
                             $client->send($data);
                             $response = $client->recv($task->getTimeout());
                             if(empty($response)){
@@ -88,11 +89,15 @@ class Client
                                 $response->setStatus($response::STATUS_SERVER_TIMEOUT);
                                 $response->setNodeId($task->getExecNode()->getNodeId());
                             }else{
-                                $response = ProtocolPackage::unpack($response);
+                                $response = Request::unpack($response);
                                 if($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW){
                                     $response = unserialize($response);
                                 }else{
                                     $response = json_decode($response,true);
+                                    if(!is_array($response)){
+                                        $response = [];
+                                    }
+                                    $response = new Response($response);
                                 }
                             }
                             $channel->push([

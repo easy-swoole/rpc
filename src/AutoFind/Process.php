@@ -12,7 +12,7 @@ namespace EasySwoole\Rpc\AutoFind;
 use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\ProtocolPackage;
+use EasySwoole\Rpc\Request;
 use EasySwoole\Rpc\ServiceNode;
 use Swoole\Coroutine\Socket;
 use Swoole\Coroutine\Client as CoClient;
@@ -29,21 +29,11 @@ class Process extends AbstractProcess
         /** @var $arg Config */
         $this->config = $arg;
         $this->addTick(5*1000,function (){
-            //每15s对外广播自己的存在
-            $client = new CoClient(SWOOLE_UDP);
-            $data = new ProtocolPackage();
-            $data->setAction(self::UDP_ACTION_HEART_BEAT);
-            $node = new ServiceNode($this->config->toArray());
-            $data->setArg($node);
-            $data = serialize($data);
-            if($this->config->getAutoFindConfig()->getEncryptKey()){
-                $openssl = new Openssl($this->config->getAutoFindConfig()->getEncryptKey());
-                $data = $openssl->encrypt($data);
-            }
-            foreach ($this->config->getAutoFindConfig()->getAutoFindBroadcastAddress() as $address){
-                $address = explode(':',$address);
-                $client->sendto($address[0],$address[1],$data);
-            }
+            //每5s对外广播自己的存在
+            $this->nodeBroadcast(self::UDP_ACTION_HEART_BEAT);
+        });
+        $this->delay(500,function (){
+            $this->nodeBroadcast(self::UDP_ACTION_HEART_BEAT);
         });
         if(!empty($arg->getAutoFindConfig()->getAutoFindListenAddress())){
             $address = explode(':',$arg->getAutoFindConfig()->getAutoFindListenAddress());
@@ -57,7 +47,7 @@ class Process extends AbstractProcess
                     $data = $openssl->decrypt($data);
                 }
                 $request = unserialize($data);
-                if($request instanceof ProtocolPackage){
+                if($request instanceof Request){
                     /** @var ServiceNode $node */
                     $node = $request->getArg();
                     if(empty($node->getServiceIp())){
@@ -83,9 +73,19 @@ class Process extends AbstractProcess
     public function onShutDown()
     {
         // TODO: Implement onShutDown() method.
+        $this->nodeBroadcast(self::UDP_ACTION_OFFLINE);
+    }
+
+    public function onReceive(string $str)
+    {
+        // TODO: Implement onReceive() method.
+    }
+
+    private function nodeBroadcast(int $command)
+    {
         $client = new CoClient(SWOOLE_UDP);
-        $data = new ProtocolPackage();
-        $data->setAction(self::UDP_ACTION_OFFLINE);
+        $data = new Request();
+        $data->setAction($command);
         $node = new ServiceNode($this->config->toArray());
         $data->setArg($node);
         $data = serialize($data);
@@ -97,10 +97,5 @@ class Process extends AbstractProcess
             $address = explode(':',$address);
             $client->sendto($address[0],$address[1],$data);
         }
-    }
-
-    public function onReceive(string $str)
-    {
-        // TODO: Implement onReceive() method.
     }
 }

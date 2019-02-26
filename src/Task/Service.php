@@ -55,9 +55,9 @@ class Service
         $this->version = $version;
     }
 
-    public function createTask():Task
+    public function createTask():TaskObject
     {
-        $task = new Task();
+        $task = new TaskObject();
         $this->task[$task->getTaskId()] = $task;
         return $task;
     }
