@@ -13,9 +13,12 @@ use EasySwoole\Rpc\Response;
 
 $config = new Config();
 $rpc = new Rpc($config);
+//获取所有服务列表
+$nodeList = $config->getNodeManager()->allServiceNodes();
+print_r($nodeList);
 go(function () use ($rpc) {
     $client = $rpc->client();
-    //调用那个服务
+    //调用服务
     $serviceClient = $client->selectService('ser1');
     //创建
     $serviceClient->createTask()->setAction('call1')->setArg(['arg' => 1])
@@ -29,6 +32,10 @@ go(function () use ($rpc) {
         ->setOnSuccess(function (Response $response) {
             var_dump($response->getMessage());
         });
-
+    $serviceClient2 = $client->selectService('ser2');
+    $serviceClient2->createTask()->setAction('call1')
+        ->setOnSuccess(function (Response $response) {
+            var_dump($response->getMessage());
+        });
     $client->exec();
 });

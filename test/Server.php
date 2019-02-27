@@ -28,7 +28,7 @@ $config->setServiceName('ser1');
 //设置节点管理器
 //$config->setNodeManager(\EasySwoole\Rpc\NodeManager\RedisManager::class);
 //设置接收数据格式
-//$config->setSerializeType($config::SERIALIZE_TYPE_JSON);
+$config->setSerializeType($config::SERIALIZE_TYPE_JSON);
 
 $rpc = new Rpc($config);
 //注册方法
@@ -38,7 +38,9 @@ $rpc->registerAction('call1', function (Request $request, Response $response) {
     //设置返回给客户端信息
     $response->setMessage('response');
 });
-$rpc->registerAction('call2');
+$rpc->registerAction('call2', function (Request $request, Response $response) {
+});
+
 
 $autoFindProcess = $rpc->autoFindProcess();
 
@@ -50,13 +52,36 @@ $sub = $http->addlistener("127.0.0.1", 9526, SWOOLE_TCP);
 
 $rpc->attachToServer($sub);
 
+/**
+ * 再定义一个服务
+ */
+$configTwo = new Config();
+$configTwo->setServiceName('ser2');
+$rpcTwo = new Rpc($configTwo);
+$rpcTwo->registerAction('call1', function (Request $request, Response $response) {
+    $response->setMessage('this is ser2 action call1');
+});
+$afpTwo = $rpcTwo->autoFindProcess();
+
+//添加自定义进程（监听和广播）
+$http->addProcess($afpTwo->getProcess());
+//rpc作为一个子服务运行
+$subTwo = $http->addlistener("127.0.0.1", 9527, SWOOLE_TCP);
+
+$rpcTwo->attachToServer($subTwo);
+
+/**
+ * http请求回调
+ */
 $http->on("request", function ($request, $response) {
     $response->end("Hello World\n");
 });
 $http->start();
 
-//rpc 作为主服务运行
+
+////rpc 作为主服务运行
 //$tcp = new swoole_server('127.0.0.1', 9526);
 //$tcp->addProcess($autoFindProcess->getProcess());
 //$rpc->attachToServer($tcp);
+
 //$tcp->start();

@@ -46,7 +46,6 @@ use EasySwoole\Rpc\Response;
 $config = new Config();
 //注册服务名称
 $config->setServiceName('ser1');
-$config->get
 $rpc = new Rpc($config);
 
 $rpc->registerAction('call1',function (Request $request,Response $response){
@@ -75,7 +74,25 @@ $rpc->attachToServer($tcp);
 $tcp->start();
 
 ```
-
+## EasySwoole 框架
+```
+public static function mainServerCreate(EventRegister $register)
+{
+    $config->setServiceName('ser1');
+    $rpc = new Rpc($config);
+    $rpc->registerAction('call1',function (Request $request,Response $response){
+        $response->setMessage('response');
+    });
+    $rpc->registerAction('call2',function (Request $request,Response $response){
+        $response->setMessage(['response2222222']);
+    });
+    $swooleServer = ServerManager::getInstance()->getSwooleServer();
+    $swooleServer->addProcess($rpc->autoFindProcess()->getProcess());
+    $sub=ServerManager::getInstance()->getSwooleServer()->addListener('127.0.0.1',9526,SWOOLE_TCP);
+    $rpc->attachToServer($sub);
+}
+```
+### 以下是客户端调用例子
 ### EasySwoole\Rpc\Client
 ```
 use EasySwoole\Rpc\Config;
@@ -108,39 +125,28 @@ composer require easyswoole/rpc=3.x
 
 ### 原生PHP
 ```
-//以下例子为未启用数据openssl加密
-
-$authKey  = null; //RPC鉴权秘钥，默认null
-
 $data = [
-    'nodeId'=>'xxx',//节点id，如果没有做节点过滤，那么随意构造
-    'packageId'=>'xxxxx',//包Id,随意构造
-    'action'=>'a1',//行为名称
-    'packageTime'=>time(),//包请求时间
-    'arg'=>[
-        'args1'=>'args1',
-        'args2'=>'args2'
+    'action' => 'call1',//行为名称
+    'arg' => [
+        'args1' => 'args1',
+        'args2' => 'args2'
     ]
 ];
 
-$data['signature'] = md5($data['packageId'].$authKey.$data['packageTime'].implode('',$data['arg']));
-
 $raw = json_encode($data);
-//如果启用了openssl ，请在此处对$raw 加密 ，加密方法为 DES-EDE3
 
+$fp = stream_socket_client('tcp://127.0.0.1:9526');
+fwrite($fp, pack('N', strlen($raw)) . $raw);
 
-$fp = stream_socket_client('tcp://127.0.0.1:9601');
-fwrite($fp,pack('N', strlen($raw)).$raw);
-
-$data = fread($fp,65533);
+$data = fread($fp, 65533);
 //做长度头部校验
-$len = unpack('N',$data);
-$data = substr($data,'4');
-if(strlen($data) != $len[1]){
+$len = unpack('N', $data);
+$data = substr($data, '4');
+if (strlen($data) != $len[1]) {
     echo 'data error';
-}else{
-    $json = json_decode($data,true);
-    //这就是服务端返回的结果，
+} else {
+    $json = json_decode($data, true);
+//    //这就是服务端返回的结果，
     var_dump($json);
 }
 fclose($fp);
@@ -155,16 +161,12 @@ var md5 = require("md5");
 
 var authKey = '';
 
-var json = {
-    'nodeId':'xxx',//节点id，如果没有做节点过滤，那么随意构造
-    'packageId':'xxxxx',//包Id,随意构造
-    'action':'a1',//行为名称
-    'packageTime':'',//包请求时间
+var json = {  
+    'action':'call1',//行为名称
     'arg':{
         'argKey1':'arg1',
         'argKey2':'arg2'
-    },
-    'signature':'xxx'//包签名
+    }
 };
 
 
