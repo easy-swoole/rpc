@@ -33,6 +33,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置调用的action
      * @param mixed $action
      * @return TaskObject
      */
@@ -51,6 +52,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置参数
      * @param mixed $arg
      * @return TaskObject
      */
@@ -69,6 +71,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置执行成功后回调
      * @param mixed $onSuccess
      * @return TaskObject
      */
@@ -87,6 +90,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置执行失败后的回调
      * @param mixed $onFail
      * @return TaskObject
      */
@@ -105,6 +109,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置超时
      * @param float $timeout
      * @return TaskObject
      */
@@ -141,6 +146,7 @@ class TaskObject extends SplBean
     }
 
     /**
+     * 设置执行节点
      * @param ServiceNode $execNode
      */
     public function setExecNode(?ServiceNode $execNode = null): void
@@ -148,10 +154,12 @@ class TaskObject extends SplBean
         $this->execNode = $execNode;
     }
 
-
+    /**
+     * 初始化任务ID
+     */
     protected function initialize(): void
     {
-        if(empty($this->taskId)){
+        if (empty($this->taskId)) {
             $this->taskId = Random::character(32);
         }
     }

@@ -34,7 +34,9 @@
 新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
 监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。  
 
-## 例子
+
+
+## 下面是独立运行的例子
 ### Server
 ```
 use EasySwoole\Rpc\Config;
@@ -42,7 +44,9 @@ use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Request;
 use EasySwoole\Rpc\Response;
 $config = new Config();
+//注册服务名称
 $config->setServiceName('ser1');
+$config->get
 $rpc = new Rpc($config);
 
 $rpc->registerAction('call1',function (Request $request,Response $response){
@@ -63,6 +67,13 @@ $http->on("request", function ($request, $response) {
 });
 
 $http->start();
+
+rpc 作为主服务运行
+$tcp = new swoole_server('127.0.0.1', 9526);
+$tcp->addProcess($autoFindProcess->getProcess());
+$rpc->attachToServer($tcp);
+$tcp->start();
+
 ```
 
 ### EasySwoole\Rpc\Client

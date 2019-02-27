@@ -9,7 +9,6 @@
 namespace EasySwoole\Rpc;
 
 
-
 use EasySwoole\Rpc\AutoFind\ProcessConfig;
 use EasySwoole\Rpc\Exception\Exception;
 use EasySwoole\Rpc\NodeManager\FileManager;
@@ -18,42 +17,50 @@ use EasySwoole\Utility\Random;
 
 class Config extends ServiceNode
 {
-    const SERIALIZE_TYPE_JSON = 1;
-    const SERIALIZE_TYPE_RAW = 2;
+
+    const SERIALIZE_TYPE_JSON = 1;//json
+    const SERIALIZE_TYPE_RAW = 2;//序列化
     protected $packageSetting = [
         'open_length_check' => true,
-        'package_length_type'   => 'N',
+        'package_length_type' => 'N',
         'package_length_offset' => 0,
-        'package_body_offset'   => 4,
+        'package_body_offset' => 4,
     ];
     /**
      * @var $nodeManager NodeManagerInterface
      */
-    protected $nodeManager = FileManager::class;
+    protected $nodeManager = FileManager::class;//默认节点管理是文件管理,支持swoole_table,redis
 
-    protected $serializeType = self::SERIALIZE_TYPE_RAW;
+    protected $serializeType = self::SERIALIZE_TYPE_RAW;//默认采用序列化
 
     protected $autoFindConfig;
 
     protected $extra = [];
 
     /**
+     * 节点管理器
      * @return NodeManagerInterface
      */
     public function getNodeManager(): NodeManagerInterface
     {
-        if(is_string($this->nodeManager)){
+        if (is_string($this->nodeManager)) {
             $this->nodeManager = new $this->nodeManager($this);
         }
         return $this->nodeManager;
     }
 
+    /**
+     * 设置节点管理器
+     * @param string $nodeManager
+     * @throws Exception
+     * @throws \ReflectionException
+     */
     public function setNodeManager(string $nodeManager): void
     {
         $ref = new \ReflectionClass($nodeManager);
-        if($ref->implementsInterface(NodeManagerInterface::class)){
+        if ($ref->implementsInterface(NodeManagerInterface::class)) {
             $this->nodeManager = $nodeManager;
-        }else{
+        } else {
             throw new Exception("{$nodeManager} not a class of nodeManagerInterface");
         }
     }
@@ -74,7 +81,7 @@ class Config extends ServiceNode
         $this->serializeType = $serializeType;
     }
 
-    public function getAutoFindConfig():ProcessConfig
+    public function getAutoFindConfig(): ProcessConfig
     {
         return $this->autoFindConfig;
     }
@@ -87,6 +94,10 @@ class Config extends ServiceNode
         return $this->packageSetting;
     }
 
+    /**
+     * 设置最大包大小
+     * @param int $len
+     */
     public function setMaxPackageLength(int $len)
     {
         $this->packageSetting['package_max_length'] = $len;
@@ -108,12 +119,15 @@ class Config extends ServiceNode
         $this->extra = $extra;
     }
 
+    /**
+     * 初始化的操作
+     */
     protected function initialize(): void
     {
-        if(empty($this->nodeId)){
-           $this->nodeId = Random::character(8);
+        if (empty($this->nodeId)) {
+            $this->nodeId = Random::character(8);
         }
-        if(empty($this->autoFindConfig)){
+        if (empty($this->autoFindConfig)) {
             $this->autoFindConfig = new ProcessConfig();
         }
     }
