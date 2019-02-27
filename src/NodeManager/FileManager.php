@@ -15,6 +15,8 @@ use EasySwoole\Utility\Random;
 
 class FileManager implements NodeManagerInterface
 {
+    const FILE_PREFIX = 'easyswoole_rpc_';
+
     private $saveDir = '';
 
     public function __construct(Config $config)
@@ -29,13 +31,13 @@ class FileManager implements NodeManagerInterface
         $temp->setServiceName($serviceName);
         $list = $this->getServiceArray($temp);
         $ret = [];
-        foreach ($list as $item){
+        foreach ($list as $item) {
             $temp = new ServiceNode($item);
-            if($temp->getNodeExpire() !== 0 && time() > $temp->getNodeExpire()){
+            if ($temp->getNodeExpire() !== 0 && time() > $temp->getNodeExpire()) {
                 $this->deleteServiceNode($temp);
                 continue;
             }
-            if($version !== null && $temp->getNodeId() != $version){
+            if ($version !== null && $temp->getNodeId() != $version) {
                 continue;
             }
             $ret[$temp->getNodeId()] = $temp;
@@ -46,68 +48,83 @@ class FileManager implements NodeManagerInterface
     function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
     {
         // TODO: Implement getServiceNode() method.
-        $list = $this->getServiceNodes($serviceName,$version);
+        $list = $this->getServiceNodes($serviceName, $version);
         $num = count($list);
-        if($num == 0){
+        if ($num == 0) {
             return null;
         }
-       return Random::arrayRandOne($list);
+        return Random::arrayRandOne($list);
     }
 
     function allServiceNodes(): array
     {
-        // TODO: Implement allServiceNodes() method.
-        return [];
+        $files = glob($this->saveDir . '/' . self::FILE_PREFIX . '*');
+        $serviceNodeList = [];
+        if (!empty($files)) {
+            foreach ($files as $file) {
+                $list = $this->getFileToArray($file);
+                foreach ($list as $item) {
+                    $temp = new ServiceNode($item);
+                    if ($temp->getNodeExpire() !== 0 && time() > $temp->getNodeExpire()) {
+                        $this->deleteServiceNode($temp);
+                        continue;
+                    }
+                    $key = substr(md5($temp->getServiceIp() . $temp->getServicePort() . $temp->getServiceName() . $temp->getServiceVersion()), 8, 16);
+                    $serviceNodeList[$key] = $temp->toArray();//防止服务重启后，节点重复
+                }
+            }
+        }
+        return array_values($serviceNodeList);
     }
 
-    function deleteServiceNode(ServiceNode $serviceNode):bool
+    function deleteServiceNode(ServiceNode $serviceNode): bool
     {
         $all = $this->getServiceArray($serviceNode);
-        if(isset($all[$serviceNode->getNodeId()])){
+        if (isset($all[$serviceNode->getNodeId()])) {
             unset($all[$serviceNode->getNodeId()]);
         }
-        $this->saveServiceArray($serviceNode,$all);
+        $this->saveServiceArray($serviceNode, $all);
         return true;
     }
 
-    function registerServiceNode(ServiceNode $serviceNode):bool
+    function registerServiceNode(ServiceNode $serviceNode): bool
     {
         $data = $serviceNode->toArray();
         $all = $this->getServiceArray($serviceNode);
         $all[$serviceNode->getNodeId()] = $data;
-        $this->saveServiceArray($serviceNode,$all);
+        $this->saveServiceArray($serviceNode, $all);
         return true;
     }
 
-    private function getServiceArray(ServiceNode $node):array
+    private function getServiceArray(ServiceNode $node): array
     {
         $file = $this->fileName($node);
         return $this->getFileToArray($file);
     }
 
-    private function saveServiceArray(ServiceNode $node,array $data)
+    private function saveServiceArray(ServiceNode $node, array $data)
     {
         $file = $this->fileName($node);
-        return $this->saveArrayToFile($file,$data);
+        return $this->saveArrayToFile($file, $data);
     }
 
     private function fileName(ServiceNode $node)
     {
-        return $this->saveDir.'/'.substr(md5($node->getServiceName()),8,16);
+        return $this->saveDir . '/' . self::FILE_PREFIX . substr(md5($node->getServiceName()), 8, 16);
     }
 
-    private function getFileToArray(string $file):array
+    private function getFileToArray(string $file): array
     {
-        if(file_exists($file)){
+        if (file_exists($file)) {
             $data = file_get_contents($file);
             return unserialize($data);
-        }else{
+        } else {
             return [];
         }
     }
 
-    private function saveArrayToFile(string $file,array $array)
+    private function saveArrayToFile(string $file, array $array)
     {
-        return file_put_contents($file,serialize($array),LOCK_EX);
+        return file_put_contents($file, serialize($array), LOCK_EX);
     }
 }

@@ -1,0 +1,5 @@
+vendor
+composer.phar
+.idea
+composer.lock
+src/Dockerfile

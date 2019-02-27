@@ -29,6 +29,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置服务ip
      * @param mixed $serviceIp
      */
     public function setServiceIp($serviceIp): void
@@ -45,6 +46,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置服务端口
      * @param mixed $servicePort
      */
     public function setServicePort($servicePort): void
@@ -61,6 +63,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置服务版本
      * @param mixed $serviceVersion
      */
     public function setServiceVersion($serviceVersion): void
@@ -77,6 +80,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置服务版本
      * @param mixed $serviceName
      */
     public function setServiceName($serviceName): void
@@ -93,6 +97,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置节点过期时间
      * @param mixed $nodeExpire
      */
     public function setNodeExpire($nodeExpire): void
@@ -109,6 +114,7 @@ class ServiceNode extends SplBean
     }
 
     /**
+     * 设置节点ID
      * @param mixed $nodeId
      */
     public function setNodeId($nodeId): void
@@ -116,10 +122,13 @@ class ServiceNode extends SplBean
         $this->nodeId = $nodeId;
     }
 
+    /**
+     * 默认过期时间当前时间+15s
+     */
     protected function initialize(): void
     {
-        if($this->nodeExpire === null){
-            $this->nodeExpire = time()+15;
+        if ($this->nodeExpire === null) {
+            $this->nodeExpire = time() + 15;
         }
     }
 

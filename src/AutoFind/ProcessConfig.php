@@ -14,12 +14,22 @@ use EasySwoole\Spl\SplBean;
 
 class ProcessConfig extends SplBean
 {
-    protected $autoFindBroadcastAddress = [
-        '127.0.0.1:9600'
-    ];
+    /**
+     * 广播地址
+     * @var array
+     */
+    protected $autoFindBroadcastAddress = ['127.0.0.1:9600'];
 
+    /**
+     * 监听地址
+     * @var string
+     */
     protected $autoFindListenAddress = '127.0.0.1:9600';
 
+    /**
+     * 秘钥
+     * @var null
+     */
     protected $encryptKey = null;
     /**
      * @return array
