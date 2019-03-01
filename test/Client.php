@@ -12,10 +12,11 @@ use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Response;
 
 $config = new Config();
+//$config->setNodeManager(\EasySwoole\Rpc\NodeManager\TableManager::class);
 $rpc = new Rpc($config);
 //获取所有服务列表
 $nodeList = $config->getNodeManager()->allServiceNodes();
-print_r($nodeList);
+print_r($nodeList);exit;
 go(function () use ($rpc) {
     $client = $rpc->client();
     //调用服务
