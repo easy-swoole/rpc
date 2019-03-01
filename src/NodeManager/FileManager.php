@@ -47,34 +47,37 @@ class FileManager implements NodeManagerInterface
 
     function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
     {
-        // TODO: Implement getServiceNode() method.
         $list = $this->getServiceNodes($serviceName, $version);
         $num = count($list);
         if ($num == 0) {
             return null;
         }
-        return Random::arrayRandOne($list);
+        return new  ServiceNode(Random::arrayRandOne($list));
     }
 
     function allServiceNodes(): array
     {
+        $list = [];
         $files = glob($this->saveDir . '/' . self::FILE_PREFIX . '*');
-        $serviceNodeList = [];
         if (!empty($files)) {
             foreach ($files as $file) {
-                $list = $this->getFileToArray($file);
-                foreach ($list as $item) {
-                    $temp = new ServiceNode($item);
-                    if ($temp->getNodeExpire() !== 0 && time() > $temp->getNodeExpire()) {
-                        $this->deleteServiceNode($temp);
+                $nodeList = $this->getFileToArray($file);
+                foreach ($nodeList as $item) {
+                    $serviceNode = new ServiceNode($item);
+                    if ($serviceNode->getNodeExpire() !== 0 && time() > $serviceNode->getNodeExpire()) {
+                        $this->deleteServiceNode($serviceNode);
                         continue;
                     }
-                    $key = substr(md5($temp->getServiceIp() . $temp->getServicePort() . $temp->getServiceName() . $temp->getServiceVersion()), 8, 16);
-                    $serviceNodeList[$key] = $temp->toArray();//防止服务重启后，节点重复
+                    $list[$this->getKey($serviceNode)] = $serviceNode->toArray();//防止服务重启后，节点重复
                 }
             }
         }
-        return array_values($serviceNodeList);
+        return array_values($list);
+    }
+
+    private function getKey(ServiceNode $serviceNode): string
+    {
+        return substr(md5($serviceNode->getServiceIp() . $serviceNode->getServicePort() . $serviceNode->getServiceName() . $serviceNode->getServiceVersion()), 8, 16);
     }
 
     function deleteServiceNode(ServiceNode $serviceNode): bool

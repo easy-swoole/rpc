@@ -14,21 +14,11 @@ use EasySwoole\Rpc\Response;
 
 $config = new Config();
 //注册服务名称
-$config->setServiceName('ser1');
-//设置服务的Ip(ps:集群)
-//$config->setServiceIp('127.0.0.1');
-//设置版本
-//$config->setServiceVersion('1.0.1');
+$config->setServiceName('ser111');
 //设置广播地址，可以多个地址
-//$config->getAutoFindConfig()->setAutoFindBroadcastAddress(['127.0.0.1:9600']);
+$config->getAutoFindConfig()->setAutoFindBroadcastAddress(['127.0.0.1:9600']);
 //设置广播监听地址
-//$config->getAutoFindConfig()->setAutoFindListenAddress('127.0.0.1:9600');
-//设置广播秘钥
-//$config->getAutoFindConfig()->setEncryptKey('123456abcd');
-//设置节点管理器
-//$config->setNodeManager(\EasySwoole\Rpc\NodeManager\RedisManager::class);
-//设置接收数据格式
-$config->setSerializeType($config::SERIALIZE_TYPE_JSON);
+$config->getAutoFindConfig()->setAutoFindListenAddress('127.0.0.1:9600');
 
 $rpc = new Rpc($config);
 //注册方法
@@ -40,35 +30,30 @@ $rpc->registerAction('call1', function (Request $request, Response $response) {
 });
 $rpc->registerAction('call2', function (Request $request, Response $response) {
 });
+$autoFindProcess = $rpc->autoFindProcess('es_rpc_process_1');
 
+$config2=new Config();
 
-$autoFindProcess = $rpc->autoFindProcess();
+$config2->setServiceName('ser222');
+
+$rpc2 = new Rpc($config2);
+
+$autoFindProcess2 = $rpc2->autoFindProcess('es_rpc_process_2');
 
 $http = new swoole_http_server("127.0.0.1", 9525);
+
 //添加自定义进程（监听和广播）
 $http->addProcess($autoFindProcess->getProcess());
+
+$http->addProcess($autoFindProcess2->getProcess());
 //rpc作为一个子服务运行
 $sub = $http->addlistener("127.0.0.1", 9526, SWOOLE_TCP);
 
+$sub2 = $http->addlistener("127.0.0.1", 9527, SWOOLE_TCP);
+
 $rpc->attachToServer($sub);
 
-/**
- * 再定义一个服务
- */
-$configTwo = new Config();
-$configTwo->setServiceName('ser2');
-$rpcTwo = new Rpc($configTwo);
-$rpcTwo->registerAction('call1', function (Request $request, Response $response) {
-    $response->setMessage('this is ser2 action call1');
-});
-$afpTwo = $rpcTwo->autoFindProcess();
-
-//添加自定义进程（监听和广播）
-$http->addProcess($afpTwo->getProcess());
-//rpc作为一个子服务运行
-$subTwo = $http->addlistener("127.0.0.1", 9527, SWOOLE_TCP);
-
-$rpcTwo->attachToServer($subTwo);
+$rpc2->attachToServer($sub2);
 
 /**
  * http请求回调
