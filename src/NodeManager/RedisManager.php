@@ -95,6 +95,4 @@ class RedisManager implements NodeManagerInterface
         }
         return false;
     }
-
-
 }
