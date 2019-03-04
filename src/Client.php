@@ -90,6 +90,8 @@ class Client
                             //使用何种方式解数据
                             if ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW) {
                                 $data = serialize($data);
+                            } elseif ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_MSGPACK) {
+                                $data = msgpack_pack($data);
                             } else {
                                 $data = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                             }
@@ -104,6 +106,8 @@ class Client
                                 $response = Request::unpack($response);
                                 if ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW) {
                                     $response = unserialize($response);
+                                 } elseif ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_MSGPACK) {
+                                    $response = msgpack_unpack($response);
                                 } else {
                                     $response = json_decode($response, true);
                                     if (!is_array($response)) {

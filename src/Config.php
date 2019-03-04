@@ -20,6 +20,7 @@ class Config extends ServiceNode
 
     const SERIALIZE_TYPE_JSON = 1;//json
     const SERIALIZE_TYPE_RAW = 2;//序列化
+    const SERIALIZE_TYPE_MSGPACK = 3;// msgpack序列化
     protected $packageSetting = [
         'open_length_check' => true,
         'package_length_type' => 'N',
