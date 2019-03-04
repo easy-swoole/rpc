@@ -113,6 +113,8 @@ class Rpc
         //解数据
         if ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW) {
             $data = unserialize($data);
+        } elseif ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_MSGPACK) {
+            $data = msgpack_unpack($data);
         } else {
             $data = json_decode($data, true);
             if (!is_array($data)) {
@@ -167,6 +169,8 @@ class Rpc
         if ($server->exist($fd)) {
             if ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_RAW) {
                 $response = serialize($response);
+            } elseif ($this->config->getSerializeType() == Config::SERIALIZE_TYPE_MSGPACK) {
+                $response = msgpack_pack($response);
             } else {
                 $response = $response->__toString();
             }

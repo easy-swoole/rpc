@@ -8,7 +8,6 @@
 
 namespace EasySwoole\Rpc\NodeManager;
 
-
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\ServiceNode;
 use EasySwoole\Utility\Random;
@@ -40,7 +39,7 @@ class FileManager implements NodeManagerInterface
             if ($version !== null && $temp->getNodeId() != $version) {
                 continue;
             }
-            $ret[$temp->getNodeId()] = $temp;
+            $ret[$temp->getNodeId()] = $temp->toArray();
         }
         return $ret;
     }
@@ -52,7 +51,7 @@ class FileManager implements NodeManagerInterface
         if ($num == 0) {
             return null;
         }
-        return new  ServiceNode(Random::arrayRandOne($list));
+        return new ServiceNode(Random::arrayRandOne($list));
     }
 
     function allServiceNodes(): array
