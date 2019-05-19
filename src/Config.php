@@ -5,12 +5,15 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Spl\SplBean;
+use EasySwoole\Utility\Random;
 
 class Config extends SplBean
 {
+    protected $serverIp;
     protected $listenAddress = '0.0.0.0';
     protected $listenPort = 9600;
     protected $workerNum = 4;
+    protected $nodeId;
 
     /**
      * @return string
@@ -59,4 +62,28 @@ class Config extends SplBean
     {
         $this->workerNum = $workerNum;
     }
+
+    /**
+     * @return mixed
+     */
+    public function getServerIp()
+    {
+        return $this->serverIp;
+    }
+
+    /**
+     * @param mixed $serverIp
+     */
+    public function setServerIp($serverIp): void
+    {
+        $this->serverIp = $serverIp;
+    }
+
+    protected function initialize(): void
+    {
+        if(empty($this->nodeId)){
+            $this->nodeId = Random::character(8);
+        }
+    }
+
 }
