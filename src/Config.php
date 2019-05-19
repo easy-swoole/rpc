@@ -1,135 +1,62 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: yf
- * Date: 2018/7/28
- * Time: 下午2:55
- */
+
 
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Rpc\AutoFind\ProcessConfig;
-use EasySwoole\Rpc\Exception\Exception;
-use EasySwoole\Rpc\NodeManager\FileManager;
-use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
-use EasySwoole\Utility\Random;
+use EasySwoole\Spl\SplBean;
 
-class Config extends ServiceNode
+class Config extends SplBean
 {
-
-    const SERIALIZE_TYPE_JSON = 1;//json
-    const SERIALIZE_TYPE_RAW = 2;//序列化
-    const SERIALIZE_TYPE_MSGPACK = 3;// msgpack序列化
-    protected $packageSetting = [
-        'open_length_check' => true,
-        'package_length_type' => 'N',
-        'package_length_offset' => 0,
-        'package_body_offset' => 4,
-    ];
-    /**
-     * @var $nodeManager NodeManagerInterface
-     */
-    protected $nodeManager = FileManager::class;//默认节点管理是文件管理,支持swoole_table,redis
-
-    protected $serializeType = self::SERIALIZE_TYPE_RAW;//默认采用序列化
-
-    protected $autoFindConfig;
-
-    protected $extra = [];
+    protected $listenAddress = '0.0.0.0';
+    protected $listenPort = 9600;
+    protected $workerNum = 4;
 
     /**
-     * 节点管理器
-     * @return NodeManagerInterface
+     * @return string
      */
-    public function getNodeManager(): NodeManagerInterface
+    public function getListenAddress(): string
     {
-        if (is_string($this->nodeManager)) {
-            $this->nodeManager = new $this->nodeManager($this);
-        }
-        return $this->nodeManager;
+        return $this->listenAddress;
     }
 
     /**
-     * 设置节点管理器
-     * @param string $nodeManager
-     * @throws Exception
-     * @throws \ReflectionException
+     * @param string $listenAddress
      */
-    public function setNodeManager(string $nodeManager): void
+    public function setListenAddress(string $listenAddress): void
     {
-        $ref = new \ReflectionClass($nodeManager);
-        if ($ref->implementsInterface(NodeManagerInterface::class)) {
-            $this->nodeManager = $nodeManager;
-        } else {
-            throw new Exception("{$nodeManager} not a class of nodeManagerInterface");
-        }
+        $this->listenAddress = $listenAddress;
     }
 
     /**
      * @return int
      */
-    public function getSerializeType(): int
+    public function getListenPort(): int
     {
-        return $this->serializeType;
+        return $this->listenPort;
     }
 
     /**
-     * @param int $serializeType
+     * @param int $listenPort
      */
-    public function setSerializeType(int $serializeType): void
+    public function setListenPort(int $listenPort): void
     {
-        $this->serializeType = $serializeType;
-    }
-
-    public function getAutoFindConfig(): ProcessConfig
-    {
-        return $this->autoFindConfig;
+        $this->listenPort = $listenPort;
     }
 
     /**
-     * @return array
+     * @return int
      */
-    public function getPackageSetting(): array
+    public function getWorkerNum(): int
     {
-        return $this->packageSetting;
+        return $this->workerNum;
     }
 
     /**
-     * 设置最大包大小
-     * @param int $len
+     * @param int $workerNum
      */
-    public function setMaxPackageLength(int $len)
+    public function setWorkerNum(int $workerNum): void
     {
-        $this->packageSetting['package_max_length'] = $len;
-    }
-
-    /**
-     * @return array
-     */
-    public function getExtra(): array
-    {
-        return $this->extra;
-    }
-
-    /**
-     * @param array $extra
-     */
-    public function setExtra(array $extra): void
-    {
-        $this->extra = $extra;
-    }
-
-    /**
-     * 初始化的操作
-     */
-    protected function initialize(): void
-    {
-        if (empty($this->nodeId)) {
-            $this->nodeId = Random::character(8);
-        }
-        if (empty($this->autoFindConfig)) {
-            $this->autoFindConfig = new ProcessConfig();
-        }
+        $this->workerNum = $workerNum;
     }
 }
