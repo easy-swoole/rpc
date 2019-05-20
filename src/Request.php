@@ -8,24 +8,24 @@ use EasySwoole\Spl\SplBean;
 
 class Request extends SplBean
 {
-    protected $serverName;
+    protected $serviceName;
     protected $action;
     protected $arg;
 
     /**
      * @return mixed
      */
-    public function getServerName()
+    public function getServiceName()
     {
-        return $this->serverName;
+        return $this->serviceName;
     }
 
     /**
-     * @param mixed $serverName
+     * @param mixed $serviceName
      */
-    public function setServerName($serverName): void
+    public function setServiceName($serviceName): void
     {
-        $this->serverName = $serverName;
+        $this->serviceName = $serviceName;
     }
 
     /**

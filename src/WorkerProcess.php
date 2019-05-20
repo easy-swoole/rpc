@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\Process\AbstractProcess;
+use EasySwoole\Component\TableManager;
 use Swoole\Coroutine\Socket;
 
 class WorkerProcess extends AbstractProcess
@@ -29,47 +30,72 @@ class WorkerProcess extends AbstractProcess
             return;
         }
         while (1){
-            $client = $socket->accept(-1);
-            if($client){
-                go(function ()use($client,$arg,$serviceList){
+            /** @var Socket $clientSocket */
+            $clientSocket = $socket->accept(-1);
+            if($clientSocket){
+                go(function ()use($clientSocket,$arg,$serviceList){
                     $reply = new Response();
-                    $header = $client->recvAll(4,1);
+                    $header = $clientSocket->recvAll(4,1);
                     if(strlen($header) != 4){
                         $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
-                        $this->reply($client,$reply);
+                        $this->reply($clientSocket,$reply);
                         return;
                     }
                     $allLength = Protocol::packDataLength($header);
-                    $data = $client->recvAll($allLength,3);
+                    $data = $clientSocket->recvAll($allLength,3);
                     if(strlen($data) != $allLength){
                         $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
-                        $this->reply($client,$reply);
+                        $this->reply($clientSocket,$reply);
                         return;
                     }
                     $command = unserialize($data);
                     if(!$command instanceof Command){
                         $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
-                        $this->reply($client,$reply);
+                        $this->reply($clientSocket,$reply);
                         return;
                     }
-
+                    $request = $command->getRequest();
+                    if(!$request){
+                        $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
+                        $this->reply($clientSocket,$reply);
+                        return;
+                    }
                     switch ($command->getCommand()){
                         case Command::SERVICE_CALL:{
-                            $request = $command->getRequest();
-                            if(!$request){
-                                $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
-                                $this->reply($client,$reply);
+                            if(isset($serviceList[$request->getServiceName()])){
+                                $client = new Client();
+                                $client->setSocket($client);
+                                /** @var AbstractService $service */
+                                $service = $serviceList[$request->getServiceName()];
+                                $service->__hook($request,$client);
+                                $this->reply($clientSocket,$reply);
                             }else{
-                                if(isset($serviceList[$request->getServerName()])){
-                                    /** @var AbstractService $service */
-                                    $service = $serviceList[$request->getServerName()];
-                                    $service->__hook($request);
-                                    $this->reply($client,$reply);
-                                }else{
-                                    $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
-                                    $this->reply($client,$reply);
+                                $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
+                                $this->reply($clientSocket,$reply);
+                            }
+                            break;
+                        }
+                        case Command::SERVICE_STATUS:{
+                            $ret = [];
+                            if(!empty($request->getServiceName())){
+                                $table = TableManager::getInstance()->get($request->getServiceName());
+                                if($table){
+                                    foreach ($table as $action => $info){
+                                        $ret[$action] = $info;
+                                    }
+                                }
+                            }else{
+                                foreach ($serviceList as $serviceName => $item){
+                                    $table = TableManager::getInstance()->get($serviceName);
+                                    if($table){
+                                        foreach ($table as $action => $info){
+                                            $ret[$action] = $info;
+                                        }
+                                    }
                                 }
                             }
+                            $reply->setResult($ret);
+                            $this->reply($clientSocket,$reply);
                             break;
                         }
                     }
@@ -88,11 +114,11 @@ class WorkerProcess extends AbstractProcess
         // TODO: Implement onReceive() method.
     }
 
-    private function reply($client,Response $response)
+    private function reply(Socket $clientSocket,Response $response)
     {
         $str = $response->__toString();
         $str = Protocol::pack($str);
         $str->sendAll($str);
-        $client->close();
+        $clientSocket->close();
     }
 }
