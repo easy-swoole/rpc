@@ -63,7 +63,7 @@ class WorkerProcess extends AbstractProcess
                     switch ($command->getCommand()){
                         case Command::SERVICE_CALL:{
                             if(isset($serviceList[$request->getServiceName()])){
-                                $client = new Client();
+                                $client = new SocketClient();
                                 $client->setSocket($client);
                                 /** @var AbstractService $service */
                                 $service = $serviceList[$request->getServiceName()];

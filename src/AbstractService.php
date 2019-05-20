@@ -61,7 +61,7 @@ abstract class AbstractService
         return $this->response;
     }
 
-    protected function client():Client
+    protected function client():SocketClient
     {
         return $this->client;
     }
@@ -81,7 +81,7 @@ abstract class AbstractService
         return 1.0;
     }
 
-    public function __hook(Request $request,Response $response,Client $client)
+    public function __hook(Request $request, Response $response, SocketClient $client)
     {
         $this->request = $request;
         $this->response = $response;
