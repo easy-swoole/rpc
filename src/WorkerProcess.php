@@ -67,7 +67,7 @@ class WorkerProcess extends AbstractProcess
                                 $client->setSocket($client);
                                 /** @var AbstractService $service */
                                 $service = $serviceList[$request->getServiceName()];
-                                $service->__hook($request,$client);
+                                $service->__hook($request,$reply,$client);
                                 $this->reply($clientSocket,$reply);
                             }else{
                                 $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
