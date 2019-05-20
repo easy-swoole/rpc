@@ -31,7 +31,7 @@ abstract class AbstractService
         return 1.0;
     }
 
-    public function __hook()
+    public function __hook(Request $request)
     {
 
     }

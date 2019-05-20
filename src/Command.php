@@ -8,6 +8,39 @@ class Command
 {
     const SERVICE_CALL = 1;
     const SERVICE_STATUS = 2;
-    const SERVICE_STOP = 3;
-    const SERVICE_START = 4;
+    protected $request;
+    protected $command;
+
+    /**
+     * @return mixed
+     */
+    public function getRequest():?Request
+    {
+        return $this->request;
+    }
+
+    /**
+     * @param mixed $request
+     */
+    public function setRequest($request): void
+    {
+        $this->request = $request;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getCommand()
+    {
+        return $this->command;
+    }
+
+    /**
+     * @param mixed $command
+     */
+    public function setCommand($command): void
+    {
+        $this->command = $command;
+    }
+
 }
