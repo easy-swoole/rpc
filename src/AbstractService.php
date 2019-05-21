@@ -33,7 +33,7 @@ abstract class AbstractService
                 '__isset', '__unset', '__sleep',
                 '__wakeup', '__toString', '__invoke',
                 '__set_state', '__clone', '__debugInfo',
-                'serviceName','version'
+                'serviceName','version','onTick'
             ]
         );
     }
@@ -44,7 +44,7 @@ abstract class AbstractService
     /*
      * 每秒会执行一次，请自己实现间隔需求
      */
-    abstract public function onTick();
+    abstract public function onTick(Config $config);
 
     protected function onException(\Throwable $throwable)
     {

@@ -34,180 +34,87 @@
 新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
 监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。  
 
+### Test
+```php
 
-
-## 下面是独立运行的例子
-### Server
-```
+use EasySwoole\Rpc\AbstractService;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Request;
-use EasySwoole\Rpc\Response;
-$config = new Config();
-//注册服务名称
-$config->setServiceName('ser1');
-$rpc = new Rpc($config);
+use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 
-$rpc->registerAction('call1',function (Request $request,Response $response){
-    $response->setMessage('response');
-});
-$rpc->registerAction('call2',function (Request $request,Response $response){
-    $response->setMessage(['response2222222']);
-});
 
-$autoFindProcess = $rpc->autoFindProcess();
-$http = new swoole_http_server("127.0.0.1", 9501);
-$http->addProcess($autoFindProcess->getProcess());
-$sub = $http->addlistener("127.0.0.1", 9502,SWOOLE_TCP);
-$rpc->attachToServer($sub);
-$http->on("request", function ($request, $response) {
-    $response->end("Hello World\n");
-    
-});
-
-$http->start();
-
-rpc 作为主服务运行
-$tcp = new swoole_server('127.0.0.1', 9526);
-$tcp->addProcess($autoFindProcess->getProcess());
-$rpc->attachToServer($tcp);
-$tcp->start();
-
-```
-## EasySwoole 框架
-```
-public static function mainServerCreate(EventRegister $register)
+class UserService extends AbstractService
 {
-    $config->setServiceName('ser1');
-    $rpc = new Rpc($config);
-    $rpc->registerAction('call1',function (Request $request,Response $response){
-        $response->setMessage('response');
-    });
-    $rpc->registerAction('call2',function (Request $request,Response $response){
-        $response->setMessage(['response2222222']);
-    });
-    $swooleServer = ServerManager::getInstance()->getSwooleServer();
-    $swooleServer->addProcess($rpc->autoFindProcess()->getProcess());
-    $sub=ServerManager::getInstance()->getSwooleServer()->addListener('127.0.0.1',9526,SWOOLE_TCP);
-    $rpc->attachToServer($sub);
-}
-```
-### 以下是客户端调用例子
-### EasySwoole\Rpc\Client
-```
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Response;
-$config = new Config();
-$rpc = new Rpc($config);
-go(function ()use($rpc){
-    $client = $rpc->client();
-    $serviceClient = $client->selectService('ser1');
-    $serviceClient->createTask()->setAction('call1')->setArg([
-        'arg'=>1
-    ])->setOnSuccess(function (Response $response){
-        var_dump($response->getMessage());
-    })->setOnFail(function (){
 
-    });
-
-    $serviceClient->createTask()->setAction('call2');
-
-    $client->exec();
-});
-```
-
-## Composer安装
-```
-composer require easyswoole/rpc=3.x
-``` 
-
-
-### 原生PHP
-```
-$data = [
-    'action' => 'call1',//行为名称
-    'arg' => [
-        'args1' => 'args1',
-        'args2' => 'args2'
-    ]
-];
-
-$raw = json_encode($data);
-
-$fp = stream_socket_client('tcp://127.0.0.1:9526');
-fwrite($fp, pack('N', strlen($raw)) . $raw);
-
-$data = fread($fp, 65533);
-//做长度头部校验
-$len = unpack('N', $data);
-$data = substr($data, '4');
-if (strlen($data) != $len[1]) {
-    echo 'data error';
-} else {
-    $json = json_decode($data, true);
-//    //这就是服务端返回的结果，
-    var_dump($json);
-}
-fclose($fp);
-```
-
-## NodeJs 
-```
-var net = require('net');
-var pack = require('php-pack').pack;
-var unpack = require('php-pack').unpack;
-var md5 = require("md5");
-
-var authKey = '';
-
-var json = {  
-    'action':'call1',//行为名称
-    'arg':{
-        'argKey1':'arg1',
-        'argKey2':'arg2'
+    protected function onRequest(?string $action): bool
+    {
+        // TODO: Implement onRequest() method.
     }
-};
 
+    protected function afterAction(?string $action)
+    {
+        // TODO: Implement afterAction() method.
+    }
 
-json.packageTime = parseInt(Date.now()/1000);
+    public function serviceName(): string
+    {
+        return 'UserService';
+    }
 
-var argString = '';
+    public function onTick(Config $config)
+    {
 
-for(var key in json.arg){
-    argString += json.arg[key];
+    }
 }
 
-console.log(json.packageId + authKey + json.packageTime + argString);
+class Manager implements NodeManagerInterface
+{
+    function serviceNodeHeartBeat(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
+    {
+        // TODO: Implement registerServiceNode() method.
+    }
+
+    function getServiceNodes(string $serviceName, ?string $version = null): array
+    {
+        // TODO: Implement getServiceNodes() method.
+    }
+
+    function getServiceNode(string $serviceName, ?string $version = null): ?\EasySwoole\Rpc\ServiceNode
+    {
+        // TODO: Implement getServiceNode() method.
+    }
+
+    function allServiceNodes(): array
+    {
+        // TODO: Implement allServiceNodes() method.
+    }
+
+    function deleteServiceNode(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
+    {
+        // TODO: Implement deleteServiceNode() method.
+    }
 
 
-json.signature = md5(json.packageId + authKey + json.packageTime + argString);
+}
 
-console.log(json.signature);
+$config = new Config();
+$config->setServerIp('127.0.0.1');
+$config->setNodeManager(new Manager());
+$rpc = new Rpc($config);
+$rpc->add(new UserService());
 
-var send = JSON.stringify(json);
-//
-send = Buffer.concat([pack("N",send.length), Buffer.from(send)]);
+$list = $rpc->generateProcess();
 
-var client = new net.Socket();
-client.connect(9601, '127.0.0.1', function() {
-    console.log('Connected');
-    client.write(send);
-});
+foreach ($list['worker'] as $p){
+    $p->getProcess()->start();
+}
 
-client.on('data', function(data) {
-    console.log('Received: ' + data);
-    var ret = JSON.parse(data.toString().substr(4));
-    console.log('status: ' +  ret.status);
-    client.destroy()
-});
+foreach ($list['tickWorker'] as $p){
+    $p->getProcess()->start();
+}
 
-client.on('close', function() {
-    console.log('Connection closed');
-    client.destroy()
-});
-client.on('error',function (error) {
-    console.log(error);
-    client.destroy()
-});
+while($ret = \Swoole\Process::wait()) {
+    echo "PID={$ret['pid']}\n";
+}
+
 ```

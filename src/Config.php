@@ -4,6 +4,7 @@
 namespace EasySwoole\Rpc;
 
 
+use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Spl\SplBean;
 use EasySwoole\Utility\Random;
 
@@ -14,6 +15,8 @@ class Config extends SplBean
     protected $listenPort = 9600;
     protected $workerNum = 4;
     protected $nodeId;
+    protected $extraConfig;
+    protected $nodeManager;
 
     /**
      * @return string
@@ -77,6 +80,54 @@ class Config extends SplBean
     public function setServerIp($serverIp): void
     {
         $this->serverIp = $serverIp;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getNodeId()
+    {
+        return $this->nodeId;
+    }
+
+    /**
+     * @param mixed $nodeId
+     */
+    public function setNodeId($nodeId): void
+    {
+        $this->nodeId = $nodeId;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getExtraConfig()
+    {
+        return $this->extraConfig;
+    }
+
+    /**
+     * @param mixed $extraConfig
+     */
+    public function setExtraConfig($extraConfig): void
+    {
+        $this->extraConfig = $extraConfig;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getNodeManager():?NodeManagerInterface
+    {
+        return $this->nodeManager;
+    }
+
+    /**
+     * @param mixed $nodeManager
+     */
+    public function setNodeManager(NodeManagerInterface $nodeManager): void
+    {
+        $this->nodeManager = $nodeManager;
     }
 
     protected function initialize(): void

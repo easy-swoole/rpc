@@ -12,7 +12,7 @@ class ServiceNode extends SplBean
     protected $servicePort;
     protected $serviceVersion;
     protected $serviceName;
-    protected $nodeExpire = null;
+    protected $lastHeartBeat;
     protected $nodeId;
 
     /**
@@ -80,19 +80,19 @@ class ServiceNode extends SplBean
     }
 
     /**
-     * @return null
+     * @return mixed
      */
-    public function getNodeExpire()
+    public function getLastHeartBeat()
     {
-        return $this->nodeExpire;
+        return $this->lastHeartBeat;
     }
 
     /**
-     * @param null $nodeExpire
+     * @param mixed $lastHeartBeat
      */
-    public function setNodeExpire($nodeExpire): void
+    public function setLastHeartBeat($lastHeartBeat): void
     {
-        $this->nodeExpire = $nodeExpire;
+        $this->lastHeartBeat = $lastHeartBeat;
     }
 
     /**
