@@ -20,6 +20,7 @@ class Response extends SplBean
     protected $result;
     protected $status = self::STATUS_OK;
     protected $nodeId;
+    protected $msg;
 
     /**
      * @return mixed
@@ -67,5 +68,21 @@ class Response extends SplBean
     public function setNodeId($nodeId): void
     {
         $this->nodeId = $nodeId;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getMsg()
+    {
+        return $this->msg;
+    }
+
+    /**
+     * @param mixed $msg
+     */
+    public function setMsg($msg): void
+    {
+        $this->msg = $msg;
     }
 }

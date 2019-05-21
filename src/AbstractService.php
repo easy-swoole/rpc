@@ -38,13 +38,24 @@ abstract class AbstractService
         );
     }
 
-    abstract protected function onRequest(?string $action):bool ;
-    abstract protected function afterAction(?string $action);
+    protected function onRequest(?string $action):?bool
+    {
+        return true;
+    }
+
+    protected function afterAction(?string $action)
+    {
+
+    }
+
     abstract public function serviceName():string ;
     /*
      * 每秒会执行一次，请自己实现间隔需求
      */
-    abstract public function onTick(Config $config);
+    public function onTick(Config $config)
+    {
+
+    }
 
     protected function onException(\Throwable $throwable)
     {

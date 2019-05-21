@@ -86,6 +86,8 @@ class WorkerProcess extends AbstractProcess
                                     foreach ($table as $action => $info){
                                         $ret[$request->getServiceName()][$action] = $info;
                                     }
+                                }else{
+                                    $reply->setMsg('service not exits');
                                 }
                             }else{
                                 foreach ($serviceList as $serviceName => $item){

@@ -16,21 +16,18 @@ class Client
         $this->nodeManager = $manager;
     }
 
-    function serverStatus(ServerNode $serverNode):?array
+    function serverStatus(ServerNode $serverNode,?string $serviceName = null):?Response
     {
         $command = new Command();
         $command->setCommand(Command::SERVICE_STATUS);
+        $command->getRequest()->setServiceName($serviceName);
         $client = $this->createNodeClient($serverNode);
         if($client){
             $this->sendCommand($client,$command);
-            $ret = $this->recv($client);
-            if($ret){
-                return $ret->getResult();
-            }
+            return $this->recv($client);
         }
         return null;
     }
-
 
     private function createNodeClient(ServerNode $serverNode):?CoClient
     {

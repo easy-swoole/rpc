@@ -25,7 +25,8 @@
     },
     "autoload": {
         "psr-4": {
-            "EasySwoole\\Rpc\\": "src/"
+            "EasySwoole\\Rpc\\": "src/",
+            "EasySwoole\\Rpc\\Test\\": "test/"
         }
     }
 }

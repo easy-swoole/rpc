@@ -36,80 +36,19 @@
 
 ### Test-Server
 ```php
-
-use EasySwoole\Rpc\AbstractService;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
+use EasySwoole\Rpc\Test\UserService;
+use EasySwoole\Rpc\NodeManager\RedisManager;
+use EasySwoole\Rpc\Test\OrderService;
 
-
-class UserService extends AbstractService
-{
-
-    protected function onRequest(?string $action): bool
-    {
-        // TODO: Implement onRequest() method.
-    }
-
-    protected function afterAction(?string $action)
-    {
-        // TODO: Implement afterAction() method.
-    }
-
-    public function serviceName(): string
-    {
-        return 'UserService';
-    }
-
-    public function onTick(Config $config)
-    {
-
-    }
-
-    public function add()
-    {
-
-    }
-}
-
-class Manager implements NodeManagerInterface
-{
-    function serviceNodeHeartBeat(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
-    {
-        // TODO: Implement registerServiceNode() method.
-        return true;
-    }
-
-    function getServiceNodes(string $serviceName, ?string $version = null): array
-    {
-        // TODO: Implement getServiceNodes() method.
-    }
-
-    function getServiceNode(string $serviceName, ?string $version = null): ?\EasySwoole\Rpc\ServiceNode
-    {
-        // TODO: Implement getServiceNode() method.
-    }
-
-    function allServiceNodes(): array
-    {
-        // TODO: Implement allServiceNodes() method.
-    }
-
-    function deleteServiceNode(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
-    {
-        // TODO: Implement deleteServiceNode() method.
-    }
-
-
-
-
-}
 
 $config = new Config();
 $config->setServerIp('127.0.0.1');
-$config->setNodeManager(new Manager());
+$config->setNodeManager(new RedisManager());
 $rpc = new Rpc($config);
 $rpc->add(new UserService());
+$rpc->add(new OrderService());
 
 $list = $rpc->generateProcess();
 
@@ -124,56 +63,26 @@ foreach ($list['tickWorker'] as $p){
 while($ret = \Swoole\Process::wait()) {
     echo "PID={$ret['pid']}\n";
 }
+
 ```
 
 ### Test-client
 ```php
-use EasySwoole\Rpc\AbstractService;
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Rpc\ServerNode;
+use EasySwoole\Rpc\NodeManager\RedisManager;
 
 
-class Manager implements NodeManagerInterface
-{
-    function serviceNodeHeartBeat(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
-    {
-        // TODO: Implement registerServiceNode() method.
-    }
+$config = new Config();
+$config->setNodeManager(new RedisManager());
+$rpc = new Rpc($config);
 
-    function getServiceNodes(string $serviceName, ?string $version = null): array
-    {
-        // TODO: Implement getServiceNodes() method.
-    }
-
-    function getServiceNode(string $serviceName, ?string $version = null): ?\EasySwoole\Rpc\ServiceNode
-    {
-        // TODO: Implement getServiceNode() method.
-    }
-
-    function allServiceNodes(): array
-    {
-        // TODO: Implement allServiceNodes() method.
-    }
-
-    function deleteServiceNode(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
-    {
-        // TODO: Implement deleteServiceNode() method.
-    }
-
-
-}
-
-go(function (){
-    $config = new Config();
-    $config->setNodeManager(new Manager());
+go(function ()use($rpc){
     $node = new ServerNode();
     $node->setServerIp('127.0.0.1');
     $node->setServerPort(9600);
-    $rpc = new Rpc($config);
-
-    $ret = $rpc->client()->serverStatus($node);
+    $ret = $rpc->client()->serverStatus($node,'OrderService');
     var_dump($ret);
 });
 ```
