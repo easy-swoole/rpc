@@ -34,7 +34,7 @@
 新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
 监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。  
 
-### Test
+### Test-Server
 ```php
 
 use EasySwoole\Rpc\AbstractService;
@@ -65,7 +65,75 @@ class UserService extends AbstractService
     {
 
     }
+
+    public function add()
+    {
+
+    }
 }
+
+class Manager implements NodeManagerInterface
+{
+    function serviceNodeHeartBeat(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
+    {
+        // TODO: Implement registerServiceNode() method.
+        return true;
+    }
+
+    function getServiceNodes(string $serviceName, ?string $version = null): array
+    {
+        // TODO: Implement getServiceNodes() method.
+    }
+
+    function getServiceNode(string $serviceName, ?string $version = null): ?\EasySwoole\Rpc\ServiceNode
+    {
+        // TODO: Implement getServiceNode() method.
+    }
+
+    function allServiceNodes(): array
+    {
+        // TODO: Implement allServiceNodes() method.
+    }
+
+    function deleteServiceNode(\EasySwoole\Rpc\ServiceNode $serviceNode): bool
+    {
+        // TODO: Implement deleteServiceNode() method.
+    }
+
+
+
+
+}
+
+$config = new Config();
+$config->setServerIp('127.0.0.1');
+$config->setNodeManager(new Manager());
+$rpc = new Rpc($config);
+$rpc->add(new UserService());
+
+$list = $rpc->generateProcess();
+
+foreach ($list['worker'] as $p){
+    $p->getProcess()->start();
+}
+
+foreach ($list['tickWorker'] as $p){
+    $p->getProcess()->start();
+}
+
+while($ret = \Swoole\Process::wait()) {
+    echo "PID={$ret['pid']}\n";
+}
+```
+
+### Test-client
+```php
+use EasySwoole\Rpc\AbstractService;
+use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
+use EasySwoole\Rpc\ServerNode;
+
 
 class Manager implements NodeManagerInterface
 {
@@ -97,24 +165,15 @@ class Manager implements NodeManagerInterface
 
 }
 
-$config = new Config();
-$config->setServerIp('127.0.0.1');
-$config->setNodeManager(new Manager());
-$rpc = new Rpc($config);
-$rpc->add(new UserService());
+go(function (){
+    $config = new Config();
+    $config->setNodeManager(new Manager());
+    $node = new ServerNode();
+    $node->setServerIp('127.0.0.1');
+    $node->setServerPort(9600);
+    $rpc = new Rpc($config);
 
-$list = $rpc->generateProcess();
-
-foreach ($list['worker'] as $p){
-    $p->getProcess()->start();
-}
-
-foreach ($list['tickWorker'] as $p){
-    $p->getProcess()->start();
-}
-
-while($ret = \Swoole\Process::wait()) {
-    echo "PID={$ret['pid']}\n";
-}
-
+    $ret = $rpc->client()->serverStatus($node);
+    var_dump($ret);
+});
 ```

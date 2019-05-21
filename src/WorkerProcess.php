@@ -33,8 +33,9 @@ class WorkerProcess extends AbstractProcess
             /** @var Socket $clientSocket */
             $clientSocket = $socket->accept(-1);
             if($clientSocket){
-                go(function ()use($clientSocket,$arg,$serviceList){
+                go(function ()use($clientSocket,$config,$serviceList){
                     $reply = new Response();
+                    $reply->setNodeId($config->getNodeId());
                     $header = $clientSocket->recvAll(4,1);
                     if(strlen($header) != 4){
                         $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
@@ -48,8 +49,10 @@ class WorkerProcess extends AbstractProcess
                         $this->reply($clientSocket,$reply);
                         return;
                     }
-                    $command = unserialize($data);
-                    if(!$command instanceof Command){
+                    $command = json_decode($data,true);
+                    if(is_array($command)){
+                        $command = new Command($command);
+                    }else{
                         $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
                         $this->reply($clientSocket,$reply);
                         return;
@@ -81,7 +84,7 @@ class WorkerProcess extends AbstractProcess
                                 $table = TableManager::getInstance()->get($request->getServiceName());
                                 if($table){
                                     foreach ($table as $action => $info){
-                                        $ret[$action] = $info;
+                                        $ret[$request->getServiceName()][$action] = $info;
                                     }
                                 }
                             }else{
@@ -89,7 +92,7 @@ class WorkerProcess extends AbstractProcess
                                     $table = TableManager::getInstance()->get($serviceName);
                                     if($table){
                                         foreach ($table as $action => $info){
-                                            $ret[$action] = $info;
+                                            $ret[$serviceName][$action] = $info;
                                         }
                                     }
                                 }
@@ -118,7 +121,7 @@ class WorkerProcess extends AbstractProcess
     {
         $str = $response->__toString();
         $str = Protocol::pack($str);
-        $str->sendAll($str);
+        $clientSocket->sendAll($str);
         $clientSocket->close();
     }
 }

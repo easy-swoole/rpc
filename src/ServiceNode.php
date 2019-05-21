@@ -4,61 +4,25 @@
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Spl\SplBean;
 
-class ServiceNode extends SplBean
+class ServiceNode extends ServerNode
 {
-    protected $serviceIp;
-    protected $servicePort;
     protected $serviceVersion;
     protected $serviceName;
     protected $lastHeartBeat;
-    protected $nodeId;
 
     /**
      * @return mixed
      */
-    public function getServiceIp()
-    {
-        return $this->serviceIp;
-    }
-
-    /**
-     * @param mixed $serviceIp
-     */
-    public function setServiceIp($serviceIp): void
-    {
-        $this->serviceIp = $serviceIp;
-    }
-
-    /**
-     * @return int
-     */
-    public function getServicePort(): int
-    {
-        return $this->servicePort;
-    }
-
-    /**
-     * @param int $servicePort
-     */
-    public function setServicePort(int $servicePort): void
-    {
-        $this->servicePort = $servicePort;
-    }
-
-    /**
-     * @return string
-     */
-    public function getServiceVersion(): string
+    public function getServiceVersion()
     {
         return $this->serviceVersion;
     }
 
     /**
-     * @param string $serviceVersion
+     * @param mixed $serviceVersion
      */
-    public function setServiceVersion(string $serviceVersion): void
+    public function setServiceVersion($serviceVersion): void
     {
         $this->serviceVersion = $serviceVersion;
     }
@@ -95,19 +59,4 @@ class ServiceNode extends SplBean
         $this->lastHeartBeat = $lastHeartBeat;
     }
 
-    /**
-     * @return mixed
-     */
-    public function getNodeId()
-    {
-        return $this->nodeId;
-    }
-
-    /**
-     * @param mixed $nodeId
-     */
-    public function setNodeId($nodeId): void
-    {
-        $this->nodeId = $nodeId;
-    }
 }

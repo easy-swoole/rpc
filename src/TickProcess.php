@@ -21,15 +21,16 @@ class TickProcess extends AbstractProcess
                     $node = new ServiceNode();
                     $node->setServiceVersion($service->version());
                     $node->setServiceName($service->serviceName());
-                    $node->setServiceIp($config->getServerIp());
-                    $node->setServicePort($config->getListenPort());
+                    $node->setServerIp($config->getServerIp());
+                    $node->setServerPort($config->getListenPort());
                     $node->setLastHeartBeat(time());
+                    $node->setNodeId($config->getNodeId());
                     $config->getNodeManager()->serviceNodeHeartBeat($node);
                 }catch (\Throwable $throwable){
                     trigger_error("{$throwable->getMessage()} at file:{$throwable->getFile()} line:{$throwable->getLine()}");
                 }
                 try{
-                    $service->__onTick($config);
+                    $service->onTick($config);
                 }catch (\Throwable $throwable){
                     trigger_error("{$throwable->getMessage()} at file:{$throwable->getFile()} line:{$throwable->getLine()}");
                 }

@@ -33,7 +33,7 @@ abstract class AbstractService
                 '__isset', '__unset', '__sleep',
                 '__wakeup', '__toString', '__invoke',
                 '__set_state', '__clone', '__debugInfo',
-                'serviceName','version','onTick'
+                'serviceName','version','onTick','actionList'
             ]
         );
     }
@@ -79,6 +79,11 @@ abstract class AbstractService
     public function version()
     {
         return 1.0;
+    }
+
+    public function actionList():array
+    {
+        return $this->allowMethods;
     }
 
     public function __hook(Request $request, Response $response, SocketClient $client)

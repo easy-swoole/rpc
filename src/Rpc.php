@@ -25,12 +25,20 @@ class Rpc
 
     public function add(AbstractService $service)
     {
-        $this->list[$service->serviceName()] = $service;
-        TableManager::getInstance()->add($service->serviceName(),[
-            'action'=>['type'=>Table::TYPE_STRING,'size'=>32],
-            'success'=>['type'=>Table::TYPE_INT,'size'=>8],
-            'fail'=>['type'=>Table::TYPE_INT,'size'=>8]
-        ],64);
+        if(!isset($this->list[$service->serviceName()])){
+            $this->list[$service->serviceName()] = $service;
+            TableManager::getInstance()->add($service->serviceName(),[
+                'success'=>['type'=>Table::TYPE_INT,'size'=>8],
+                'fail'=>['type'=>Table::TYPE_INT,'size'=>8]
+            ],64);
+            $list = $service->actionList();
+            foreach ($list as $action){
+                TableManager::getInstance()->get($service->serviceName())->set($action,[
+                    'success'=>0,
+                    'fail'=>0,
+                ]);
+            }
+        }
         return $this;
     }
 
@@ -63,5 +71,10 @@ class Rpc
         if(empty($this->config->getNodeManager())){
             throw new Exception("serve NodeManager require");
         }
+    }
+
+    function client():Client
+    {
+        return new Client($this->getConfig()->getNodeManager());
     }
 }
