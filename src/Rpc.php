@@ -4,6 +4,7 @@
 namespace EasySwoole\Rpc;
 
 
+use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 use EasySwoole\Component\TableManager;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
@@ -57,7 +58,12 @@ class Rpc
         $this->check();
         $ret = [];
         for ($i = 1;$i <= $this->getConfig()->getWorkerNum();$i++){
-            $ret['worker'][] = new WorkerProcess("Rpc.Worker.{$i}",['config'=>$this->getConfig(),'serviceList'=>$this->list],false,2,true);
+            $config = new TcpProcessConfig();
+            $config->setProcessName("Rpc.Worker.{$i}");
+            $config->setListenAddress($this->getConfig()->getListenAddress());
+            $config->setListenPort($this->getConfig()->getListenPort());
+            $config->setArg(['config'=>$this->getConfig(),'serviceList'=>$this->list]);
+            $ret['worker'][] = new WorkerProcess($config);
         }
         $ret['tickWorker'][] = new TickProcess("Rpc.TickWorker",['config'=>$this->getConfig(),'serviceList'=>$this->list],false,2,true);
         return $ret;
