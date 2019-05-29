@@ -60,22 +60,11 @@ class WorkerProcess extends AbstractTcpProcess
             }
             case Command::SERVICE_STATUS:{
                 $ret = [];
-                if(!empty($request->getServiceName())){
-                    $table = TableManager::getInstance()->get($request->getServiceName());
+                foreach ($serviceList as $serviceName => $item){
+                    $table = TableManager::getInstance()->get($serviceName);
                     if($table){
                         foreach ($table as $action => $info){
-                            $ret[$request->getServiceName()][$action] = $info;
-                        }
-                    }else{
-                        $reply->setMsg('service not exits');
-                    }
-                }else{
-                    foreach ($serviceList as $serviceName => $item){
-                        $table = TableManager::getInstance()->get($serviceName);
-                        if($table){
-                            foreach ($table as $action => $info){
-                                $ret[$serviceName][$action] = $info;
-                            }
+                            $ret[$serviceName][$action] = $info;
                         }
                     }
                 }

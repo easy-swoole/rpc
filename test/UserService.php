@@ -16,6 +16,7 @@ class UserService extends AbstractService
 
     public function register()
     {
+        var_dump($this->request()->toArray());
         $this->response()->setResult([
             'account'=>'12345',
             'age'=>26

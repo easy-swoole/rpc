@@ -8,7 +8,6 @@ use EasySwoole\Component\Process\AbstractProcess;
 
 class TickProcess extends AbstractProcess
 {
-
     public function run($arg)
     {
         /** @var Config $config */
@@ -36,15 +35,5 @@ class TickProcess extends AbstractProcess
                 }
             }
         });
-    }
-
-    public function onShutDown()
-    {
-        // TODO: Implement onShutDown() method.
-    }
-
-    public function onReceive(string $str)
-    {
-        // TODO: Implement onReceive() method.
     }
 }

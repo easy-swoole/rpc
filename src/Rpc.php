@@ -79,8 +79,8 @@ class Rpc
         }
     }
 
-    function client():Client
+    function client():RpcClient
     {
-        return new Client($this->getConfig()->getNodeManager());
+        return new RpcClient($this->getConfig()->getNodeManager());
     }
 }

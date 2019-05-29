@@ -70,19 +70,28 @@ while($ret = \Swoole\Process::wait()) {
 ```php
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\ServerNode;
 use EasySwoole\Rpc\NodeManager\RedisManager;
-
+use EasySwoole\Rpc\Response;
+use EasySwoole\Rpc\ServiceNode;
 
 $config = new Config();
 $config->setNodeManager(new RedisManager());
 $rpc = new Rpc($config);
 
 go(function ()use($rpc){
-    $node = new ServerNode();
+    $node = new ServiceNode();
     $node->setServerIp('127.0.0.1');
     $node->setServerPort(9600);
-    $ret = $rpc->client()->serverStatus($node,'OrderService');
-    var_dump($ret);
+    $client = $rpc->client();
+    //因为nodeManager没有实现，因此默认指定节点测试
+    $client->addCall('UserService','register',['arg1','arg2'])
+        ->setOnFail(function (Response $response){
+        var_dump($response->toArray());
+    })
+        ->setOnSuccess(function (Response $response){
+            var_dump($response->toArray());
+        })
+        ->setServiceNode($node);
+    $client->exec();
 });
 ```
