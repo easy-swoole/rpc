@@ -36,12 +36,12 @@ class RedisManager implements NodeManagerInterface
             foreach ($list as $serviceNodeKey) {
                 list(, $serName, $serviceVersion) = explode('_', $serviceNodeKey);
                 if ($serName == $serviceName) {
-                    if (!is_null($version) && $serviceVersion !== $version) {
-                        continue;
-                    }
                     $serviceNode = $this->formatter($obj, $serviceNodeKey);
                     if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
                         $obj->srem($this->key, $serviceNodeKey);
+                        continue;
+                    }
+                    if (!is_null($version) && $serviceVersion !== $version) {
                         continue;
                     }
                     array_push($serviceNodes, $serviceNode);
@@ -108,8 +108,7 @@ class RedisManager implements NodeManagerInterface
         }
         return true;
     }
-
-
+    
     private function getServiceNodeKey(string $serviceNode, string $serviceName, string $serviceVersion)
     {
         return implode('_', [$serviceNode, $serviceName, $serviceVersion]);
