@@ -4,7 +4,9 @@
 namespace EasySwoole\Rpc;
 
 
+use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Process\AbstractProcess;
+use Swoole\Coroutine\Client;
 use Swoole\Coroutine\Socket;
 
 class TickProcess extends AbstractProcess
@@ -36,15 +38,20 @@ class TickProcess extends AbstractProcess
                 }
             }
         });
+
         if($config->getBroadcastConfig()->isEnableBroadcast()){
             //对外广播
             $this->addTick($config->getBroadcastConfig()->getInterval()*1000,function ()use($config,$serviceList){
-
+                $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
             });
         }
         if($config->getBroadcastConfig()->isEnableListen())
         {
             go(function ()use($config){
+                $openssl = null;
+                if(!empty($config->getBroadcastConfig()->getSecretKey())){
+                    $openssl = new Openssl($openssl);
+                }
                 $socketServer = new Socket(AF_INET, SOCK_DGRAM);
                 $socketServer->bind($config->getBroadcastConfig()->getListenAddress(), $config->getBroadcastConfig()->getListenPort());
                 while (1){
@@ -53,8 +60,35 @@ class TickProcess extends AbstractProcess
                     if(empty($data)){
                         continue;
                     }
+                    if($openssl){
+                        $data = $openssl->decrypt($data);
+                    }
+                    $data = unserialize($data);
+                    if($data instanceof BroadcastCommand){
+                        $node = $data->getServiceNode();
+                        if($data->getCommand() == $data::COMMAND_HEART_BEAT){
+                            $config->getNodeManager()->serviceNodeHeartBeat($node);
+                        }else if($data->getCommand() == $data::COMMAND_OFF_LINE){
+                            $config->getNodeManager()->deleteServiceNode($node);
+                        }
+                    }
                 }
             });
         }
+    }
+
+    protected function onShutDown()
+    {
+        /** @var Config $config */
+        $config = $this->getConfig()['config'];
+        $serviceList = $this->getConfig()['serviceList'];
+        $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
+    }
+
+    protected function udpBroadcast(Config $config,array $serverList,int $command)
+    {
+        $client = new Client(SWOOLE_UDP);
+        //遍历节点，并遍历广播地址发送
+//        $client->sendto($address[0], $address[1], $data);
     }
 }
