@@ -13,17 +13,24 @@
     ],
     "require": {
         "php": ">=7.1.0",
+<<<<<<< HEAD
         "ext-swoole": ">=4.2.6",
+=======
+        "ext-swoole": ">=4.3.0",
+        "ext-json": ">=1.0",
+        "ext-openssl": ">=7.1",
+>>>>>>> 85e1d9ff887a80393562779bd902aef634ee86c1
         "easyswoole/spl": "^1.0",
         "easyswoole/utility": "^1.0",
-        "easyswoole/component": "^1.1"
+        "easyswoole/component": "^1.5"
     },
     "require-dev": {
-        "easyswoole/swoole-ide-helper": "dev-master"
+        "easyswoole/swoole-ide-helper": "^1.1"
     },
     "autoload": {
         "psr-4": {
-            "EasySwoole\\Rpc\\": "src/"
+            "EasySwoole\\Rpc\\": "src/",
+            "EasySwoole\\Rpc\\Test\\": "test/"
         }
     }
 }

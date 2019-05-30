@@ -1,10 +1,5 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: yf
- * Date: 2018/11/12
- * Time: 10:46 PM
- */
+
 
 namespace EasySwoole\Rpc;
 
@@ -13,45 +8,81 @@ use EasySwoole\Spl\SplBean;
 
 class Response extends SplBean
 {
-    const STATUS_OK = 'OK';
-    const STATUS_NODES_EMPTY = 'NODES_EMPTY';
-    const STATUS_CONNECT_TIMEOUT = 'CONNECT_TIMEOUT';
-    const STATUS_SERVER_TIMEOUT = 'SERVER_TIMEOUT';
-    const STATUS_SERVER_ERROR = 'SERVER_ERROR';
-    const STATUS_SERVER_ACTION_MISS = 'ACTION_MISS';
-    protected $message;
-    protected $status;
+    const STATUS_OK = 0;
+    const STATUS_NODES_EMPTY = 1001;
+    const STATUS_CONNECT_TIMEOUT =  1002;
+    const STATUS_SERVER_TIMEOUT = 1003;
+    const STATUS_SERVICE_NOT_EXIST = 2001;
+    const STATUS_SERVICE_ACTION_NOT_FOUND = 2002;
+    const STATUS_SERVICE_ERROR = 2003;
+    const STATUS_ILLEGAL_PACKAGE = 2004;
+
+    protected $result;
+    protected $status = self::STATUS_OK;
+    protected $nodeId;
+    protected $msg;
 
     /**
      * @return mixed
      */
-    public function getMessage()
+    public function getResult()
     {
-        return $this->message;
+        return $this->result;
     }
 
     /**
-     * @param mixed $message
+     * @param mixed $result
      */
-    public function setMessage($message): void
+    public function setResult($result): void
     {
-        $this->message = $message;
+        $this->result = $result;
     }
 
     /**
-     * @return mixed
+     * @return int
      */
-    public function getStatus()
+    public function getStatus(): int
     {
         return $this->status;
     }
 
     /**
-     * @param mixed $status
+     * @param int $status
      */
-    public function setStatus($status): void
+    public function setStatus(int $status): void
     {
         $this->status = $status;
     }
 
+    /**
+     * @return mixed
+     */
+    public function getNodeId()
+    {
+        return $this->nodeId;
+    }
+
+    /**
+     * @param mixed $nodeId
+     */
+    public function setNodeId($nodeId): void
+    {
+        $this->nodeId = $nodeId;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getMsg()
+    {
+        return $this->msg;
+    }
+
+    /**
+     * @param mixed $msg
+     */
+    public function setMsg($msg): void
+    {
+        $this->msg = $msg;
+    }
 }

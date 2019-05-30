@@ -1,57 +1,15 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: yf
- * Date: 2018/11/12
- * Time: 10:33 PM
- */
+
 
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Spl\SplBean;
 
-class ServiceNode extends SplBean
+class ServiceNode extends ServerNode
 {
-    protected $serviceIp;
-    protected $servicePort;
-    protected $serviceBroadcastPort;
     protected $serviceVersion;
     protected $serviceName;
-    protected $nodeExpire;
-    protected $nodeId;
-
-    /**
-     * @return mixed
-     */
-    public function getServiceIp()
-    {
-        return $this->serviceIp;
-    }
-
-    /**
-     * @param mixed $serviceIp
-     */
-    public function setServiceIp($serviceIp): void
-    {
-        $this->serviceIp = $serviceIp;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getServicePort()
-    {
-        return $this->servicePort;
-    }
-
-    /**
-     * @param mixed $servicePort
-     */
-    public function setServicePort($servicePort): void
-    {
-        $this->servicePort = $servicePort;
-    }
+    protected $lastHeartBeat;
 
     /**
      * @return mixed
@@ -88,49 +46,17 @@ class ServiceNode extends SplBean
     /**
      * @return mixed
      */
-    public function getNodeExpire()
+    public function getLastHeartBeat()
     {
-        return $this->nodeExpire;
+        return $this->lastHeartBeat;
     }
 
     /**
-     * @param mixed $nodeExpire
+     * @param mixed $lastHeartBeat
      */
-    public function setNodeExpire($nodeExpire): void
+    public function setLastHeartBeat($lastHeartBeat): void
     {
-        $this->nodeExpire = $nodeExpire;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getNodeId()
-    {
-        return $this->nodeId;
-    }
-
-    /**
-     * @param mixed $nodeId
-     */
-    public function setNodeId($nodeId): void
-    {
-        $this->nodeId = $nodeId;
-    }
-
-    /**
-     * @return mixed
-     */
-    public function getServiceBroadcastPort()
-    {
-        return $this->serviceBroadcastPort;
-    }
-
-    /**
-     * @param mixed $serviceBroadcastPort
-     */
-    public function setServiceBroadcastPort($serviceBroadcastPort): void
-    {
-        $this->serviceBroadcastPort = $serviceBroadcastPort;
+        $this->lastHeartBeat = $lastHeartBeat;
     }
 
 }
