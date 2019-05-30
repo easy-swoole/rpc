@@ -34,13 +34,14 @@ class RedisManager implements NodeManagerInterface
         if ($obj = $this->pool->getObj()) {
             $list = $obj->sMembers($this->key);
             foreach ($list as $serviceNodeKey) {
+                $serviceNode = $this->formatter($obj, $serviceNodeKey);
+                if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
+                    $obj->srem($this->key, $serviceNodeKey);
+                    $obj->delete($serviceNodeKey);
+                    continue;
+                }
                 list(, $serName, $serviceVersion) = explode('_', $serviceNodeKey);
                 if ($serName == $serviceName) {
-                    $serviceNode = $this->formatter($obj, $serviceNodeKey);
-                    if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
-                        $obj->srem($this->key, $serviceNodeKey);
-                        continue;
-                    }
                     if (!is_null($version) && $serviceVersion !== $version) {
                         continue;
                     }
@@ -70,6 +71,7 @@ class RedisManager implements NodeManagerInterface
                 $serviceNode = $this->formatter($obj, $serviceNodeKey);
                 if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
                     $obj->srem($this->key, $serviceNodeKey);
+                    $obj->delete($serviceNodeKey);
                     continue;
                 }
                 array_push($serviceNodes, $serviceNode);
@@ -108,7 +110,7 @@ class RedisManager implements NodeManagerInterface
         }
         return true;
     }
-    
+
     private function getServiceNodeKey(string $serviceNode, string $serviceName, string $serviceVersion)
     {
         return implode('_', [$serviceNode, $serviceName, $serviceVersion]);
