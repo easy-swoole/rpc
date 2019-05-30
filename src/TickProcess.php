@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\Process\AbstractProcess;
+use Swoole\Coroutine\Socket;
 
 class TickProcess extends AbstractProcess
 {
@@ -13,7 +14,7 @@ class TickProcess extends AbstractProcess
         /** @var Config $config */
         $config = $arg['config'];
         $serviceList = $arg['serviceList'];
-        $this->addTick(5*1000,function ()use($config,$serviceList){
+        $this->addTick(3*1000,function ()use($config,$serviceList){
             /** @var AbstractService $service */
             foreach ($serviceList as $service){
                 try{
@@ -35,5 +36,25 @@ class TickProcess extends AbstractProcess
                 }
             }
         });
+        if($config->getBroadcastConfig()->isEnableBroadcast()){
+            //对外广播
+            $this->addTick($config->getBroadcastConfig()->getInterval()*1000,function ()use($config,$serviceList){
+
+            });
+        }
+        if($config->getBroadcastConfig()->isEnableListen())
+        {
+            go(function ()use($config){
+                $socketServer = new Socket(AF_INET, SOCK_DGRAM);
+                $socketServer->bind($config->getBroadcastConfig()->getListenAddress(), $config->getBroadcastConfig()->getListenPort());
+                while (1){
+                    $peer = null;
+                    $data = $socketServer->recvfrom($peer);
+                    if(empty($data)){
+                        continue;
+                    }
+                }
+            });
+        }
     }
 }

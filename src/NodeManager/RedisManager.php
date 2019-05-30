@@ -8,6 +8,9 @@ use EasySwoole\Rpc\ServiceNode;
 
 class RedisManager implements NodeManagerInterface
 {
+    function __construct(string $host,$port = 6379,$auth = null)
+    {
+    }
 
     function getServiceNodes(string $serviceName, ?string $version = null): array
     {
