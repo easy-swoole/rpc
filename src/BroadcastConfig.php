@@ -9,9 +9,9 @@ use EasySwoole\Spl\SplBean;
 class BroadcastConfig extends SplBean
 {
     protected $listenAddress = '0.0.0.0';
-    protected $listenPort = 9600;
+    protected $listenPort = 9601;
     protected $broadcastAddress = [
-        '127.0.0.1'
+        '127.0.0.1:9601'
     ];
     protected $interval = 5;
     protected $enableListen = false;

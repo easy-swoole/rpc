@@ -85,11 +85,43 @@ class TickProcess extends AbstractProcess
         $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
     }
 
-    protected function udpBroadcast(Config $config,array $serverList,int $command)
+    protected function udpBroadcast(Config $config, array $serviceList, int $command)
     {
+        $openssl = null;
+        if(!empty($config->getBroadcastConfig()->getSecretKey())){
+            $openssl = new Openssl($openssl);
+        }
         $client = new Client(SWOOLE_UDP);
-        //遍历节点，并遍历广播地址发送
-//        $client->sendto($address[0], $address[1], $data);
+        //创建节点信息
+        $node = new ServiceNode();
+        $node->setServerPort($config->getListenPort());
+        $node->setServerIp($config->getServerIp());
+        $node->setNodeId($config->getNodeId());
+        $node->setLastHeartBeat(time());
+        //构建命令
+        $broadcastCommand = new BroadcastCommand();
+        $broadcastCommand->setCommand($command);
+        $broadcastCommand->setServiceNode($node);
+        /**
+         * @var  $serviceName
+         * @var AbstractService  $service
+         */
+        foreach ($serviceList as $serviceName => $service){
+            $node->setServiceName($serviceName);
+            $node->setServiceVersion($service->version());
+            $data = serialize($broadcastCommand);
+            if($openssl){
+                $data = $openssl->encrypt($data);
+            }
+            //遍历广播地址发送
+            foreach ($config->getBroadcastConfig()->getBroadcastAddress() as $address)
+            {
+                $address = explode(':',$address);
+                $client->sendto($address[0], $address[1], $data);
+            }
+        }
+        $client->close();
+        unset($client);
     }
 
     protected function onException(\Throwable $throwable, ...$args)
