@@ -82,4 +82,15 @@ class WorkerProcess extends AbstractTcpProcess
         $clientSocket->sendAll($str);
         $clientSocket->close();
     }
+
+    protected function onException(\Throwable $throwable, ...$args)
+    {
+        /** @var Config $config */
+        $config = $this->getConfig()['config'];
+        if($config->getTrigger()){
+            $config->getTrigger()->throwable($throwable);
+        }else{
+            throw $throwable;
+        }
+    }
 }

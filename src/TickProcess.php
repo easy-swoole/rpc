@@ -29,12 +29,12 @@ class TickProcess extends AbstractProcess
                     $node->setNodeId($config->getNodeId());
                     $config->getNodeManager()->serviceNodeHeartBeat($node);
                 }catch (\Throwable $throwable){
-                    trigger_error("{$throwable->getMessage()} at file:{$throwable->getFile()} line:{$throwable->getLine()}");
+                    $this->onException($throwable);
                 }
                 try{
                     $service->onTick($config);
                 }catch (\Throwable $throwable){
-                    trigger_error("{$throwable->getMessage()} at file:{$throwable->getFile()} line:{$throwable->getLine()}");
+                    $this->onException($throwable);
                 }
             }
         });
@@ -90,5 +90,16 @@ class TickProcess extends AbstractProcess
         $client = new Client(SWOOLE_UDP);
         //遍历节点，并遍历广播地址发送
 //        $client->sendto($address[0], $address[1], $data);
+    }
+
+    protected function onException(\Throwable $throwable, ...$args)
+    {
+        /** @var Config $config */
+        $config = $this->getConfig()['config'];
+        if($config->getTrigger()){
+            $config->getTrigger()->throwable($throwable);
+        }else{
+            throw $throwable;
+        }
     }
 }
