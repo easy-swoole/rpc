@@ -39,6 +39,9 @@ class RedisManager implements NodeManagerInterface
         }catch (\Throwable $throwable){
             //如果该redis断线则销毁
             PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+        }finally{
+            //这边需要测试一个对象被unset后是否还能被回收
+            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
         }
     }
 
