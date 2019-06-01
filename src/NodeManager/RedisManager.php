@@ -34,9 +34,10 @@ class RedisManager implements NodeManagerInterface
 
     function getServiceNodes(string $serviceName, ?string $version = null): array
     {
+        /** @var \Redis $redis */
         $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
         try{
-            $nodes = $redis->hGet($this->redisKey,$serviceName);
+            $nodes = $redis->hGetAll($this->redisKey.md5($serviceName));
             $nodes = $nodes ?: [];
             $ret = [];
             foreach ($nodes as $nodeId => $node){
@@ -51,7 +52,6 @@ class RedisManager implements NodeManagerInterface
                     continue;
                 }
                 $ret[$nodeId] = $node;
-
             }
             return $ret;
         }catch (\Throwable $throwable){
@@ -61,6 +61,7 @@ class RedisManager implements NodeManagerInterface
             //这边需要测试一个对象被unset后是否还能被回收
             PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
         }
+        return [];
     }
 
     function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
@@ -71,20 +72,14 @@ class RedisManager implements NodeManagerInterface
 
     function deleteServiceNode(ServiceNode $serviceNode): bool
     {
-        $list = $this->getServiceNodes($serviceNode->getServiceName());
-        if(isset($list[$serviceNode->getNodeId()])){
-            unset($list[$serviceNode->getNodeId()]);
-        }
         /** @var \Redis $redis */
         $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
         try{
-            $redis->hSet($this->redisKey,$serviceNode->getServiceName(),$list);
+            $redis->hDel($this->redisKey.md5($serviceNode->getServiceName()),$serviceNode->getNodeId());
             return true;
         }catch (\Throwable $throwable){
-            //如果该redis断线则销毁
             PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
         }finally{
-            //这边需要测试一个对象被unset后是否还能被回收
             PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
         }
         return false;
@@ -92,15 +87,13 @@ class RedisManager implements NodeManagerInterface
 
     function serviceNodeHeartBeat(ServiceNode $serviceNode): bool
     {
-        $list = $this->getServiceNodes($serviceNode->getServiceName());
         if(empty($serviceNode->getLastHeartBeat())){
             $serviceNode->setLastHeartBeat(time());
         }
-        $list[$serviceNode->getNodeId()] = $serviceNode;
         /** @var \Redis $redis */
         $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
         try{
-           $redis->hSet($this->redisKey,$serviceNode->getServiceName(),$list);
+           $redis->hSet($this->redisKey.md5($serviceNode->getServiceName()),$serviceNode->getNodeId(),$serviceNode);
            return true;
         }catch (\Throwable $throwable){
             //如果该redis断线则销毁

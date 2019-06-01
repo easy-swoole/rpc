@@ -80,8 +80,8 @@ class TickProcess extends AbstractProcess
     protected function onShutDown()
     {
         /** @var Config $config */
-        $config = $this->getConfig()['config'];
-        $serviceList = $this->getConfig()['serviceList'];
+        $config = $this->getConfig()->getArg()['config'];
+        $serviceList = $this->getConfig()->getArg()['serviceList'];
         $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
     }
 
@@ -127,7 +127,7 @@ class TickProcess extends AbstractProcess
     protected function onException(\Throwable $throwable, ...$args)
     {
         /** @var Config $config */
-        $config = $this->getConfig()['config'];
+        $config = $this->getConfig()->getArg()['config'];
         if($config->getTrigger()){
             $config->getTrigger()->throwable($throwable);
         }else{
