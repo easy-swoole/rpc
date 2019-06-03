@@ -23,6 +23,11 @@ class WorkerProcess extends AbstractTcpProcess
             return;
         }
         $allLength = Protocol::packDataLength($header);
+        if($allLength >= 1024*32){
+            $socket->close();
+            //恶意包，直接断开不回复
+            return;
+        }
         $data = $socket->recvAll($allLength,3);
         if(strlen($data) != $allLength){
             $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
