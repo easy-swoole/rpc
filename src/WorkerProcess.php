@@ -23,7 +23,7 @@ class WorkerProcess extends AbstractTcpProcess
             return;
         }
         $allLength = Protocol::packDataLength($header);
-        if($allLength >= 1024*32){
+        if($allLength >= $config->getMaxPackage()){
             $socket->close();
             //恶意包，直接断开不回复
             return;

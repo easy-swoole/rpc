@@ -20,6 +20,7 @@ class Config extends SplBean
     protected $nodeManager;
     protected $broadcastConfig;
     protected $trigger;
+    protected $maxPackage = 1024*2;
 
     /**
      * @return string
@@ -155,6 +156,22 @@ class Config extends SplBean
     public function setTrigger(TriggerInterface $trigger): void
     {
         $this->trigger = $trigger;
+    }
+
+    /**
+     * @return float|int
+     */
+    public function getMaxPackage()
+    {
+        return $this->maxPackage;
+    }
+
+    /**
+     * @param float|int $maxPackage
+     */
+    public function setMaxPackage($maxPackage): void
+    {
+        $this->maxPackage = $maxPackage;
     }
 
     protected function initialize(): void
