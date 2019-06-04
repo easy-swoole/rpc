@@ -1,125 +1,112 @@
 <?php
 
-
 namespace EasySwoole\Rpc\NodeManager;
 
-
+use EasySwoole\Component\Pool\PoolConf;
 use EasySwoole\Component\Pool\PoolManager;
 use EasySwoole\Rpc\ServiceNode;
+use EasySwoole\Utility\Random;
+use Swoole\Coroutine\Channel;
 use Swoole\Coroutine\Redis;
+use Swoole\Runtime;
 
 class RedisManager implements NodeManagerInterface
 {
-    private $pool;
-    private $key = '__rpcRedis';
-    private $expire_time = 5;
+    protected $redisKey;
+    /** @var Channel */
+    protected $channel;
 
-    public function __construct()
+    function __construct(string $host, $port = 6379, $auth = null, string $hashKey = '__rpcNodes', int $maxRedisNum = 10)
     {
-        $config = ['host' => '127.0.0.1', 'port' => 6379];
-        PoolManager::getInstance()->registerAnonymous('__rpcRedis', function () use ($config) {
+        $this->redisKey = $hashKey;
+        Runtime::enableCoroutine();
+        PoolManager::getInstance()->registerAnonymous('__rpcRedis', function (PoolConf $conf) use ($host, $port, $auth, $maxRedisNum) {
+            $conf->setMaxObjectNum($maxRedisNum);
             $redis = new Redis();
-            $redis->connect($config['host'], $config['port']);
-            if (!empty($config['auth'])) {
-                $redis->auth($config['auth']);
+            $redis->connect($host, $port);
+            if ($auth) {
+                $redis->auth($auth);
             }
+            $redis->setOptions([
+                'serialize' => true
+            ]);
             return $redis;
         });
-        $this->pool = PoolManager::getInstance()->getPool('__rpcRedis');
     }
 
     function getServiceNodes(string $serviceName, ?string $version = null): array
     {
-        $serviceNodes = [];
-        if ($obj = $this->pool->getObj()) {
-            $list = $obj->sMembers($this->key);
-            foreach ($list as $serviceNodeKey) {
-                $serviceNode = $this->formatter($obj, $serviceNodeKey);
-                if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
-                    $obj->srem($this->key, $serviceNodeKey);
-                    $obj->delete($serviceNodeKey);
+        /** @var \Redis $redis */
+        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        try {
+            $nodes = $redis->hGetAll($this->redisKey . md5($serviceName));
+            $nodes = $nodes ?: [];
+            $ret = [];
+            foreach ($nodes as $nodeId => $node) {
+                /**
+                 * @var  $nodeId
+                 * @var  ServiceNode $node
+                 */
+                if (time() - $node->getLastHeartBeat() > 30) {
+                    $this->deleteServiceNode($node);
+                }
+                if ($version && $version != $node->getServiceVersion()) {
                     continue;
                 }
-                list(, $serName, $serviceVersion) = explode('_', $serviceNodeKey);
-                if ($serName == $serviceName) {
-                    if (!is_null($version) && $serviceVersion !== $version) {
-                        continue;
-                    }
-                    array_push($serviceNodes, $serviceNode);
-                }
+                $ret[$nodeId] = $node;
             }
-            $this->pool->recycleObj($obj);
+            return $ret;
+        } catch (\Throwable $throwable) {
+            //如果该redis断线则销毁
+            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+        } finally {
+            //这边需要测试一个对象被unset后是否还能被回收
+            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
         }
-        return $serviceNodes;
+        return [];
     }
 
     function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
     {
-        $serviceNodes = $this->getServiceNodes($serviceName, $version);
-        if (empty($serviceNodes)) {
+        $list = $this->getServiceNodes($serviceName, $version);
+        if (empty($list)) {
             return null;
         }
-        return new ServiceNode($serviceNodes[array_rand($serviceNodes)]);
-    }
-
-    function allServiceNodes(): array
-    {
-        $serviceNodes = [];
-        if ($obj = $this->pool->getObj()) {
-            $list = $obj->sMembers($this->key);
-            foreach ($list as $serviceNodeKey) {
-                $serviceNode = $this->formatter($obj, $serviceNodeKey);
-                if (empty($serviceNode) || $serviceNode['lastHeartBeat'] + $this->expire_time < time()) {
-                    $obj->srem($this->key, $serviceNodeKey);
-                    $obj->delete($serviceNodeKey);
-                    continue;
-                }
-                array_push($serviceNodes, $serviceNode);
-            }
-            $this->pool->recycleObj($obj);
-        }
-        return $serviceNodes;
+        return Random::arrayRandOne($list);
     }
 
     function deleteServiceNode(ServiceNode $serviceNode): bool
     {
-        if ($obj = $this->pool->getObj()) {
-            $serviceNodeKey = $this->getServiceNodeKey($serviceNode->getNodeId(), $serviceNode->getServiceName(), $serviceNode->setServiceVersion());
-            if (!$obj->sismember($this->key, $serviceNodeKey)) {
-                $obj->srem($this->key, $serviceNodeKey);
-            }
-            $obj->delete($serviceNodeKey);
-            $this->pool->recycleObj($obj);
+        /** @var \Redis $redis */
+        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        try {
+            $redis->hDel($this->redisKey . md5($serviceNode->getServiceName()), $serviceNode->getNodeId());
+            return true;
+        } catch (\Throwable $throwable) {
+            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+        } finally {
+            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
         }
-        return true;
+        return false;
     }
 
     function serviceNodeHeartBeat(ServiceNode $serviceNode): bool
     {
-        if ($obj = $this->pool->getObj()) {
-            $serviceNodeKey = $this->getServiceNodeKey($serviceNode->getNodeId(), $serviceNode->getServiceName(), $serviceNode->getServiceVersion());
-            if (!$obj->sismember($this->key, $serviceNodeKey)) {
-                $obj->sAdd($this->key, $serviceNodeKey);
-            }
-            if ($obj->exists($serviceNodeKey)) {//该节点是否存在
-                $obj->hSet($serviceNodeKey, 'lastHeartBeat', $serviceNode->getLastHeartBeat());
-            } else {
-                $obj->hMSet($serviceNodeKey, $serviceNode->toArray());
-            }
-            $this->pool->recycleObj($obj);
+        if (empty($serviceNode->getLastHeartBeat())) {
+            $serviceNode->setLastHeartBeat(time());
         }
-        return true;
-    }
-
-    private function getServiceNodeKey(string $serviceNode, string $serviceName, string $serviceVersion)
-    {
-        return implode('_', [$serviceNode, $serviceName, $serviceVersion]);
-    }
-
-    private function formatter(Redis $obj, string $serviceNodeKey)
-    {
-        $keys = $obj->hKeys($serviceNodeKey);
-        $values = $obj->hVals($serviceNodeKey);
-        return array_combine($keys, $values);
+        /** @var \Redis $redis */
+        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        try {
+            $redis->hSet($this->redisKey . md5($serviceNode->getServiceName()), $serviceNode->getNodeId(), $serviceNode);
+            return true;
+        } catch (\Throwable $throwable) {
+            //如果该redis断线则销毁
+            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+        } finally {
+            //这边需要测试一个对象被unset后是否还能被回收
+            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
+        }
+        return false;
     }
 }

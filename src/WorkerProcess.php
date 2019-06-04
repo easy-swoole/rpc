@@ -23,6 +23,11 @@ class WorkerProcess extends AbstractTcpProcess
             return;
         }
         $allLength = Protocol::packDataLength($header);
+        if($allLength >= $config->getMaxPackage()){
+            $socket->close();
+            //恶意包，直接断开不回复
+            return;
+        }
         $data = $socket->recvAll($allLength,3);
         if(strlen($data) != $allLength){
             $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
@@ -81,5 +86,16 @@ class WorkerProcess extends AbstractTcpProcess
         $str = Protocol::pack($str);
         $clientSocket->sendAll($str);
         $clientSocket->close();
+    }
+
+    protected function onException(\Throwable $throwable, ...$args)
+    {
+        /** @var Config $config */
+        $config = $this->getConfig()->getArg()['config'];
+        if($config->getTrigger()){
+            $config->getTrigger()->throwable($throwable);
+        }else{
+            throw $throwable;
+        }
     }
 }

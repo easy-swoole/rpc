@@ -14,7 +14,7 @@ class ServiceNode extends ServerNode
     /**
      * @return mixed
      */
-    public function getServiceVersion()
+    public function getServiceVersion():?string
     {
         return $this->serviceVersion;
     }
@@ -22,7 +22,7 @@ class ServiceNode extends ServerNode
     /**
      * @param mixed $serviceVersion
      */
-    public function setServiceVersion($serviceVersion): void
+    public function setServiceVersion(?string $serviceVersion): void
     {
         $this->serviceVersion = $serviceVersion;
     }

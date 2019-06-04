@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\Process\Socket\TcpProcessConfig;
+use EasySwoole\Component\Singleton;
 use EasySwoole\Component\TableManager;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
@@ -13,6 +14,8 @@ class Rpc
 {
     protected $config;
     protected $list = [];
+
+    use Singleton;
 
     function __construct(Config $config)
     {
@@ -43,14 +46,15 @@ class Rpc
         return $this;
     }
 
-    public function start()
-    {
-
-    }
-
     public function attachToServer(\swoole_server $server)
     {
-
+        $list = $this->generateProcess();
+        foreach ($list['worker'] as $p){
+            $server->addProcess($p->getProcess());
+        }
+        foreach ($list['tickWorker'] as $p){
+            $server->addProcess($p->getProcess());
+        }
     }
 
     public function generateProcess():array

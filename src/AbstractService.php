@@ -87,9 +87,9 @@ abstract class AbstractService
         $this->response()->setStatus(Response::STATUS_SERVICE_ACTION_NOT_FOUND);
     }
 
-    public function version()
+    public function version():string
     {
-        return 1.0;
+        return '1.0';
     }
 
     public function actionList():array
