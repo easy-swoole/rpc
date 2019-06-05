@@ -18,7 +18,7 @@
         "ext-openssl": ">=7.1",
         "easyswoole/spl": "^1.0",
         "easyswoole/utility": "^1.0",
-        "easyswoole/component": "^1.5",
+        "easyswoole/component": "^1.7",
         "easyswoole/trigger": "^1.0"
     },
     "require-dev": {
