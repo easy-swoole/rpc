@@ -8,7 +8,6 @@ use EasySwoole\Rpc\ServiceNode;
 use EasySwoole\Utility\Random;
 use Swoole\Coroutine\Channel;
 use Swoole\Coroutine\Redis;
-use Swoole\Runtime;
 
 class RedisManager implements NodeManagerInterface
 {
@@ -19,7 +18,6 @@ class RedisManager implements NodeManagerInterface
     function __construct(string $host, $port = 6379, $auth = null, string $hashKey = '__rpcNodes', int $maxRedisNum = 10)
     {
         $this->redisKey = $hashKey;
-        Runtime::enableCoroutine();
         PoolManager::getInstance()->registerAnonymous('__rpcRedis', function (PoolConf $conf) use ($host, $port, $auth, $maxRedisNum) {
             $conf->setMaxObjectNum($maxRedisNum);
             $redis = new Redis();
@@ -27,9 +25,7 @@ class RedisManager implements NodeManagerInterface
             if ($auth) {
                 $redis->auth($auth);
             }
-            $redis->setOptions([
-                'serialize' => true
-            ]);
+            $redis->setOptions(['serialize' => true, 'compatibility_mode' => true]);
             return $redis;
         });
     }

@@ -38,7 +38,7 @@
 
 ## Composer安装
 ```
-composer require easyswoole/rpc=2.x
+composer require easyswoole/rpc=4.x
 ``` 
 ## 示例代码
 

@@ -10,7 +10,6 @@ namespace EasySwoole\Rpc\NodeManager;
 
 
 use EasySwoole\Rpc\ServiceNode;
-use EasySwoole\Component\TableManager as esTableManager;
 use EasySwoole\Utility\Random;
 use Swoole\Table;
 
@@ -26,13 +25,14 @@ class TableManager implements NodeManagerInterface
     public function getServiceNodes(string $serviceName, ?string $version = null): array
     {
         $serviceNodes = [];
-        foreach ($this->table as $serviceNode) {
+        foreach ($this->table as $node) {
+            $serviceNode = new ServiceNode($node);
             if (time() - $serviceNode->getLastHeartBeat() > 30) {
                 $this->deleteServiceNode($serviceNode);
                 continue;
             }
-            if ($serviceNode['serviceName'] == $serviceName) {
-                if ($version && $serviceNode['serviceVersion'] != $version) {
+            if ($serviceNode->getServiceName() == $serviceName) {
+                if ($version && $serviceNode->getServiceVersion() != $version) {
                     continue;
                 }
                 array_push($serviceNodes, $serviceNode);
@@ -44,10 +44,10 @@ class TableManager implements NodeManagerInterface
     public function getServiceNode(string $serviceName, ?string $version = null): ?ServiceNode
     {
         $list = $this->getServiceNodes($serviceName, $version);
-        if (empty($serviceNodes)) {
+        if (empty($list)) {
             return null;
         }
-        return new ServiceNode(Random::arrayRandOne($list));
+        return Random::arrayRandOne($list);
     }
 
     public function deleteServiceNode(ServiceNode $serviceNode): bool

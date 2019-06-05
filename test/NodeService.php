@@ -19,14 +19,6 @@ class NodeService extends AbstractService
         return 'NodeService';
     }
 
-    public function allServiceNodes()
-    {
-        $table = TableManager::getInstance()->get('__rpcRedis');
-        $tableManager = new \EasySwoole\Rpc\NodeManager\TableManager($table);
-        $list = $tableManager->allServiceNodes();
-        $this->response()->setResult($list);
-    }
-
     public function getServiceNodes()
     {
         $args = $this->request()->getArg();
@@ -59,7 +51,8 @@ class NodeService extends AbstractService
         $tableManager = new \EasySwoole\Rpc\NodeManager\TableManager($table);
         $node = $tableManager->getServiceNode($serviceName, $version);
         if (!empty($node)) {
-            $tableManager->deleteServiceNode($node);
+            $ret=$tableManager->deleteServiceNode($node);
+            var_dump($ret);
         }
         $this->response()->setResult(['msg' => '删除成功']);
     }

@@ -14,24 +14,21 @@ use EasySwoole\Rpc\Response;
 use EasySwoole\Rpc\ServiceNode;
 
 $config = new Config();
-//$table=new Swoole\Table(1024);
-//$nodeManager=new \EasySwoole\Rpc\NodeManager\TableManager($table);
-$nodeManager = new RedisManager();
-go(function () use ($nodeManager) {
-    $list = $nodeManager->allServiceNodes();
-    print_r($list);
-});
-go(function () use ($nodeManager) {
-    $list = $nodeManager->getServiceNodes('OrderService');
-    print_r($list);
-});
-go(function () use ($nodeManager) {
-    $serviceNode = $nodeManager->getServiceNode('UserService');
-    if (!empty($serviceNode)) {
-        print_r($serviceNode->toArray());
-    }
-});
-return;
+$table=new Swoole\Table(1024);
+$nodeManager=new \EasySwoole\Rpc\NodeManager\TableManager($table);
+
+//$nodeManager = new RedisManager('127.0.0.1', 6379);
+//go(function () use ($nodeManager) {
+//    $list = $nodeManager->getServiceNodes('NodeService');
+//    print_r($list);
+//});
+//go(function () use ($nodeManager) {
+//    $serviceNode = $nodeManager->getServiceNode('UserService');
+//    if (!empty($serviceNode)) {
+//        print_r($serviceNode->toArray());
+//    }
+//});
+//return;
 
 $config->setNodeManager($nodeManager);
 $rpc = new Rpc($config);
@@ -51,7 +48,8 @@ go(function () use ($rpc) {
 //        })
 //        ->setServiceNode($node);
 
-    $client->addCall('NodeService', 'allServiceNodes')
+
+    $client->addCall('NodeService', 'getServiceNodes',['serviceName'=>'OrderService'])
         ->setOnFail(function (Response $response) {
             print_r($response->toArray());
         })
@@ -59,15 +57,6 @@ go(function () use ($rpc) {
             print_r($response->toArray());
         })
         ->setServiceNode($node);
-
-//    $client->addCall('NodeService', 'getServiceNodes',['serviceName'=>'UserService'])
-//        ->setOnFail(function (Response $response) {
-//            print_r($response->toArray());
-//        })
-//        ->setOnSuccess(function (Response $response) {
-//            print_r($response->toArray());
-//        })
-//        ->setServiceNode($node);
 
 
 //    $client->addCall('NodeService', 'getServiceNode',['serviceName'=>'OrderService'])
