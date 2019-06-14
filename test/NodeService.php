@@ -11,9 +11,17 @@ namespace EasySwoole\Rpc\Test;
 
 use EasySwoole\Component\TableManager;
 use EasySwoole\Rpc\AbstractService;
+use EasySwoole\Rpc\NodeManager\TableManager as nodeTableManager;
 
 class NodeService extends AbstractService
 {
+    public function getNodeManager(): nodeTableManager
+    {
+        $table = TableManager::getInstance()->get('__rpcRedis');
+        var_dump(432423423);
+        return new nodeTableManager($table);
+    }
+
     public function serviceName(): string
     {
         return 'NodeService';
@@ -24,9 +32,7 @@ class NodeService extends AbstractService
         $args = $this->request()->getArg();
         $serviceName = $args['serviceName'];
         $version = $args['version'] ?? null;
-        $table = TableManager::getInstance()->get('__rpcRedis');
-        $tableManager = new \EasySwoole\Rpc\NodeManager\TableManager($table);
-        $list = $tableManager->getServiceNodes($serviceName, $version);
+        $list = $this->getNodeManager()->getServiceNodes($serviceName, $version);
         $this->response()->setResult($list);
     }
 
@@ -35,9 +41,7 @@ class NodeService extends AbstractService
         $args = $this->request()->getArg();
         $serviceName = $args['serviceName'];
         $version = $args['version'] ?? null;
-        $table = TableManager::getInstance()->get('__rpcRedis');
-        $tableManager = new \EasySwoole\Rpc\NodeManager\TableManager($table);
-        $node = $tableManager->getServiceNode($serviceName, $version);
+        $node = $this->getNodeManager()->getServiceNode($serviceName, $version);
         $result = empty($node) ? [] : $node->toArray();
         $this->response()->setResult($result);
     }
@@ -47,11 +51,9 @@ class NodeService extends AbstractService
         $args = $this->request()->getArg();
         $serviceName = $args['serviceName'];
         $version = $args['version'] ?? null;
-        $table = TableManager::getInstance()->get('__rpcRedis');
-        $tableManager = new \EasySwoole\Rpc\NodeManager\TableManager($table);
-        $node = $tableManager->getServiceNode($serviceName, $version);
+        $node = $this->getNodeManager()->getServiceNode($serviceName, $version);
         if (!empty($node)) {
-            $ret=$tableManager->deleteServiceNode($node);
+            $ret = $this->getNodeManager()->deleteServiceNode($node);
             var_dump($ret);
         }
         $this->response()->setResult(['msg' => '删除成功']);

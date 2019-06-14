@@ -41,412 +41,54 @@
 composer require easyswoole/rpc=4.x
 ``` 
 ## 示例代码
-
-### 服务端
-```php
-use EasySwoole\Rpc\RequestPackage;
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Response;
-$conf = new Config();
-$conf->setServiceName('serviceName');
-$conf->setBroadcastTTL(4);
-//开启通讯密钥
-//$conf->setAuthKey('123456');
-
-//创建主服务
-$ser = new \swoole_http_server('0.0.0.0',9501);
-
-$ser->on('request',function ($request,$response){
-    $response->write('hello world');
-    $response->end();
-});
-
-$rpc = new \EasySwoole\Rpc\Rpc($conf);
-
-//注册action
-$rpc->getActionList()->register('a1',function (RequestPackage $package, Response $response,\swoole_server $server,int $fd){
-    var_dump($package->getArg());
-    return 'AAA';
-});
-
-$rpc->getActionList()->register('a2',function (RequestPackage $package, Response $response,\swoole_server $server,int $fd){
-    \co::sleep(0.2);
-    return 'a2';
-});
-
-
-//注册广播进程，主动对外udp广播服务节点信息
-$ser->addProcess($rpc->getRpcBroadcastProcess());
-
-//创建一个udp子服务，用来接收udp广播
-
-$udp = $ser->addListener($conf->getBroadcastListenAddress(),$conf->getBroadcastListenPort(),SWOOLE_UDP);
-$udp->on('packet',function (\swoole_server $server, string $data, array $client_info)use($rpc){
-    $rpc->onRpcBroadcast($server,$data,$client_info);
-});
-
-//创建一个tcp子服务，用来接收rpc的tcp请求。
-$sub = $ser->addListener($conf->getListenAddress(),$conf->getListenPort(),SWOOLE_TCP);
-$sub->set($conf->getProtocolSetting());
-$sub->on('receive',function (\swoole_server $server, int $fd, int $reactor_id, string $data)use($rpc){
-    $rpc->onRpcRequest( $server,  $fd,  $reactor_id,  $data);
-});
-
-$ser->start();
-``` 
-
-### 客户端
-
 #### EasySwoole 封装实现
 ```php
-//cli下独立测试
+$config = new Config();
+$config->setServerIp('127.0.0.1');
+$config->setNodeManager(new RedisManager('127.0.0.1', 6379));//设置节点管理器
+$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
+$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
+$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
 
-$conf = new \EasySwoole\Rpc\Config();
-$rpc = new \EasySwoole\Rpc\Rpc($conf);
-$conf->setServiceName('serviceName');
-//开启通讯密钥
-//$conf->setAuthKey('123456');
-
-//虚拟一个服务节点
-$serviceNode = new \EasySwoole\Rpc\ServiceNode();
-$serviceNode->setServiceName('serviceName');
-$serviceNode->setServiceIp('127.0.0.1');
-$serviceNode->setServicePort(9601);
-$serviceNode->setNodeId('asadas');
-//设置为永不过期
-$serviceNode->setNodeExpire(0);
-$rpc->nodeManager()->refreshServiceNode($serviceNode);
-
-go(function ()use($rpc){
-    $client = $rpc->client();
-    $client->selectService('serviceName')->callAction('a1')->setArg(
-        [
-            'callTime'=>time()
-        ]
-    )->onSuccess(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
-        var_dump('success'.$response->getMessage());
-    })->onFail(function (\EasySwoole\Rpc\Task $task,\EasySwoole\Rpc\Response $response,?\EasySwoole\Rpc\ServiceNode $serviceNode){
-        var_dump('fail'.$response->getStatus());
-    })->setTimeout(1.5);
-
-    $client->selectService('serviceName')->callAction('a2')->onSuccess(function (){
-        var_dump('succ');
-    });
-    $client->call(1.5);
-});
+$rpc = new Rpc($config);
+$rpc->add(new UserService());    //注册服务
+$rpc->add(new OrderService()); 
+$server=ServerManager::getInstance()->getSwooleServer();
+$rpc->attachToServer($server);  
 ```
-
-
-### 原生PHP
-```
-//以下例子为未启用数据openssl加密
-
-$authKey  = null; //RPC鉴权秘钥，默认null
-
-$data = [
-    'nodeId'=>'xxx',//节点id，如果没有做节点过滤，那么随意构造
-    'packageId'=>'xxxxx',//包Id,随意构造
-    'action'=>'a1',//行为名称
-    'packageTime'=>time(),//包请求时间
-    'arg'=>[
-        'args1'=>'args1',
-        'args2'=>'args2'
-    ]
-];
-
-$data['signature'] = md5($data['packageId'].$authKey.$data['packageTime'].implode('',$data['arg']));
-
-$raw = json_encode($data);
-//如果启用了openssl ，请在此处对$raw 加密 ，加密方法为 DES-EDE3
-
-
-$fp = stream_socket_client('tcp://127.0.0.1:9601');
-fwrite($fp,pack('N', strlen($raw)).$raw);
-
-$data = fread($fp,65533);
-//做长度头部校验
-$len = unpack('N',$data);
-$data = substr($data,'4');
-if(strlen($data) != $len[1]){
-    echo 'data error';
-}else{
-    $json = json_decode($data,true);
-    //这就是服务端返回的结果，
-    var_dump($json);
-}
-fclose($fp);
-```
-
-## NodeJs 
-```
-var net = require('net');
-var pack = require('php-pack').pack;
-var unpack = require('php-pack').unpack;
-var md5 = require("md5");
-
-var authKey = '';
-
-var json = {
-    'nodeId':'xxx',//节点id，如果没有做节点过滤，那么随意构造
-    'packageId':'xxxxx',//包Id,随意构造
-    'action':'a1',//行为名称
-    'packageTime':'',//包请求时间
-    'arg':{
-        'argKey1':'arg1',
-        'argKey2':'arg2'
-    },
-    'signature':'xxx'//包签名
-};
-
-
-json.packageTime = parseInt(Date.now()/1000);
-
-var argString = '';
-
-for(var key in json.arg){
-    argString += json.arg[key];
-}
-
-console.log(json.packageId + authKey + json.packageTime + argString);
-
-
-json.signature = md5(json.packageId + authKey + json.packageTime + argString);
-
-console.log(json.signature);
-
-var send = JSON.stringify(json);
-//
-send = Buffer.concat([pack("N",send.length), Buffer.from(send)]);
-
-var client = new net.Socket();
-client.connect(9601, '127.0.0.1', function() {
-    console.log('Connected');
-    client.write(send);
-});
-
-client.on('data', function(data) {
-    console.log('Received: ' + data);
-    var ret = JSON.parse(data.toString().substr(4));
-    console.log('status: ' +  ret.status);
-    client.destroy()
-});
-
-client.on('close', function() {
-    console.log('Connection closed');
-    client.destroy()
-});
-client.on('error',function (error) {
-    console.log(error);
-    client.destroy()
-});
-```
-
-
-## 设计代码阅读
-
-### EasySwoole\Rpc\Rpc
-```
-namespace EasySwoole\Rpc;
-
-
-
-use EasySwoole\Component\Openssl;
-use Swoole\Process;
-
-class Rpc
-{
-    private $config;
-    private $client;
-    private $nodeManager;
-    private $actionList;
-    private $openssl;
-    function __construct(Config $config)
-    {
-        //存储配置
-        $this->config = $config;
-        //根据配置项来实例化节点管理器
-        $manager =  $config->getNodeManager();
-        $this->nodeManager = new $manager;
-        //实例化当前服务的行为容器
-        $this->actionList = new ActionList();
-        //判断是否启用openssl加密
-        if(!empty($this->config->getAuthKey())){
-            $this->openssl = new Openssl($this->config->getAuthKey());
-        }
-    }
-
-    //获得当前RPC实例的行为容器
-    public function getActionList():ActionList
-    {
-        return $this->actionList;
-    }
-
-    //当前RPC实例在收到TCP数据包的回调
-    public function onRpcRequest(\swoole_server $server, int $fd, int $reactor_id, string $data):void
-    {
-        //对数据进行解包，解密
-        $data = Pack::unpack($data);
-        if($this->openssl){
-            $data = $this->openssl->decrypt($data);
-        }
-        $json = json_decode($data,true);
-        if(is_array($json)){
-            $requestPackage = new RequestPackage($json);
-            //对数据包进行过期判断和验签
-            if(abs(time() - $requestPackage->getPackageTime()) < 2){
-                if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
-                    $response = new Response();
-                    $action = $requestPackage->getAction();
-                    //获取行为回调
-                    $callback = $this->actionList->__getAction($action);
-                    if(!is_callable($callback)){
-                        $callback = $this->config->getOnActionMiss();
-                    }
-                    try{
-                        //执行行为回调
-                        $ret = call_user_func($callback,$requestPackage,$response,$server,$fd);
-                        if(!$ret instanceof Response){
-                            $response->setMessage($ret);
-                            $response->setStatus(Response::STATUS_OK);
-                        }
-                    }catch (\Throwable $throwable){
-                        call_user_func($this->config->getOnException(), $throwable, $requestPackage,$response,$server ,$fd);
-                    }
-                    if($server->exist($fd)){
-                        //响应给调用者
-                        $msg = $response->__toString();
-                        if($this->openssl){
-                            $msg = $this->openssl->encrypt($msg);
-                        }
-                        $server->send($fd,Pack::pack($msg));
-                    }
-                }
-            }
-        }
-        if($server->exist($fd)){
-            $server->close($fd);
-        }
-    }
-
-    public function onRpcBroadcast(\swoole_server $server, string $data, array $client_info)
-    {
-        if($this->openssl){
-            $data = $this->openssl->decrypt($data);
-        }
-        $data = json_decode($data,true);
-        if(is_array($data)){
-            $requestPackage = new RequestPackage($data);
-            if(abs(time() - $requestPackage->getPackageTime()) < 2){
-                if($requestPackage->getSignature() === $requestPackage->generateSignature($this->config->getAuthKey())){
-                    //忽略自己的广播
-                    if($requestPackage->getNodeId() == $this->config->getNodeId()){
-                        return;
-                    }
-                    if($requestPackage->getAction() == 'NODE_BROADCAST'){
-                        $info = $requestPackage->getArg();
-                        //若对方节点没有主动告知ip，则以网关ip为准
-                        if(empty($info['serviceIp'])){
-                            $info['serviceIp'] = $client_info['address'];
-                        }
-                        $serviceNode = new ServiceNode($info);
-                        $this->nodeManager()->refreshServiceNode($serviceNode);
-                    }else if(is_callable($this->config->getOnBroadcastReceive())){
-                        call_user_func($this->config->getOnBroadcastReceive(),$server,$requestPackage,$client_info);
-                    }
-                }
-            }
-        }
-    }
-
-    public function getRpcBroadcastProcess(string $processName = 'RPC'):Process
-    {
-        return new Process(function (Process $process)use($processName){
-            if(PHP_OS != 'Darwin'){
-                $process->name($processName);
-            }
-            if (extension_loaded('pcntl')) {
-                pcntl_async_signals(true);
-            }
-            Process::signal(SIGTERM,function ()use($process){
-                //在节点关闭的时候，对外广播下线通知
-                swoole_event_del($process->pipe);
-                $process->exit(0);
-            });
-            swoole_event_add($process->pipe, function()use($process){
-                $process->read(64 * 1024);
-            });
-            swoole_timer_tick($this->config->getBroadcastTTL()*1000,function (){
-                $package = new RequestPackage();
-                $package->setAction('NODE_BROADCAST');
-                $package->setArg([
-                    'nodeId'=>$this->config->getNodeId(),
-                    'serviceName'=>$this->config->getServiceName(),
-                    'serviceVersion'=>$this->config->getServiceVersion(),
-                    'servicePort'=>$this->config->getListenPort(),
-                    'serviceBroadcastPort'=>$this->config->getBroadcastListenPort(),
-                    'nodeExpire'=>$this->config->getNodeExpire(),
-                    'serviceIp'=>$this->config->getServiceIp(),
-                ]);
-                $this->broadcast($package);
-                if(is_callable($this->config->getOnBroadcast())){
-                    call_user_func($this->config->getOnBroadcast(),$this->config);
-                }
-            });
-        });
-    }
-
-    function broadcast(RequestPackage $requestPackage)
-    {
-        $requestPackage->setPackageTime(time());
-        $requestPackage->setNodeId($this->config->getNodeId());
-        $requestPackage->generateSignature($this->config->getAuthKey());
-        $msg = $requestPackage->__toString();
-        if($this->openssl){
-            $msg = $this->openssl->encrypt($msg);
-        }
-        foreach ($this->config->getBroadcastAddress() as $broadcastAddress){
-            $broadcastAddress = explode(':',$broadcastAddress);
-            if(($sock = socket_create(AF_INET, SOCK_DGRAM, SOL_UDP)))
-            {
-                socket_set_option($sock,SOL_SOCKET,SO_BROADCAST,true);
-                socket_sendto($sock,$msg,strlen($msg),0,$broadcastAddress[0],$broadcastAddress[1]);
-                socket_close($sock);
-            }
-        }
-    }
-=======
 ### Test-Server
+######使用redis节点管理器,swoole-table节点管理器使用参考test里面的ServerTable
 ```php
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Test\UserService;
 use EasySwoole\Rpc\NodeManager\RedisManager;
 use EasySwoole\Rpc\Test\OrderService;
->>>>>>> 85e1d9ff887a80393562779bd902aef634ee86c1
 
 
 $config = new Config();
 $config->setServerIp('127.0.0.1');
-$config->setNodeManager(new RedisManager());
+$config->setNodeManager(new RedisManager('127.0.0.1', 6379));//设置节点管理器
+$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
+$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
+$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
+
 $rpc = new Rpc($config);
-$rpc->add(new UserService());
-$rpc->add(new OrderService());
+$rpc->add(new UserService());    //注册服务
+$rpc->add(new OrderService()); 
 
-$list = $rpc->generateProcess();
-
+$list = $rpc->generateProcess(); //获取注册的rpc worker自定义进程
 foreach ($list['worker'] as $p){
     $p->getProcess()->start();
 }
 
-foreach ($list['tickWorker'] as $p){
+foreach ($list['tickWorker'] as $p){//获取注册的rpc tick自定义进程(ps:处理广播和监听广播)
     $p->getProcess()->start();
 }
 
 while($ret = \Swoole\Process::wait()) {
     echo "PID={$ret['pid']}\n";
 }
-<<<<<<< HEAD
-=======
 
 ```
 
@@ -456,27 +98,22 @@ use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\NodeManager\RedisManager;
 use EasySwoole\Rpc\Response;
-use EasySwoole\Rpc\ServiceNode;
 
 $config = new Config();
-$config->setNodeManager(new RedisManager());
+$nodeManager = new RedisManager('127.0.0.1', 6379);
+$config->setNodeManager($nodeManager);
 $rpc = new Rpc($config);
 
-go(function ()use($rpc){
-    $node = new ServiceNode();
-    $node->setServerIp('127.0.0.1');
-    $node->setServerPort(9600);
+go(function () use ($rpc) {
     $client = $rpc->client();
-    //因为nodeManager没有实现，因此默认指定节点测试
-    $client->addCall('UserService','register',['arg1','arg2'])
-        ->setOnFail(function (Response $response){
-        var_dump($response->toArray());
-    })
-        ->setOnSuccess(function (Response $response){
-            var_dump($response->toArray());
+    $client->addCall('UserService', 'register', ['arg1', 'arg2'])
+        ->setOnFail(function (Response $response) {
+            print_r($response->toArray());
         })
-        ->setServiceNode($node);
+        ->setOnSuccess(function (Response $response) {
+            print_r($response->toArray());
+        });
+
     $client->exec();
 });
->>>>>>> 85e1d9ff887a80393562779bd902aef634ee86c1
 ```

@@ -14,12 +14,12 @@ class TickProcess extends AbstractProcess
     public function run($arg)
     {
         /** @var Config $config */
-        $config = $arg['config'];
-        $serviceList = $arg['serviceList'];
-        $this->addTick(3*1000,function ()use($config,$serviceList){
+        $config = $arg['config'];//配置
+        $serviceList = $arg['serviceList'];//服务
+        $this->addTick(3 * 1000, function () use ($config, $serviceList) {
             /** @var AbstractService $service */
-            foreach ($serviceList as $service){
-                try{
+            foreach ($serviceList as $service) {//遍历服务列表
+                try {
                     $node = new ServiceNode();
                     $node->setServiceVersion($service->version());
                     $node->setServiceName($service->serviceName());
@@ -28,47 +28,47 @@ class TickProcess extends AbstractProcess
                     $node->setLastHeartBeat(time());
                     $node->setNodeId($config->getNodeId());
                     $config->getNodeManager()->serviceNodeHeartBeat($node);
-                }catch (\Throwable $throwable){
+                } catch (\Throwable $throwable) {
                     $this->onException($throwable);
                 }
-                try{
-                    $service->onTick($config);
-                }catch (\Throwable $throwable){
+                try {
+                    $service->onTick($config);//定时清理服务
+                } catch (\Throwable $throwable) {
                     $this->onException($throwable);
                 }
             }
         });
 
-        if($config->getBroadcastConfig()->isEnableBroadcast()){
+        if ($config->getBroadcastConfig()->isEnableBroadcast()) {
             //对外广播
-            $this->addTick($config->getBroadcastConfig()->getInterval()*1000,function ()use($config,$serviceList){
-                $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
+            $this->addTick($config->getBroadcastConfig()->getInterval() * 1000, function () use ($config, $serviceList) {
+                $this->udpBroadcast($config, $serviceList, BroadcastCommand::COMMAND_HEART_BEAT);
             });
         }
-        if($config->getBroadcastConfig()->isEnableListen())
-        {
-            go(function ()use($config){
+        if ($config->getBroadcastConfig()->isEnableListen()) {
+            go(function () use ($config) {
                 $openssl = null;
-                if(!empty($config->getBroadcastConfig()->getSecretKey())){
-                    $openssl = new Openssl($openssl);
+                $secretKey = $config->getBroadcastConfig()->getSecretKey();
+                if (!empty($secretKey)) {
+                    $openssl = new Openssl($secretKey);
                 }
                 $socketServer = new Socket(AF_INET, SOCK_DGRAM);
                 $socketServer->bind($config->getBroadcastConfig()->getListenAddress(), $config->getBroadcastConfig()->getListenPort());
-                while (1){
+                while (1) {
                     $peer = null;
                     $data = $socketServer->recvfrom($peer);
-                    if(empty($data)){
+                    if (empty($data)) {
                         continue;
                     }
-                    if($openssl){
+                    if ($openssl) {
                         $data = $openssl->decrypt($data);
                     }
                     $data = unserialize($data);
-                    if($data instanceof BroadcastCommand){
+                    if ($data instanceof BroadcastCommand) {
                         $node = $data->getServiceNode();
-                        if($data->getCommand() == $data::COMMAND_HEART_BEAT){
+                        if ($data->getCommand() == $data::COMMAND_HEART_BEAT) {
                             $config->getNodeManager()->serviceNodeHeartBeat($node);
-                        }else if($data->getCommand() == $data::COMMAND_OFF_LINE){
+                        } else if ($data->getCommand() == $data::COMMAND_OFF_LINE) {
                             $config->getNodeManager()->deleteServiceNode($node);
                         }
                     }
@@ -82,14 +82,15 @@ class TickProcess extends AbstractProcess
         /** @var Config $config */
         $config = $this->getConfig()->getArg()['config'];
         $serviceList = $this->getConfig()->getArg()['serviceList'];
-        $this->udpBroadcast($config,$serviceList,BroadcastCommand::COMMAND_OFF_LINE);
+        $this->udpBroadcast($config, $serviceList, BroadcastCommand::COMMAND_OFF_LINE);
     }
 
     protected function udpBroadcast(Config $config, array $serviceList, int $command)
     {
         $openssl = null;
-        if(!empty($config->getBroadcastConfig()->getSecretKey())){
-            $openssl = new Openssl($openssl);
+        $secretKey = $config->getBroadcastConfig()->getSecretKey();
+        if (!empty($secretKey)) {
+            $openssl = new Openssl($secretKey);
         }
         $client = new Client(SWOOLE_UDP);
         //创建节点信息
@@ -104,19 +105,18 @@ class TickProcess extends AbstractProcess
         $broadcastCommand->setServiceNode($node);
         /**
          * @var  $serviceName
-         * @var AbstractService  $service
+         * @var AbstractService $service
          */
-        foreach ($serviceList as $serviceName => $service){
+        foreach ($serviceList as $serviceName => $service) {
             $node->setServiceName($serviceName);
             $node->setServiceVersion($service->version());
             $data = serialize($broadcastCommand);
-            if($openssl){
+            if ($openssl) {
                 $data = $openssl->encrypt($data);
             }
             //遍历广播地址发送
-            foreach ($config->getBroadcastConfig()->getBroadcastAddress() as $address)
-            {
-                $address = explode(':',$address);
+            foreach ($config->getBroadcastConfig()->getBroadcastAddress() as $address) {
+                $address = explode(':', $address);
                 $client->sendto($address[0], $address[1], $data);
             }
         }
@@ -128,9 +128,9 @@ class TickProcess extends AbstractProcess
     {
         /** @var Config $config */
         $config = $this->getConfig()->getArg()['config'];
-        if($config->getTrigger()){
+        if ($config->getTrigger()) {
             $config->getTrigger()->throwable($throwable);
-        }else{
+        } else {
             throw $throwable;
         }
     }
