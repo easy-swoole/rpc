@@ -13,7 +13,7 @@ use EasySwoole\Rpc\NodeManager\RedisManager;
 use EasySwoole\Rpc\Response;
 
 $config = new Config();
-$nodeManager = new RedisManager('127.0.0.1', 6379);
+$nodeManager = new RedisManager('127.0.0.1');
 $config->setNodeManager($nodeManager);
 $rpc = new Rpc($config);
 
