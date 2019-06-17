@@ -17,7 +17,7 @@ use EasySwoole\Rpc\Test\NodeService;
 $config = new Config();
 $config->setServerIp('127.0.0.1');
 
-$config->setNodeManager(new RedisManager('127.0.0.1', 6379));
+$config->setNodeManager(new RedisManager('127.0.0.1'));
 
 $config->getBroadcastConfig()->setEnableBroadcast(true);
 $config->getBroadcastConfig()->setEnableListen(true);
@@ -40,4 +40,6 @@ foreach ($list['tickWorker'] as $p) {
 while ($ret = \Swoole\Process::wait()) {
     echo "PID={$ret['pid']}\n";
 }
+
+
 
