@@ -25,12 +25,13 @@ class RpcClient
         return $client->recv();
     }
 
-    public function addCall(string $service,string $action,$arg = null):ServiceCall
+    public function addCall(string $service,string $action,$arg = null,$serviceVersion = null):ServiceCall
     {
         $item = new ServiceCall([
             'serviceName'=>$service,
             'action'=>$action,
             'arg'=>$arg,
+            'serviceVersion'=>$serviceVersion
         ]);
         $this->callList[] = $item;
         return $item;
