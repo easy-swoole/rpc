@@ -86,6 +86,17 @@ class TickProcess extends AbstractProcess
         /** @var Config $config */
         $config = $this->getConfig()->getArg()['config'];
         $serviceList = $this->getConfig()->getArg()['serviceList'];
+        foreach ($serviceList as $service) {//遍历本节点的服务列表
+            try {
+                $node = new ServiceNode();
+                $node->setServiceVersion($service->version());
+                $node->setServiceName($service->serviceName());
+                $node->setNodeId($config->getNodeId());
+                $config->getNodeManager()->deleteServiceNode($node);
+            } catch (\Throwable $throwable) {
+                $this->onException($throwable);
+            }
+        }
         $this->udpBroadcast($config, $serviceList, BroadcastCommand::COMMAND_OFF_LINE);
     }
 
