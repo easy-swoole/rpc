@@ -34,7 +34,7 @@
 新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
 监控你的服务提供者，在getServiceNode方法中，返回对应的服务器节点信息即可。  
 
-###EasySwoole RPC执行流程
+### EasySwoole RPC执行流程
 
 服务端：  
 注册RPC服务，创建相应的服务swoole table表（ps:记录调用成功和失败的次数） 
@@ -72,7 +72,7 @@ $server=ServerManager::getInstance()->getSwooleServer();
 $rpc->attachToServer($server);  
 ```
 ### Test-Server
-######使用redis节点管理器,swoole-table节点管理器使用参考test里面的ServerTable
+#### 使用redis节点管理器,swoole-table节点管理器使用参考test里面的ServerTable
 ```php
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
