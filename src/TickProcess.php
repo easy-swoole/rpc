@@ -4,7 +4,6 @@
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Component\Openssl;
 use EasySwoole\Component\Process\AbstractProcess;
 use Swoole\Coroutine\Client;
 use Swoole\Coroutine\Socket;
