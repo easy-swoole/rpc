@@ -5,13 +5,14 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\TableManager;
+use Swoole\Coroutine;
 
 abstract class AbstractService
 {
     private $allowMethods = [];
-    private $request;
+    private $requests = [];
+    private $responses = [];
     private $client;
-    private $response;
     private $action;
     /*
      * 禁止重写该方法，防止在构造函数中抛出异常
@@ -64,12 +65,12 @@ abstract class AbstractService
 
     protected function request():Request
     {
-        return $this->request;
+        return $this->requests[Coroutine::getCid()];
     }
 
     protected function response():Response
     {
-        return $this->response;
+        return $this->responses[Coroutine::getCid()];
     }
 
     protected function client():SocketClient
@@ -99,8 +100,8 @@ abstract class AbstractService
 
     public function __hook(Request $request, Response $response, SocketClient $client)
     {
-        $this->request = $request;
-        $this->response = $response;
+        $this->requests[Coroutine::getCid()] = $request;
+        $this->responses[Coroutine::getCid()] = $response;
         $this->client = $client;
         $this->action = $request->getAction();
         try {
@@ -121,6 +122,8 @@ abstract class AbstractService
             } catch (\Throwable $throwable) {
                 $this->onException($throwable);
             }
+            unset( $this->requests[Coroutine::getCid()]);
+            unset( $this->responses[Coroutine::getCid()]);
         }
         if($response->getStatus() === Response::STATUS_OK){
             TableManager::getInstance()->get($this->serviceName())->incr($this->action(),'success');
