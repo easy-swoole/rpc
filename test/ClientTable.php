@@ -16,7 +16,7 @@ $table=new Swoole\Table(1024);
 $config->setNodeManager(new \EasySwoole\Rpc\NodeManager\TableManager($table));
 
 $rpc = new \EasySwoole\Rpc\Rpc($config);
-go(function () use ($rpc) {
+\Swoole\Coroutine::create(function () use ($rpc) {
     //因为节点管理为table,这边暂无法使用节点管理器
     $node = new \EasySwoole\Rpc\ServiceNode();
     $node->setServerIp('127.0.0.1');
