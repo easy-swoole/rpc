@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Component\Process\AbstractProcess;
+use Swoole\Coroutine;
 use Swoole\Coroutine\Client;
 use Swoole\Coroutine\Socket;
 
@@ -46,7 +47,7 @@ class TickProcess extends AbstractProcess
             });
         }
         if ($config->getBroadcastConfig()->isEnableListen()) {
-            go(function () use ($config) {
+            Coroutine::create(function () use ($config) {
                 $openssl = null;
                 $secretKey = $config->getBroadcastConfig()->getSecretKey();
                 if (!empty($secretKey)) {
