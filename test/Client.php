@@ -17,7 +17,7 @@ $nodeManager = new RedisManager('127.0.0.1');
 $config->setNodeManager($nodeManager);
 $rpc = new Rpc($config);
 
-go(function () use ($rpc) {
+\Swoole\Coroutine::create(function () use ($rpc) {
     $client = $rpc->client();
     $client->addCall('UserService', 'register', ['arg1', 'arg2'])
         ->setOnFail(function (Response $response) {
