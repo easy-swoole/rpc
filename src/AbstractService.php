@@ -12,8 +12,8 @@ abstract class AbstractService
     private $allowMethods = [];
     private $requests = [];
     private $responses = [];
-    private $client;
-    private $action;
+    private $sockets = [];
+    private $actions = [];
     /*
      * 禁止重写该方法，防止在构造函数中抛出异常
      */
@@ -73,14 +73,14 @@ abstract class AbstractService
         return $this->responses[Coroutine::getCid()];
     }
 
-    protected function client():SocketClient
+    protected function socket():Coroutine\Socket
     {
-        return $this->client;
+        return $this->sockets[Coroutine::getCid()];
     }
 
     protected function action(): ?string
     {
-        return $this->action;
+        return $this->actions[Coroutine::getCid()];
     }
 
     protected function actionNotFound(?string $action)
@@ -98,15 +98,15 @@ abstract class AbstractService
         return $this->allowMethods;
     }
 
-    public function __hook(Request $request, Response $response, SocketClient $client)
+    public function __hook(Request $request, Response $response, Coroutine\Socket $client)
     {
         $this->requests[Coroutine::getCid()] = $request;
         $this->responses[Coroutine::getCid()] = $response;
-        $this->client = $client;
-        $this->action = $request->getAction();
+        $this->sockets[Coroutine::getCid()] = $client;
+        $this->actions[Coroutine::getCid()] = $request->getAction();
         try {
             if ($this->onRequest($this->action()) !== false) {
-                if (in_array($this->action, $this->allowMethods)) {
+                if (in_array($this->actions, $this->allowMethods)) {
                     $actionName = $this->action();
                     $this->$actionName();
                 } else {
@@ -124,11 +124,13 @@ abstract class AbstractService
             }
             unset( $this->requests[Coroutine::getCid()]);
             unset( $this->responses[Coroutine::getCid()]);
+            unset( $this->actions[Coroutine::getCid()]);
+            unset( $this->sockets[Coroutine::getCid()]);
         }
         if($response->getStatus() === Response::STATUS_OK){
-            TableManager::getInstance()->get($this->serviceName())->incr($this->action(),'success');
+            TableManager::getInstance()->get($this->serviceName())->incr($actionName,'success');
         }else{
-            TableManager::getInstance()->get($this->serviceName())->incr($this->action(),'fail');
+            TableManager::getInstance()->get($this->serviceName())->incr($actionName,'fail');
         }
     }
 

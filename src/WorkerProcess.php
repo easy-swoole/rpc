@@ -52,11 +52,9 @@ class WorkerProcess extends AbstractTcpProcess
             case Command::SERVICE_CALL:
                 {
                     if (isset($serviceList[$request->getServiceName()])) {
-                        $client = new SocketClient();
-                        $client->setSocket($client);
                         /** @var AbstractService $service */
                         $service = $serviceList[$request->getServiceName()];
-                        $service->__hook($request, $reply, $client);
+                        $service->__hook($request, $reply, $socket);
                         $this->reply($socket, $reply);
                     } else {
                         $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
