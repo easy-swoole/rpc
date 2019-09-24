@@ -13,6 +13,30 @@ class BroadcastCommand extends SplBean
     protected $command = self::COMMAND_HEART_BEAT;
     /** @var ServiceNode */
     protected $serviceNode;
+    protected $requestTime;
+
+    protected function initialize(): void
+    {
+        if(empty($this->requestTime)){
+            $this->requestTime = time();
+        }
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getRequestTime()
+    {
+        return $this->requestTime;
+    }
+
+    /**
+     * @param mixed $requestTime
+     */
+    public function setRequestTime($requestTime): void
+    {
+        $this->requestTime = $requestTime;
+    }
 
     /**
      * @return int

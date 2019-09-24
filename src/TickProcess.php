@@ -66,6 +66,9 @@ class TickProcess extends AbstractProcess
                     }
                     $data = unserialize($data);
                     if ($data instanceof BroadcastCommand) {
+                        if(time() - $data->getRequestTime() > 5){
+                            continue;
+                        }
                         $node = $data->getServiceNode();
                         if ($data->getCommand() == $data::COMMAND_HEART_BEAT) {
                             if ($node->getNodeId() != $config->getNodeId()) {
