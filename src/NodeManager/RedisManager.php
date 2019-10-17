@@ -2,38 +2,25 @@
 
 namespace EasySwoole\Rpc\NodeManager;
 
-use EasySwoole\Component\Pool\PoolConf;
-use EasySwoole\Component\Pool\PoolManager;
+use EasySwoole\RedisPool\RedisPool;
 use EasySwoole\Rpc\ServiceNode;
 use EasySwoole\Utility\Random;
-use Swoole\Coroutine\Channel;
-use Swoole\Coroutine\Redis;
 
 class RedisManager implements NodeManagerInterface
 {
     protected $redisKey;
-    /** @var Channel */
-    protected $channel;
 
-    function __construct(string $host, $port = 6379, $auth = null, string $hashKey = '__rpcNodes', int $maxRedisNum = 10)
+    protected $pool;
+
+    function __construct(RedisPool $pool, string $hashKey = '__rpcNodes')
     {
         $this->redisKey = $hashKey;
-        PoolManager::getInstance()->registerAnonymous('__rpcRedis', function (PoolConf $conf) use ($host, $port, $auth, $maxRedisNum) {
-            $conf->setMaxObjectNum($maxRedisNum);
-            $redis = new Redis();
-            $redis->connect($host, $port);
-            if ($auth) {
-                $redis->auth($auth);
-            }
-            $redis->setOptions(['serialize' => true, 'compatibility_mode' => true]);
-            return $redis;
-        });
+        $this->pool = $pool;
     }
 
     function getServiceNodes(string $serviceName, ?string $version = null): array
     {
-        /** @var \Redis $redis */
-        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        $redis = $this->pool->getObj(15);
         try {
             $nodes = $redis->hGetAll($this->redisKey . md5($serviceName));
             $nodes = $nodes ?: [];
@@ -54,10 +41,9 @@ class RedisManager implements NodeManagerInterface
             return $ret;
         } catch (\Throwable $throwable) {
             //如果该redis断线则销毁
-            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+            $this->pool->unsetObj($redis);
         } finally {
-            //这边需要测试一个对象被unset后是否还能被回收
-            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
+            $this->pool->recycleObj($redis);
         }
         return [];
     }
