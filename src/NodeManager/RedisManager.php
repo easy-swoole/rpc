@@ -60,7 +60,7 @@ class RedisManager implements NodeManagerInterface
 
     function deleteServiceNode(ServiceNode $serviceNode): bool
     {
-        $redis = $this->pool->defer()->getObj(15);
+        $redis = $this->pool->getObj(15);
         try {
             $redis->hDel($this->generateNodeKey($serviceNode), $serviceNode->getNodeId());
             return true;

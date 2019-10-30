@@ -104,9 +104,10 @@ abstract class AbstractService
         $this->responses[Coroutine::getCid()] = $response;
         $this->sockets[Coroutine::getCid()] = $client;
         $this->actions[Coroutine::getCid()] = $request->getAction();
+        $actionName = $this->action();
         try {
             if ($this->onRequest($this->action()) !== false) {
-                if (in_array($this->actions, $this->allowMethods)) {
+                if (in_array($actionName, $this->allowMethods)) {
                     $actionName = $this->action();
                     $this->$actionName();
                 } else {
@@ -133,5 +134,4 @@ abstract class AbstractService
             TableManager::getInstance()->get($this->serviceName())->incr($actionName,'fail');
         }
     }
-
 }

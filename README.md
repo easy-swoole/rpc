@@ -57,14 +57,87 @@ composer require easyswoole/rpc=4.x
 ``` 
 
 ## 4.0.6版本后
-## redis节点管理器  
-```
-$redisPool = new \EasySwoole\RedisPool\RedisPool(new \EasySwoole\Redis\Config\RedisConfig([
-    'host'=>'127.0.0.1'
-]));
-$manager = new \EasySwoole\Rpc\NodeManager\RedisManager($redisPool);
+### 服务端  
 ```
 
+
+use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\Test\UserService;
+use EasySwoole\Rpc\NodeManager\RedisManager;
+use EasySwoole\Rpc\Test\OrderService;
+use EasySwoole\RedisPool\RedisPool;
+use EasySwoole\Redis\Config\RedisConfig;
+
+/*
+ * 定义一个节点管理器
+ */
+$redisPool = new RedisPool(new RedisConfig([
+    'host'=>'127.0.0.1'
+]));
+$manager = new RedisManager($redisPool);
+
+$config = new Config();
+$config->setServerIp('127.0.0.1');
+$config->setNodeManager($manager);//设置节点管理器
+$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
+$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
+$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
+
+
+$rpc = new Rpc($config);
+$rpc->add(new UserService());    //注册服务
+$rpc->add(new OrderService());
+
+$list = $rpc->generateProcess(); //获取注册的rpc worker自定义进程
+foreach ($list['worker'] as $p){
+    $p->getProcess()->start();
+}
+
+foreach ($list['tickWorker'] as $p){//获取注册的rpc tick自定义进程(ps:处理广播和监听广播)
+    $p->getProcess()->start();
+}
+
+while($ret = \Swoole\Process::wait()) {
+    echo "PID={$ret['pid']}\n";
+}
+```
+
+### 客户端
+```
+
+use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\NodeManager\RedisManager;
+use EasySwoole\Rpc\Response;
+use EasySwoole\RedisPool\RedisPool;
+use EasySwoole\Redis\Config\RedisConfig;
+
+
+$config = new Config();
+/*
+ * 定义一个节点管理器
+ */
+$redisPool = new RedisPool(new RedisConfig([
+    'host'=>'127.0.0.1'
+]));
+$manager = new RedisManager($redisPool);
+$config->setNodeManager($manager);
+$rpc = new Rpc($config);
+
+go(function () use ($rpc) {
+    $client = $rpc->client();
+    $client->addCall('UserService', 'register', ['arg1', 'arg2'])
+        ->setOnFail(function (Response $response) {
+            print_r($response->toArray());
+        })
+        ->setOnSuccess(function (Response $response) {
+            print_r($response->toArray());
+        });
+
+    $client->exec();
+});
+```
 
 ## 4.0.6版本前
 
