@@ -12,7 +12,7 @@ class RedisManager implements NodeManagerInterface
 
     protected $pool;
 
-    function __construct(RedisPool $pool, string $hashKey = '__rpcNodes')
+    function __construct(RedisPool $pool, string $hashKey = 'rpc')
     {
         $this->redisKey = $hashKey;
         $this->pool = $pool;
@@ -22,10 +22,11 @@ class RedisManager implements NodeManagerInterface
     {
         $redis = $this->pool->getObj(15);
         try {
-            $nodes = $redis->hGetAll($this->redisKey . md5($serviceName));
+            $nodes = $redis->hGetAll("{$this->redisKey}_{$serviceName}");
             $nodes = $nodes ?: [];
             $ret = [];
             foreach ($nodes as $nodeId => $node) {
+                $node = new ServiceNode(json_decode($node,true));
                 /**
                  * @var  $nodeId
                  * @var  ServiceNode $node
@@ -59,15 +60,14 @@ class RedisManager implements NodeManagerInterface
 
     function deleteServiceNode(ServiceNode $serviceNode): bool
     {
-        /** @var \Redis $redis */
-        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        $redis = $this->pool->defer()->getObj(15);
         try {
-            $redis->hDel($this->redisKey . md5($serviceNode->getServiceName()), $serviceNode->getNodeId());
+            $redis->hDel($this->generateNodeKey($serviceNode), $serviceNode->getNodeId());
             return true;
         } catch (\Throwable $throwable) {
-            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+            $this->pool->unsetObj($redis);
         } finally {
-            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
+            $this->pool->recycleObj($redis);
         }
         return false;
     }
@@ -77,18 +77,21 @@ class RedisManager implements NodeManagerInterface
         if (empty($serviceNode->getLastHeartBeat())) {
             $serviceNode->setLastHeartBeat(time());
         }
-        /** @var \Redis $redis */
-        $redis = PoolManager::getInstance()->getPool('__rpcRedis')->getObj(15);
+        $redis = $this->pool->getObj(15);
         try {
-            $redis->hSet($this->redisKey . md5($serviceNode->getServiceName()), $serviceNode->getNodeId(), $serviceNode);
+            $redis->hSet($this->generateNodeKey($serviceNode), $serviceNode->getNodeId(), $serviceNode->__toString());
             return true;
         } catch (\Throwable $throwable) {
-            //如果该redis断线则销毁
-            PoolManager::getInstance()->getPool('__rpcRedis')->unsetObj($redis);
+            $this->pool->unsetObj($redis);
         } finally {
             //这边需要测试一个对象被unset后是否还能被回收
-            PoolManager::getInstance()->getPool('__rpcRedis')->recycleObj($redis);
+            $this->pool->recycleObj($redis);
         }
         return false;
+    }
+
+    protected function generateNodeKey(ServiceNode $node)
+    {
+        return "{$this->redisKey}_{$node->getServiceName()}";
     }
 }

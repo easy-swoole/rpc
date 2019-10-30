@@ -55,6 +55,19 @@ tick进程：
 ```
 composer require easyswoole/rpc=4.x
 ``` 
+
+## 4.0.6版本后
+## redis节点管理器  
+```
+$redisPool = new \EasySwoole\RedisPool\RedisPool(new \EasySwoole\Redis\Config\RedisConfig([
+    'host'=>'127.0.0.1'
+]));
+$manager = new \EasySwoole\Rpc\NodeManager\RedisManager($redisPool);
+```
+
+
+## 4.0.6版本前
+
 ## 示例代码
 #### EasySwoole 封装实现
 ```php
@@ -72,7 +85,7 @@ $server=ServerManager::getInstance()->getSwooleServer();
 $rpc->attachToServer($server);  
 ```
 ### Test-Server
-#### 使用redis节点管理器,swoole-table节点管理器使用参考test里面的ServerTable
+#### 使用redis节点管理器
 ```php
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
