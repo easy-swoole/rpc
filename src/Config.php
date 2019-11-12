@@ -19,7 +19,7 @@ class Config extends SplBean
     protected $nodeManager;
     protected $broadcastConfig;
     protected $onException;
-    protected $maxPackage = 1024*2;
+    protected $maxPackage = 1024*8;
 
     /**
      * @return string
