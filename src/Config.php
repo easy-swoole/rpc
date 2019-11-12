@@ -6,7 +6,6 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Spl\SplBean;
-use EasySwoole\Trigger\TriggerInterface;
 use EasySwoole\Utility\Random;
 
 class Config extends SplBean
@@ -19,7 +18,7 @@ class Config extends SplBean
     protected $extraConfig;
     protected $nodeManager;
     protected $broadcastConfig;
-    protected $trigger;
+    protected $onException;
     protected $maxPackage = 1024*2;
 
     /**
@@ -145,17 +144,17 @@ class Config extends SplBean
     /**
      * @return mixed
      */
-    public function getTrigger():?TriggerInterface
+    public function getOnException():?callable
     {
-        return $this->trigger;
+        return $this->onException;
     }
 
     /**
-     * @param mixed $trigger
+     * @param mixed $onException
      */
-    public function setTrigger(TriggerInterface $trigger): void
+    public function setOnException(callable $onException): void
     {
-        $this->trigger = $trigger;
+        $this->onException = $onException;
     }
 
     /**

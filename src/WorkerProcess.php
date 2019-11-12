@@ -92,8 +92,8 @@ class WorkerProcess extends AbstractTcpProcess
     {
         /** @var Config $config */
         $config = $this->getConfig()->getArg()['config'];
-        if ($config->getTrigger()) {
-            $config->getTrigger()->throwable($throwable);
+        if ($config->getOnException()) {
+            call_user_func($config->getOnException(),$throwable);
         } else {
             throw $throwable;
         }
