@@ -33,11 +33,6 @@ class TickProcess extends AbstractProcess
                 } catch (\Throwable $throwable) {
                     $this->onException($throwable);
                 }
-                try {
-                    $service->onTick($config);//定时清理服务
-                } catch (\Throwable $throwable) {
-                    $this->onException($throwable);
-                }
             }
         });
 
