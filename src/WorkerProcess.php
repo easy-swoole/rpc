@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Component\Process\Socket\AbstractTcpProcess;
 use EasySwoole\Component\TableManager;
+use EasySwoole\Pool\AbstractPool;
 use Swoole\Coroutine\Socket;
 
 class WorkerProcess extends AbstractTcpProcess
@@ -52,10 +53,13 @@ class WorkerProcess extends AbstractTcpProcess
             case Command::SERVICE_CALL:
                 {
                     if (isset($serviceList[$request->getServiceName()])) {
+                        /**@var AbstractPool $pool */
+                        $pool = $serviceList[$request->getServiceName()];
                         /** @var AbstractService $service */
-                        $service = $serviceList[$request->getServiceName()];
+                        $service = $pool->getObj();
                         $service->__hook($request, $reply, $socket);
                         $this->reply($socket, $reply);
+                        $pool->recycleObj($service);
                     } else {
                         $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
                         $this->reply($socket, $reply);
@@ -93,7 +97,7 @@ class WorkerProcess extends AbstractTcpProcess
         /** @var Config $config */
         $config = $this->getConfig()->getArg()['config'];
         if ($config->getOnException()) {
-            call_user_func($config->getOnException(),$throwable);
+            call_user_func($config->getOnException(), $throwable);
         } else {
             throw $throwable;
         }

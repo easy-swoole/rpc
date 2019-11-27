@@ -7,6 +7,7 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 use EasySwoole\Component\Singleton;
 use EasySwoole\Component\TableManager;
+use EasySwoole\Pool\MagicPool;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
 
@@ -14,6 +15,7 @@ class Rpc
 {
     protected $config;
     protected $list = [];
+    protected $servicePool = [];
 
     use Singleton;
 
@@ -36,6 +38,11 @@ class Rpc
     {
         if (!isset($this->list[$service->serviceName()])) {
             $this->list[$service->serviceName()] = $service;
+            $this->servicePool[$service->serviceName()] = new MagicPool(
+                function () use ($service) {
+                    return clone $service;
+                },$this->config->getPoolConfig()
+            );
             TableManager::getInstance()->add($service->serviceName(), [
                 'success' => ['type' => Table::TYPE_INT, 'size' => 8],
                 'fail' => ['type' => Table::TYPE_INT, 'size' => 8]
@@ -71,7 +78,7 @@ class Rpc
             $config->setProcessName("Rpc.Worker.{$i}");
             $config->setListenAddress($this->getConfig()->getListenAddress());
             $config->setListenPort($this->getConfig()->getListenPort());
-            $config->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list]);
+            $config->setArg(['config' => $this->getConfig(), 'serviceList' => $this->servicePool]);
             $ret['worker'][] = new WorkerProcess($config);
         }
         $ret['tickWorker'][] = new TickProcess("Rpc.TickWorker", ['config' => $this->getConfig(), 'serviceList' => $this->list], false, 2, true);
