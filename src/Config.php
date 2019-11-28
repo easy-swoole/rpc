@@ -20,7 +20,7 @@ class Config extends SplBean
     protected $broadcastConfig;
     protected $onException;
     protected $maxPackage = 1024*8;
-
+    protected $poolConfig;
     /**
      * @return string
      */
@@ -183,4 +183,13 @@ class Config extends SplBean
         }
     }
 
+    public function setPoolConfig(\EasySwoole\Pool\Config $poolConfig):void
+    {
+        $this->poolConfig = $poolConfig;
+    }
+
+    public function getPoolConfig():?\EasySwoole\Pool\Config
+    {
+        return $this->poolConfig;
+    }
 }

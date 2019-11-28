@@ -17,11 +17,13 @@ use EasySwoole\Rpc\Test\NodeService;
 $config = new Config();
 $config->setServerIp('127.0.0.1');
 
-$config->setNodeManager(new RedisManager('127.0.0.1'));
+$pool=new \EasySwoole\RedisPool\RedisPool(new \EasySwoole\Redis\Config\RedisConfig());
 
-$config->getBroadcastConfig()->setEnableBroadcast(true);
-$config->getBroadcastConfig()->setEnableListen(true);
-$config->getBroadcastConfig()->setSecretKey('zhongguo');
+$config->setNodeManager(new RedisManager($pool));
+
+//$config->getBroadcastConfig()->setEnableBroadcast(true);
+//$config->getBroadcastConfig()->setEnableListen(true);
+//$config->getBroadcastConfig()->setSecretKey('zhongguo');
 
 $rpc = new Rpc($config);
 $rpc->add(new UserService());

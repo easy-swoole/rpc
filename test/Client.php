@@ -11,10 +11,10 @@ use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\NodeManager\RedisManager;
 use EasySwoole\Rpc\Response;
-
+$pool=new \EasySwoole\RedisPool\RedisPool(new \EasySwoole\Redis\Config\RedisConfig());
 $config = new Config();
-$nodeManager = new RedisManager('127.0.0.1');
-$config->setNodeManager($nodeManager);
+
+$config->setNodeManager(new RedisManager($pool));
 $rpc = new Rpc($config);
 
 \Swoole\Coroutine::create(function () use ($rpc) {
