@@ -7,6 +7,7 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Spl\SplBean;
 use EasySwoole\Utility\Random;
+use EasySwoole\Pool\Config as PoolConfig;
 
 class Config extends SplBean
 {
@@ -181,14 +182,12 @@ class Config extends SplBean
         if(empty($this->broadcastConfig)){
             $this->broadcastConfig = new BroadcastConfig();
         }
+        if(empty($this->poolConfig)){
+            $this->poolConfig = new PoolConfig();
+        }
     }
 
-    public function setPoolConfig(\EasySwoole\Pool\Config $poolConfig):void
-    {
-        $this->poolConfig = $poolConfig;
-    }
-
-    public function getPoolConfig():?\EasySwoole\Pool\Config
+    public function getPoolConfig():PoolConfig
     {
         return $this->poolConfig;
     }
