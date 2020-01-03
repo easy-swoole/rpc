@@ -21,7 +21,6 @@ class Config extends SplBean
     protected $broadcastConfig;
     protected $onException;
     protected $maxPackage = 1024*8;
-    protected $poolConfig;
     /**
      * @return string
      */
@@ -182,13 +181,5 @@ class Config extends SplBean
         if(empty($this->broadcastConfig)){
             $this->broadcastConfig = new BroadcastConfig();
         }
-        if(empty($this->poolConfig)){
-            $this->poolConfig = new PoolConfig();
-        }
-    }
-
-    public function getPoolConfig():PoolConfig
-    {
-        return $this->poolConfig;
     }
 }

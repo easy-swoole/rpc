@@ -10,6 +10,7 @@ use EasySwoole\Component\TableManager;
 use EasySwoole\Pool\MagicPool;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
+use EasySwoole\Pool\Config as PoolConfig;
 
 class Rpc
 {
@@ -32,16 +33,17 @@ class Rpc
     /**
      * 注册服务
      * @param AbstractService $service
-     * @return $this
+     * @return PoolConfig
      */
-    public function add(AbstractService $service)
+    public function add(AbstractService $service):?PoolConfig
     {
         if (!isset($this->list[$service->serviceName()])) {
+            $config = new PoolConfig();
             $this->list[$service->serviceName()] = $service;
             $this->servicePool[$service->serviceName()] = new MagicPool(
                 function () use ($service) {
                     return clone $service;
-                },$this->config->getPoolConfig()
+                },$config
             );
             TableManager::getInstance()->add($service->serviceName(), [
                 'success' => ['type' => Table::TYPE_INT, 'size' => 8],
@@ -55,7 +57,7 @@ class Rpc
                 ]);
             }
         }
-        return $this;
+        return null;
     }
 
     public function attachToServer(\swoole_server $server)

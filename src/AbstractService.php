@@ -11,11 +11,10 @@ abstract class AbstractService
 {
     private $allowMethods = [];
     private $defaultProperties = [];
-    private $requests = [];
-    private $responses = [];
-    private $sockets = [];
-    private $actions = [];
-
+    private $request;
+    private $response;
+    private $socket;
+    private $action;
 
     /*
      * 禁止重写该方法，防止在构造函数中抛出异常
@@ -49,7 +48,6 @@ abstract class AbstractService
                 $this->defaultProperties[$name] = $this->{$name};
             }
         }
-
     }
 
     protected function onRequest(?string $action): ?bool
@@ -71,22 +69,22 @@ abstract class AbstractService
 
     protected function request(): Request
     {
-        return $this->requests[Coroutine::getCid()];
+        return $this->request;
     }
 
     protected function response(): Response
     {
-        return $this->responses[Coroutine::getCid()];
+        return $this->response;
     }
 
     protected function socket(): Coroutine\Socket
     {
-        return $this->sockets[Coroutine::getCid()];
+        return $this->socket;
     }
 
     protected function action(): ?string
     {
-        return $this->actions[Coroutine::getCid()];
+        return $this->action;
     }
 
     protected function actionNotFound(?string $action)
@@ -106,10 +104,10 @@ abstract class AbstractService
 
     public function __hook(Request $request, Response $response, Coroutine\Socket $client)
     {
-        $this->requests[Coroutine::getCid()] = $request;
-        $this->responses[Coroutine::getCid()] = $response;
-        $this->sockets[Coroutine::getCid()] = $client;
-        $this->actions[Coroutine::getCid()] = $request->getAction();
+        $this->request = $request;
+        $this->response = $response;
+        $this->socket = $client;
+        $this->action = $request->getAction();
         $actionName = $this->action();
         try {
             if ($this->onRequest($this->action()) !== false) {
@@ -135,10 +133,6 @@ abstract class AbstractService
                     $this->onException($throwable);
                 }
             }
-            unset($this->requests[Coroutine::getCid()]);
-            unset($this->responses[Coroutine::getCid()]);
-            unset($this->actions[Coroutine::getCid()]);
-            unset($this->sockets[Coroutine::getCid()]);
         }
         if ($response->getStatus() === Response::STATUS_OK) {
             TableManager::getInstance()->get($this->serviceName())->incr($actionName, 'success');
