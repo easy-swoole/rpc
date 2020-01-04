@@ -56,6 +56,7 @@ class Rpc
                     'fail' => 0,
                 ]);
             }
+            return $config;
         }
         return null;
     }

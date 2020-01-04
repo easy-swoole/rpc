@@ -26,7 +26,7 @@ $config->setNodeManager(new RedisManager($pool));
 //$config->getBroadcastConfig()->setSecretKey('zhongguo');
 
 $rpc = new Rpc($config);
-$rpc->add(new UserService());
+$rpc->add(new UserService())->setMinObjectNum(10)->setMaxObjectNum(20);
 $rpc->add(new OrderService());
 $rpc->add(new NodeService());
 

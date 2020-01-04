@@ -29,3 +29,4 @@ $rpc = new Rpc($config);
 
     $client->exec();
 });
+swoole_timer_clear_all();
