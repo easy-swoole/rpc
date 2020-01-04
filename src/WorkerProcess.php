@@ -69,11 +69,13 @@ class WorkerProcess extends AbstractTcpProcess
             case Command::SERVICE_STATUS:
                 {
                     $ret = [];
+                    /**@var AbstractPool $item */
                     foreach ($serviceList as $serviceName => $item) {
+                        $ret['pool'][$serviceName] = $item->status();
                         $table = TableManager::getInstance()->get($serviceName);
                         if ($table) {
                             foreach ($table as $action => $info) {
-                                $ret[$serviceName][$action] = $info;
+                                $ret['services'][$serviceName][$action] = $info;
                             }
                         }
                     }
