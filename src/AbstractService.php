@@ -112,7 +112,6 @@ abstract class AbstractService
         try {
             if ($this->onRequest($this->action()) !== false) {
                 if (in_array($actionName, $this->allowMethods)) {
-                    $actionName = $this->action();
                     $this->$actionName();
                 } else {
                     $this->actionNotFound($this->action());
@@ -147,5 +146,6 @@ abstract class AbstractService
         foreach ($this->defaultProperties as $property => $value) {
             $this->{$property} = $value;
         }
+        unset($this->request, $this->response, $this->socket, $this->action);
     }
 }
