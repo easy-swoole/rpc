@@ -89,8 +89,8 @@ class TickProcess extends AbstractProcess
             //遍历本节点的服务列表
             try {
                 $node = new ServiceNode();
-                $node->setServiceVersion($service->version());
-                $node->setServiceName($service->serviceName());
+                $node->setServiceVersion($service->getServiceVersion());
+                $node->setServiceName($service->getServiceName());
                 $node->setNodeId($config->getNodeId());
                 $config->getNodeManager()->deleteServiceNode($node);
             } catch (\Throwable $throwable) {
