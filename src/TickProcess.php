@@ -17,26 +17,29 @@ class TickProcess extends AbstractProcess
         /** @var Config $config */
         $config = $arg['config'];//配置
         $serviceList = $arg['serviceList'];//服务
-        $this->addTick(3 * 1000, function () use ($config, $serviceList) {
-            //每3秒刷新本节点各个服务的心跳时间
-            /** @var AbstractService $service */
-            foreach ($serviceList as $service) {//遍历本节点的服务列表
-                try {
-                    $node = new ServiceNode();
-                    $node->setServiceVersion($service->version());
-                    $node->setServiceName($service->serviceName());
-                    $node->setServerIp($config->getServerIp());
-                    $node->setServerPort($config->getListenPort());
-                    $node->setLastHeartBeat(time());
-                    $node->setNodeId($config->getNodeId());
-                    $config->getNodeManager()->serviceNodeHeartBeat($node);
-                } catch (\Throwable $throwable) {
-                    $this->onException($throwable);
+        //指定了ip的情况下，允许主动刷新注册自己的节点信息
+        if(!empty($config->getServerIp())){
+            $this->addTick(3 * 1000, function () use ($config, $serviceList) {
+                //每3秒刷新本节点各个服务的心跳时间
+                /** @var AbstractService $service */
+                foreach ($serviceList as $service) {//遍历本节点的服务列表
+                    try {
+                        $node = new ServiceNode();
+                        $node->setServiceVersion($service->version());
+                        $node->setServiceName($service->serviceName());
+                        $node->setServerIp($config->getServerIp());
+                        $node->setServerPort($config->getListenPort());
+                        $node->setLastHeartBeat(time());
+                        $node->setNodeId($config->getNodeId());
+                        $config->getNodeManager()->serviceNodeHeartBeat($node);
+                    } catch (\Throwable $throwable) {
+                        $this->onException($throwable);
+                    }
                 }
-            }
-        });
-
+            });
+        }
         if ($config->getBroadcastConfig()->isEnableBroadcast()) {//对外广播
+            $this->udpBroadcast($config, $serviceList, BroadcastCommand::COMMAND_HEART_BEAT);
             $this->addTick($config->getBroadcastConfig()->getInterval() * 1000, function () use ($config, $serviceList) {
                 $this->udpBroadcast($config, $serviceList, BroadcastCommand::COMMAND_HEART_BEAT);
             });
@@ -65,10 +68,11 @@ class TickProcess extends AbstractProcess
                             continue;
                         }
                         $node = $data->getServiceNode();
+                        if(empty($node->getServerIp())){
+                            $node->setServerIp($peer['address']);
+                        }
                         if ($data->getCommand() == $data::COMMAND_HEART_BEAT) {
-                            if ($node->getNodeId() != $config->getNodeId()) {
-                                $config->getNodeManager()->serviceNodeHeartBeat($node);
-                            }
+                            $config->getNodeManager()->serviceNodeHeartBeat($node);
                         } else if ($data->getCommand() == $data::COMMAND_OFF_LINE) {
                             $config->getNodeManager()->deleteServiceNode($node);
                         }

@@ -11,6 +11,7 @@ use EasySwoole\Pool\MagicPool;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
 use EasySwoole\Pool\Config as PoolConfig;
+use EasySwoole\Component\Process\Config as ProcessConfig;
 
 class Rpc
 {
@@ -79,19 +80,25 @@ class Rpc
         for ($i = 1; $i <= $this->getConfig()->getWorkerNum(); $i++) {
             $config = new TcpProcessConfig();
             $config->setProcessName("Rpc.Worker.{$i}");
+            $config->setProcessGroup('Rpc.Worker');
             $config->setListenAddress($this->getConfig()->getListenAddress());
             $config->setListenPort($this->getConfig()->getListenPort());
             $config->setArg(['config' => $this->getConfig(), 'serviceList' => $this->servicePool]);
             $ret['worker'][] = new WorkerProcess($config);
         }
-        $ret['tickWorker'][] = new TickProcess("Rpc.TickWorker", ['config' => $this->getConfig(), 'serviceList' => $this->list], false, 2, true);
+        $tickConfig = new ProcessConfig();
+        $tickConfig->setProcessGroup("Rpc.TickWorker");
+        $tickConfig->setProcessName('Rpc.TickWorker.0');
+        $tickConfig->setEnableCoroutine(true);
+        $tickConfig->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list]);
+        $ret['tickWorker'][] = new TickProcess($tickConfig);
         return $ret;
     }
 
     private function check()
     {
-        if (empty($this->config->getServerIp())) {
-            throw new Exception("serve ip is require");
+        if (empty($this->config->getServerIp()) && $this->config->getBroadcastConfig()->isEnableBroadcast() == false) {
+            throw new Exception("serve ip is require when you did not enable udp broadcast");
         }
         if (empty($this->config->getNodeManager())) {
             throw new Exception("serve NodeManager require");
