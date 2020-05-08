@@ -25,7 +25,11 @@ class RedisManager implements NodeManagerInterface
             $nodes = $redis->hGetAll("{$this->redisKey}_{$serviceName}");
             $nodes = $nodes ?: [];
             $ret = [];
-            foreach ($nodes as $nodeId => $node) {
+            foreach ($nodes as $index => $node) {
+                if($index %2 ==0){
+                    $nodeId = $node;
+                    continue;
+                }
                 $node = new ServiceNode(json_decode($node,true));
                 /**
                  * @var  $nodeId
