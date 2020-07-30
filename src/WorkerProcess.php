@@ -4,19 +4,27 @@
 namespace EasySwoole\Rpc;
 
 use EasySwoole\Component\Process\Socket\AbstractTcpProcess;
-use EasySwoole\Component\TableManager;
 use EasySwoole\Pool\AbstractPool;
 use Swoole\Coroutine\Socket;
 
 class WorkerProcess extends AbstractTcpProcess
 {
+    /** @var Config */
+    protected $rpcConfig;
+    protected $serviceList;
+    protected $statisticsTable;
+    function run($arg)
+    {
+        $this->rpcConfig = $this->getConfig()->getArg()['config'];
+        $this->serviceList = $this->getConfig()->getArg()['serviceList'];
+        $this->statisticsTable = $this->getConfig()->getArg()['statisticsTable'];
+        parent::run($arg);
+    }
+
     function onAccept(Socket $socket)
     {
-        /** @var Config $config */
-        $config = $this->getConfig()->getArg()['config'];
-        $serviceList = $this->getConfig()->getArg()['serviceList'];
         $reply = new Response();
-        $reply->setNodeId($config->getNodeId());//回复设置当前节点
+        $reply->setNodeId($this->rpcConfig->getNodeId());//回复设置当前节点
         $header = $socket->recvAll(4, 1);
         if (strlen($header) != 4) {
             $reply->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
@@ -24,7 +32,7 @@ class WorkerProcess extends AbstractTcpProcess
             return;
         }
         $allLength = Protocol::packDataLength($header);
-        if ($allLength >= $config->getMaxPackage()) {
+        if ($allLength >= $this->rpcConfig->getMaxPackage()) {
             $socket->close();
             //恶意包，直接断开不回复
             return;
@@ -58,11 +66,17 @@ class WorkerProcess extends AbstractTcpProcess
                         /** @var AbstractService $service */
                         $service = $pool->getObj();
                         $service->__hook($request, $reply, $socket);
-                        $this->reply($socket, $reply);
+                        $table = $this->serviceList[$request->getServiceName()];
+                        if ($reply->getStatus() === Response::STATUS_OK) {
+                            $table->incr($request->getAction(), 'success');
+                        } else {
+                            $table->incr($request->getAction(), 'fail');
+                        }
+                        $this->reply($socket, $reply,$request);
                         $pool->recycleObj($service);
                     } else {
                         $reply->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
-                        $this->reply($socket, $reply);
+                        $this->reply($socket, $reply,$request);
                     }
                     break;
                 }
@@ -70,23 +84,21 @@ class WorkerProcess extends AbstractTcpProcess
                 {
                     $ret = [];
                     /**@var AbstractPool $item */
-                    foreach ($serviceList as $serviceName => $item) {
+                    foreach ($this->serviceList as $serviceName => $item) {
                         $ret['pool'][$serviceName] = $item->status();
-                        $table = TableManager::getInstance()->get($serviceName);
-                        if ($table) {
-                            foreach ($table as $action => $info) {
-                                $ret['services'][$serviceName][$action] = $info;
-                            }
+                        $table = $this->statisticsTable[$serviceName];
+                        foreach ($table as $action => $info) {
+                            $ret['services'][$serviceName][$action] = $info;
                         }
                     }
                     $reply->setResult($ret);
-                    $this->reply($socket, $reply);
+                    $this->reply($socket, $reply,$request);
                     break;
                 }
         }
     }
 
-    private function reply(Socket $clientSocket, Response $response)
+    protected function reply(Socket $clientSocket, Response $response,?Request $request = null)
     {
         $str = $response->__toString();
         $str = Protocol::pack($str);

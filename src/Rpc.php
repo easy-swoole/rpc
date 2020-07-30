@@ -6,7 +6,6 @@ namespace EasySwoole\Rpc;
 
 use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 use EasySwoole\Component\Singleton;
-use EasySwoole\Component\TableManager;
 use EasySwoole\Pool\MagicPool;
 use EasySwoole\Rpc\Exception\Exception;
 use Swoole\Table;
@@ -18,6 +17,8 @@ class Rpc
     protected $config;
     protected $list = [];
     protected $servicePool = [];
+    protected $statisticsTable = [];
+    protected $statisticsAtomic = [];
 
     use Singleton;
 
@@ -29,6 +30,14 @@ class Rpc
     public function getConfig(): Config
     {
         return $this->config;
+    }
+
+    public function statisticsTable(string $serviceName):?Table
+    {
+        if(isset($this->statisticsTable[$serviceName])){
+            return $this->statisticsTable[$serviceName];
+        }
+        return null;
     }
 
     /**
@@ -46,17 +55,19 @@ class Rpc
                     return clone $service;
                 },$config
             );
-            TableManager::getInstance()->add($service->serviceName(), [
-                'success' => ['type' => Table::TYPE_INT, 'size' => 8],
-                'fail' => ['type' => Table::TYPE_INT, 'size' => 8]
-            ], 64);//创建服务统计表
+            $table = new Table(64);
+            $table->column('success',Table::TYPE_INT,8);
+            $table->column('fail',Table::TYPE_INT,8);
+            $table->create();
             $list = $service->actionList();
-            foreach ($list as $action) {//初始化每个接口
-                TableManager::getInstance()->get($service->serviceName())->set($action, [
+            //初始化每个接口
+            foreach ($list as $action) {
+                $table->set($action, [
                     'success' => 0,
                     'fail' => 0,
                 ]);
             }
+            $this->statisticsTable[$service->serviceName()] = $table;
             return $config;
         }
         return null;
@@ -90,7 +101,7 @@ class Rpc
         $tickConfig->setProcessGroup("Rpc.TickWorker");
         $tickConfig->setProcessName('Rpc.TickWorker.0');
         $tickConfig->setEnableCoroutine(true);
-        $tickConfig->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list]);
+        $tickConfig->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list , 'statisticsTable'=>$this->statisticsTable]);
         $ret['tickWorker'][] = new TickProcess($tickConfig);
         return $ret;
     }

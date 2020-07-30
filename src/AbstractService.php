@@ -4,7 +4,6 @@
 namespace EasySwoole\Rpc;
 
 
-use EasySwoole\Component\TableManager;
 use Swoole\Coroutine;
 
 abstract class AbstractService
@@ -132,11 +131,6 @@ abstract class AbstractService
                     $this->onException($throwable);
                 }
             }
-        }
-        if ($response->getStatus() === Response::STATUS_OK) {
-            TableManager::getInstance()->get($this->serviceName())->incr($actionName, 'success');
-        } else {
-            TableManager::getInstance()->get($this->serviceName())->incr($actionName, 'fail');
         }
     }
 
