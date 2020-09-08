@@ -63,7 +63,7 @@ class RpcClient
                 $command = new Command();
                 $command->setCommand(Command::SERVICE_CALL);
                 $command->setRequest(new Request($item->toArray()));
-                $client = new TcpClient($serviceNode);
+                $client = new TcpClient($serviceNode,$timeout);
                 $client->sendCommand($command);
                 $list[] = [
                     'client' => $client,

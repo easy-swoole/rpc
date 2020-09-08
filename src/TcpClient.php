@@ -9,6 +9,7 @@ use Swoole\Coroutine\Client as CoClient;
 class TcpClient
 {
     private $client;
+
     function __construct(ServerNode $node,float $timeout = 3.0)
     {
         $this->client = $this->createNodeClient($node,$timeout);
@@ -60,7 +61,7 @@ class TcpClient
             'package_length_type'   => 'N',
             'package_length_offset' => 0,
             'package_body_offset'   => 4,
-            'package_max_length'    => 1024*1024
+            'package_max_length'    => 1024*1024*50//客户端允许大数据包
         ]);
         if($client->connect($serverNode->getServerIp(),$serverNode->getServerPort(),$timeout)){
             return $client;
