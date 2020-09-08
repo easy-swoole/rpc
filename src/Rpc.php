@@ -18,7 +18,6 @@ class Rpc
     protected $list = [];
     protected $servicePool = [];
     protected $statisticsTable = [];
-    protected $statisticsAtomic = [];
 
     use Singleton;
 
