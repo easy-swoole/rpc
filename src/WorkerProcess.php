@@ -6,6 +6,7 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Component\Process\Socket\AbstractTcpProcess;
 use EasySwoole\Pool\AbstractPool;
 use Swoole\Coroutine\Socket;
+use Swoole\Table;
 
 class WorkerProcess extends AbstractTcpProcess
 {
@@ -60,13 +61,15 @@ class WorkerProcess extends AbstractTcpProcess
         switch ($command->getCommand()) {
             case Command::SERVICE_CALL:
                 {
-                    if (isset($serviceList[$request->getServiceName()])) {
+                    if (isset($this->serviceList[$request->getServiceName()])) {
                         /**@var AbstractPool $pool */
-                        $pool = $serviceList[$request->getServiceName()];
+                        $pool = $this->serviceList[$request->getServiceName()];
                         /** @var AbstractService $service */
                         $service = $pool->getObj();
                         $service->__hook($request, $reply, $socket);
-                        $table = $this->serviceList[$request->getServiceName()];
+
+                        /** @var Table $table */
+                        $table = $this->statisticsTable[$request->getServiceName()];
                         if ($reply->getStatus() === Response::STATUS_OK) {
                             $table->incr($request->getAction(), 'success');
                         } else {
