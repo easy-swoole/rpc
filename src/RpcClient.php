@@ -12,10 +12,12 @@ class RpcClient
 {
     protected $nodeManager;
     protected $callList = [];
+    protected $clientConfig;
 
-    public function __construct(NodeManagerInterface $manager)
+    public function __construct(NodeManagerInterface $manager,ClientConfig $clientConfig)
     {
         $this->nodeManager = $manager;
+        $this->clientConfig = $clientConfig;
     }
 
     public function serverStatus(ServerNode $serverNode, float $timeout = 3.0): Response
@@ -63,7 +65,7 @@ class RpcClient
                 $command = new Command();
                 $command->setCommand(Command::SERVICE_CALL);
                 $command->setRequest(new Request($item->toArray()));
-                $client = new TcpClient($serviceNode,$timeout);
+                $client = new TcpClient($serviceNode,$timeout,$this->clientConfig->getClientSettings());
                 $client->sendCommand($command);
                 $list[] = [
                     'client' => $client,
@@ -97,10 +99,17 @@ class RpcClient
     private function callback(Response $response, ServiceCall $serviceCall)
     {
         if ($response->getStatus() == $response::STATUS_OK) {
+            $globalCall = $this->clientConfig->getOnGlobalSuccess();
             $call = $serviceCall->getOnSuccess();
         } else {
+            $globalCall = $this->clientConfig->getOnGlobalFail();
             $call = $serviceCall->getOnFail();
         }
+
+        if (is_callable($globalCall)) {
+            call_user_func($globalCall, $response, $serviceCall);
+        }
+
         if (is_callable($call)) {
             call_user_func($call, $response, $serviceCall);
         }

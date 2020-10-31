@@ -111,8 +111,7 @@ class WorkerProcess extends AbstractTcpProcess
 
     protected function onException(\Throwable $throwable, ...$args)
     {
-        /** @var Config $config */
-        $config = $this->getConfig()->getArg()['config'];
+        $config = $this->rpcConfig;
         if ($config->getOnException()) {
             call_user_func($config->getOnException(), $throwable);
         } else {
