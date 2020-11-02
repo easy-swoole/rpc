@@ -10,9 +10,9 @@ class TcpClient
 {
     private $client;
 
-    function __construct(ServerNode $node,float $timeout = 3.0)
+    function __construct(ServerNode $node,float $timeout = 3.0, array $clientSettings = [])
     {
-        $this->client = $this->createNodeClient($node,$timeout);
+        $this->client = $this->createNodeClient($node,$timeout,$clientSettings);
     }
 
     function sendCommand(Command $command)
@@ -53,16 +53,16 @@ class TcpClient
         }
     }
 
-    private function createNodeClient(ServerNode $serverNode,float $timeout = 3.0):?CoClient
+    private function createNodeClient(ServerNode $serverNode,float $timeout = 3.0, array $clientSettings = []):?CoClient
     {
         $client = new CoClient(SWOOLE_TCP);
-        $client->set([
+        $client->set(array_merge([
             'open_length_check' => true,
             'package_length_type'   => 'N',
             'package_length_offset' => 0,
             'package_body_offset'   => 4,
-            'package_max_length'    => 1024*1024*50//客户端允许大数据包
-        ]);
+            'package_max_length'    => 1024 * 1024 * 8//客户端允许大数据包
+        ], $clientSettings));
         if($client->connect($serverNode->getServerIp(),$serverNode->getServerPort(),$timeout)){
             return $client;
         }else{

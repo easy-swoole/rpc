@@ -93,14 +93,14 @@ class Rpc
             $config->setProcessGroup('Rpc.Worker');
             $config->setListenAddress($this->getConfig()->getListenAddress());
             $config->setListenPort($this->getConfig()->getListenPort());
-            $config->setArg(['config' => $this->getConfig(), 'serviceList' => $this->servicePool]);
+            $config->setArg(['config' => $this->getConfig(), 'serviceList' => $this->servicePool, 'statisticsTable'=>$this->statisticsTable]);
             $ret['worker'][] = new WorkerProcess($config);
         }
         $tickConfig = new ProcessConfig();
         $tickConfig->setProcessGroup("Rpc.TickWorker");
         $tickConfig->setProcessName('Rpc.TickWorker.0');
         $tickConfig->setEnableCoroutine(true);
-        $tickConfig->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list , 'statisticsTable'=>$this->statisticsTable]);
+        $tickConfig->setArg(['config' => $this->getConfig(), 'serviceList' => $this->list]);
         $ret['tickWorker'][] = new TickProcess($tickConfig);
         return $ret;
     }
@@ -117,6 +117,6 @@ class Rpc
 
     function client(): RpcClient
     {
-        return new RpcClient($this->getConfig()->getNodeManager());
+        return new RpcClient($this->getConfig()->getNodeManager(),$this->getConfig()->getClientConfig());
     }
 }

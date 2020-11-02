@@ -21,6 +21,8 @@ class Config extends SplBean
     protected $broadcastConfig;
     protected $onException;
     protected $maxPackage = 1024*8;
+    protected $clientConfig;
+
     /**
      * @return string
      */
@@ -173,6 +175,14 @@ class Config extends SplBean
         $this->maxPackage = $maxPackage;
     }
 
+    /**
+     * @return ClientConfig
+     */
+    public function getClientConfig(): ClientConfig
+    {
+        return $this->clientConfig;
+    }
+
     protected function initialize(): void
     {
         if(empty($this->nodeId)){
@@ -180,6 +190,9 @@ class Config extends SplBean
         }
         if(empty($this->broadcastConfig)){
             $this->broadcastConfig = new BroadcastConfig();
+        }
+        if (empty($this->clientConfig)) {
+            $this->clientConfig = new ClientConfig();
         }
     }
 }
