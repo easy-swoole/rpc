@@ -38,7 +38,7 @@ class TcpClient
                 }else{
                     return new Response([
                         'status'=>Response::STATUS_SERVICE_ERROR,
-                        'message'=>$data
+                        'msg'=>$data
                     ]);
                 }
             }else{

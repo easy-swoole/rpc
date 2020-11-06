@@ -107,13 +107,17 @@ class RpcClient
             $globalCall = $this->clientConfig->getOnGlobalFail();
             $call = $serviceCall->getOnFail();
         }
-
-        if (is_callable($globalCall)) {
-            call_user_func($globalCall, $response, $serviceCall);
-        }
-
-        if (is_callable($call)) {
-            call_user_func($call, $response, $serviceCall);
+        //全局回调出错不应该影响业务逻辑回调
+        try{
+            if (is_callable($globalCall)) {
+                call_user_func($globalCall, $response, $serviceCall);
+            }
+        }catch (\Throwable $throwable){
+            throw $throwable;
+        } finally {
+            if (is_callable($call)) {
+                call_user_func($call, $response, $serviceCall);
+            }
         }
     }
 }
