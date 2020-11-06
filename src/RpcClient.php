@@ -83,6 +83,8 @@ class RpcClient
             });
         }
 
+        $this->callList = [];
+
         $left = $timeout;
         $leftHandler = count($list);
         while ($left > 0 && $leftHandler > 0) {
