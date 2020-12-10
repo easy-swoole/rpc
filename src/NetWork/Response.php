@@ -4,7 +4,9 @@
 namespace EasySwoole\Rpc\NetWork;
 
 
-class Response
+use EasySwoole\Spl\SplBean;
+
+class Response extends SplBean
 {
     const STATUS_OK = 0;
     const STATUS_NODES_EMPTY = 1001;

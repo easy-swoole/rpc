@@ -20,7 +20,7 @@ class ServiceWorker extends AbstractTcpProcess
         $header = $socket->recvAll(4, 1);
         if (strlen($header) != 4) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
-            $socket->close();
+            $this->reply($socket, $response);
             return;
         }
         $allLength = Protocol::packDataLength($header);
@@ -29,23 +29,31 @@ class ServiceWorker extends AbstractTcpProcess
         $config = $this->getConfig()->getArg();
         if ($allLength > $config->getServer()->getMaxPackageSize()) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
-            $socket->close();
+            $this->reply($socket, $response);
             return;
         }
         $data = $socket->recvAll($allLength, 3);
         if (strlen($data) != $allLength) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
-            $socket->close();
+            $this->reply($socket, $response);
             return;
         }
 
         $request = json_decode($data, true);
         if (!$request instanceof Request) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
-            $socket->close();
+            $this->reply($socket, $response);
             return;
         }
 
+        // todo 调用 service
+    }
 
+    protected function reply(Socket $clientSocket, Response $response)
+    {
+        $str = $response->__toString();
+        $str = Protocol::pack($str);
+        $clientSocket->sendAll($str);
+        $clientSocket->close();
     }
 }
