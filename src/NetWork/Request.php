@@ -15,11 +15,12 @@ class Request
     /** @var mixed */
     private $arg;
 
-    function __construct(string $service,string $module,string $action)
+    function __construct(string $service,string $module,string $action, $arg = null)
     {
         $this->service = $service;
         $this->module = $module;
         $this->action = $action;
+        $this->arg = $arg;
     }
 
     /**
