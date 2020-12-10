@@ -9,9 +9,24 @@ use EasySwoole\Rpc\NetWork\Response;
 
 abstract class AbstractServiceModule
 {
-    abstract function moduleName():string;
+    /** @var Request */
+    private $request;
+    /** @var Response */
+    private $response;
 
-    protected function onRequest(Request $request):bool
+    abstract function moduleName(): string;
+
+    protected function request(): Request
+    {
+        return $this->request;
+    }
+
+    protected function response(): Response
+    {
+        return $this->response;
+    }
+
+    protected function onRequest(Request $request): bool
     {
         return true;
     }
@@ -26,7 +41,31 @@ abstract class AbstractServiceModule
 
     }
 
-    public function __exec(Request $request,Response $response)
+    public function __exec(Request $request, Response $response)
+    {
+        $this->request = $request;
+        $this->response = $response;
+        try {
+            if ($this->onRequest($request) !== false) {
+                $action = $request->getAction();
+                if (method_exists(static::class, $action)) {
+                    $this->$action();
+                } else {
+                    $this->onActionNotFound($request);
+                }
+            }
+        } catch (\Throwable $throwable) {
+            $this->onException($throwable);
+        } finally {
+            try {
+                $this->afterRequest($request);
+            } catch (\Throwable $throwable) {
+                $this->onException($throwable);
+            }
+        }
+    }
+
+    protected function afterRequest(Request $request)
     {
 
     }
