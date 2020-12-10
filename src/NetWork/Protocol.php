@@ -1,7 +1,7 @@
 <?php
 
 
-namespace EasySwoole\Rpc;
+namespace EasySwoole\Rpc\NetWork;
 
 
 class Protocol

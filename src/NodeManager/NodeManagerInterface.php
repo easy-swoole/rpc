@@ -4,8 +4,7 @@
 namespace EasySwoole\Rpc\NodeManager;
 
 
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\ServiceNode;
+use EasySwoole\Rpc\Server\ServiceNode;
 
 interface NodeManagerInterface
 {
