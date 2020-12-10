@@ -12,7 +12,11 @@ abstract class AbstractService
     private $modules = [];
 
     abstract function serviceName():string;
-    abstract function serviceVersion():int;
+
+    function serviceVersion(): int
+    {
+        return 1;
+    }
 
     function addModule(AbstractServiceModule $module):AbstractService
     {
