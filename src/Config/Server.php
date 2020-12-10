@@ -12,9 +12,6 @@ class Server
     protected $listenPort = 9600;
     protected $workerNum = 4;
     protected $maxPackageSize = 1024*1024*2;//2M
-    /** @var callable|null */
-    protected $onException;
-
     /**
      * @return string
      */
@@ -93,21 +90,5 @@ class Server
     public function setMaxPackageSize($maxPackageSize): void
     {
         $this->maxPackageSize = $maxPackageSize;
-    }
-
-    /**
-     * @return callable|null
-     */
-    public function getOnException(): ?callable
-    {
-        return $this->onException;
-    }
-
-    /**
-     * @param callable|null $onException
-     */
-    public function setOnException(?callable $onException): void
-    {
-        $this->onException = $onException;
     }
 }
