@@ -8,6 +8,7 @@ use EasySwoole\Rpc\Config\UdpAssist;
 
 class Config
 {
+    private $serverName = "EasySwoole";
     /** @var ClientConfig */
     private $client;
     /** @var Server */
@@ -70,5 +71,21 @@ class Config
     public function setUdpAssist(UdpAssist $udpAssist): void
     {
         $this->udpAssist = $udpAssist;
+    }
+
+    /**
+     * @return string
+     */
+    public function getServerName(): string
+    {
+        return $this->serverName;
+    }
+
+    /**
+     * @param string $serverName
+     */
+    public function setServerName(string $serverName): void
+    {
+        $this->serverName = $serverName;
     }
 }

@@ -4,9 +4,12 @@
 namespace EasySwoole\Rpc;
 
 
+use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 use EasySwoole\Rpc\Server\AssistWorker;
+use EasySwoole\Rpc\Server\ServiceWorker;
 use EasySwoole\Rpc\Service\AbstractService;
 use Swoole\Server;
+use EasySwoole\Component\Process\Config as ProcessConfig;
 
 class Rpc
 {
@@ -37,11 +40,26 @@ class Rpc
 
     function __getServiceWorker():array
     {
-
+        $list = [];
+        for($i = 0;$i < $this->config->getServer()->getWorkerNum();$i++){
+            $config = new TcpProcessConfig();
+            $config->setProcessGroup("{$this->config->getServerName()}.Rpc");
+            $config->setProcessName("{$this->config->getServerName()}.Rpc.Worker.{$i}");
+            $config->setListenAddress($this->config->getServer()->getListenAddress());
+            $config->setListenPort($this->config->getServer()->getListenPort());
+            $config->setArg($this->config);
+            $p = new ServiceWorker($config);
+            $list[] = $p;
+        }
+        return  $list;
     }
 
     function __getAssistWorker():AssistWorker
     {
-
+        $config = new ProcessConfig();
+        $config->setProcessGroup("{$this->config->getServerName()}.Rpc");
+        $config->setProcessName("{$this->config->getServerName()}.Rpc.AssistWorker");
+        $config->setArg($this->config);
+        return new AssistWorker($config);
     }
 }
