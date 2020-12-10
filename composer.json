@@ -18,8 +18,7 @@
         "ext-openssl": ">=7.1",
         "easyswoole/spl": "^1.0",
         "easyswoole/utility": "^1.0",
-        "easyswoole/component": "^2.0",
-        "easyswoole/redis-pool": "^2.0"
+        "easyswoole/component": "^2.0"
     },
     "require-dev": {
         "easyswoole/swoole-ide-helper": "^1.1"
@@ -27,7 +26,7 @@
     "autoload": {
         "psr-4": {
             "EasySwoole\\Rpc\\": "src/",
-            "EasySwoole\\Rpc\\Test\\": "test/"
+            "EasySwoole\\Rpc\\Tests\\": "tests/"
         }
     }
 }

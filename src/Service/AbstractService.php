@@ -61,6 +61,8 @@ abstract class AbstractService
             if ($this->onRequest($request) !== false) {
                 $module = $this->modules[$request->getModule()] ?? null;
                 if ($module && $module instanceof AbstractServiceModule) {
+                    //克隆模式，否则如果定义了成员属性会发生协程污染
+                    $module = clone $module;
                     $module->__exec($request, $response);
                 } else {
                     $this->onModuleNotFound($request);

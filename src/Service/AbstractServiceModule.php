@@ -48,7 +48,8 @@ abstract class AbstractServiceModule
         try {
             if ($this->onRequest($request) !== false) {
                 $action = $request->getAction();
-                if (method_exists(static::class, $action)) {
+                //todo:这边需要实现和HTTP控制器一样，仅仅允许public方法调用，同时要过滤安全方法
+                if (method_exists($this, $action)) {
                     $this->$action();
                 } else {
                     $this->onActionNotFound($request);
