@@ -4,7 +4,9 @@
 namespace EasySwoole\Rpc;
 
 
+use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Service\AbstractService;
+use Swoole\Server;
 
 class Rpc
 {
@@ -21,5 +23,25 @@ class Rpc
     {
         $this->service[$service->serviceName()] = $service;
         return $this;
+    }
+
+    function client():Client
+    {
+        return new Client($this->config->getClient());
+    }
+
+    function attachServer(Server $server)
+    {
+
+    }
+
+    function __getServiceWorker():array
+    {
+
+    }
+
+    function __getAssistWorker():AssistWorker
+    {
+
     }
 }
