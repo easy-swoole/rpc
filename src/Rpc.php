@@ -35,7 +35,13 @@ class Rpc
 
     function attachServer(Server $server)
     {
+        $serviceWorkers = $this->__getServiceWorker();
+        /** @var ServiceWorker $value */
+        foreach ($serviceWorkers as $serviceWorker) {
+            $server->addProcess($serviceWorker->getProcess());
+        }
 
+        $server->addProcess($this->__getAssistWorker()->getProcess());
     }
 
     function __getServiceWorker():array
