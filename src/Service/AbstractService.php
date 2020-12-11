@@ -56,6 +56,11 @@ abstract class AbstractService
 
     }
 
+    protected function getSocket():Socket
+    {
+        return $this->socket;
+    }
+
     public function __exec(Request $request, Response $response,Socket $socket)
     {
         $this->request = $request;
