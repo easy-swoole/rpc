@@ -20,7 +20,7 @@ abstract class AbstractServiceModule
     public function __construct()
     {
         $forbidList = [
-            '__hook', '__exec', '__destruct',
+             '__exec', '__destruct',
             '__clone', '__construct', '__call',
             '__callStatic', '__get', '__set',
             '__isset', '__unset', '__sleep',
@@ -55,6 +55,11 @@ abstract class AbstractServiceModule
         return true;
     }
 
+    protected function afterRequest(Request $request)
+    {
+
+    }
+
     protected function onException(\Throwable $throwable)
     {
 
@@ -87,10 +92,5 @@ abstract class AbstractServiceModule
                 $this->onException($throwable);
             }
         }
-    }
-
-    protected function afterRequest(Request $request)
-    {
-
     }
 }
