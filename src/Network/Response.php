@@ -12,10 +12,12 @@ class Response extends SplBean
     const STATUS_NODES_EMPTY = 1001;
     const STATUS_CONNECT_TIMEOUT = 1002;
     const STATUS_SERVER_TIMEOUT = 1003;
-    const STATUS_SERVICE_NOT_EXIST = 2001;
-    const STATUS_SERVICE_ACTION_NOT_FOUND = 2002;
-    const STATUS_SERVICE_ERROR = 2003;
-    const STATUS_ILLEGAL_PACKAGE = 2004;
+    const STATUS_PACKAGE_READ_TIMEOUT = 2001;
+    const STATUS_ILLEGAL_PACKAGE = 2002;
+    const STATUS_SERVICE_NOT_EXIST = 3001;
+    const STATUS_SERVICE_ACTION_NOT_FOUND = 3002;
+    const STATUS_SERVICE_ERROR = 3003;
+
 
     /** @var int $status */
     protected $status = self::STATUS_OK;

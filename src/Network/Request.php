@@ -4,25 +4,18 @@
 namespace EasySwoole\Rpc\Network;
 
 
-class Request
+use EasySwoole\Spl\SplBean;
+
+class Request extends SplBean
 {
-    /** @var string */
-    private $service;
-    /** @var string */
-    private $module;
-    /** @var string */
-    private $action;
+    /** @var string|null */
+    protected $service;
+    /** @var string|null */
+    protected $module;
+    /** @var string|null */
+    protected $action;
     /** @var mixed */
-    private $arg;
-
-    function __construct(string $service,string $module,string $action, $arg = null)
-    {
-        $this->service = $service;
-        $this->module = $module;
-        $this->action = $action;
-        $this->arg = $arg;
-    }
-
+    protected $arg;
     /**
      * @return string
      */

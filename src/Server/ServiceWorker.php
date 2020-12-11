@@ -31,7 +31,7 @@ class ServiceWorker extends AbstractTcpProcess
 
         $header = $socket->recvAll(4, $this->config->getServer()->getNetworkReadTimeout());
         if (strlen($header) != 4) {
-            $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
+            $response->setStatus($response::STATUS_PACKAGE_READ_TIMEOUT);
             $this->reply($socket, $response);
             return;
         }
@@ -44,17 +44,17 @@ class ServiceWorker extends AbstractTcpProcess
         }
         $data = $socket->recvAll($allLength, $this->config->getServer()->getNetworkReadTimeout());
         if (strlen($data) != $allLength) {
-            $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
+            $response->setStatus($response::STATUS_PACKAGE_READ_TIMEOUT);
             $this->reply($socket, $response);
             return;
         }
-
         $request = json_decode($data, true);
-        if (!$request instanceof Request) {
+        if(!is_array($request)){
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
             $this->reply($socket, $response);
             return;
         }
+        $request = new Request($request);
         if(isset($this->serviceList[$request->getService()])){
             /** @var AbstractService $service */
             //克隆模式，否则如果定义了成员属性会发生协程污染
