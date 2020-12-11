@@ -48,17 +48,22 @@ abstract class AbstractService
 
     protected function onException(\Throwable $throwable)
     {
-
+        throw $throwable;
     }
 
     protected function moduleNotFound(Request $request)
     {
-
+        $this->response()->setStatus(Response::STATUS_MODULE_NOT_EXIST);
     }
 
     protected function getSocket():Socket
     {
         return $this->socket;
+    }
+
+    protected function afterRequest(Request $request)
+    {
+
     }
 
     public function __exec(Request $request, Response $response,Socket $socket)
@@ -88,8 +93,4 @@ abstract class AbstractService
         }
     }
 
-    protected function afterRequest(Request $request)
-    {
-
-    }
 }

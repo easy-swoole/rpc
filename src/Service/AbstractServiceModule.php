@@ -65,12 +65,12 @@ abstract class AbstractServiceModule
 
     protected function onException(\Throwable $throwable)
     {
-
+        throw $throwable;
     }
 
     protected function actionNotFound(Request $request)
     {
-
+        $this->response()->setStatus(Response::STATUS_ACTION_NOT_EXIST);
     }
 
     protected function getSocket():Socket

@@ -13,8 +13,9 @@ class Response implements \JsonSerializable
     const STATUS_PACKAGE_READ_TIMEOUT = 2001;
     const STATUS_ILLEGAL_PACKAGE = 2002;
     const STATUS_SERVICE_NOT_EXIST = 3001;
-    const STATUS_SERVICE_ACTION_NOT_FOUND = 3002;
-    const STATUS_SERVICE_ERROR = 3003;
+    const STATUS_MODULE_NOT_EXIST = 3002;
+    const STATUS_ACTION_NOT_EXIST = 3003;
+    const STATUS_SERVICE_ERROR = 3004;
 
 
     /** @var int $status */

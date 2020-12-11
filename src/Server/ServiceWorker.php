@@ -55,13 +55,19 @@ class ServiceWorker extends AbstractTcpProcess
             return;
         }
         $request = new Request($request);
-        if(isset($this->serviceList[$request->getService()])){
-            /** @var AbstractService $service */
-            //克隆模式，否则如果定义了成员属性会发生协程污染
-            $service = clone $this->serviceList[$request->getService()];
-            $service->__exec($request,$response,$socket);
-        }else{
-            $response->setStatus($response::STATUS_SERVICE_NOT_EXIST);
+        try{
+            if(isset($this->serviceList[$request->getService()])){
+                /** @var AbstractService $service */
+                //克隆模式，否则如果定义了成员属性会发生协程污染
+                $service = clone $this->serviceList[$request->getService()];
+                $service->__exec($request,$response,$socket);
+            }else{
+                $response->setStatus($response::STATUS_SERVICE_NOT_EXIST);
+            }
+        }catch (\Throwable $throwable){
+            $response->setStatus(Response::STATUS_SERVICE_ERROR);
+            //这边强制对未捕获异常转错误。因为异常为导致整个worker直接退出，进而影响协程并行处理逻辑。
+            trigger_error($throwable->getMessage()."\n".$throwable->getTraceAsString());
         }
         $this->reply($socket, $response);
     }
