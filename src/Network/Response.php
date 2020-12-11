@@ -1,7 +1,7 @@
 <?php
 
 
-namespace EasySwoole\Rpc\NetWork;
+namespace EasySwoole\Rpc\Network;
 
 
 use EasySwoole\Spl\SplBean;

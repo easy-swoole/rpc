@@ -12,6 +12,7 @@ class Server
     protected $listenPort = 9600;
     protected $workerNum = 4;
     protected $maxPackageSize = 1024*1024*2;//2M
+    protected $networkReadTimeout = 3;
     /**
      * @return string
      */
@@ -90,5 +91,21 @@ class Server
     public function setMaxPackageSize($maxPackageSize): void
     {
         $this->maxPackageSize = $maxPackageSize;
+    }
+
+    /**
+     * @return int
+     */
+    public function getNetworkReadTimeout(): int
+    {
+        return $this->networkReadTimeout;
+    }
+
+    /**
+     * @param int $networkReadTimeout
+     */
+    public function setNetworkReadTimeout(int $networkReadTimeout): void
+    {
+        $this->networkReadTimeout = $networkReadTimeout;
     }
 }

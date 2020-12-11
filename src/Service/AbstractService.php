@@ -4,8 +4,8 @@
 namespace EasySwoole\Rpc\Service;
 
 
-use EasySwoole\Rpc\NetWork\Request;
-use EasySwoole\Rpc\NetWork\Response;
+use EasySwoole\Rpc\Network\Request;
+use EasySwoole\Rpc\Network\Response;
 use Swoole\Coroutine\Socket;
 
 abstract class AbstractService
