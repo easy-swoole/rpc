@@ -4,9 +4,7 @@
 namespace EasySwoole\Rpc\Network;
 
 
-use EasySwoole\Spl\SplBean;
-
-class Response extends SplBean
+class Response implements \JsonSerializable
 {
     const STATUS_OK = 0;
     const STATUS_NODES_EMPTY = 1001;
@@ -79,4 +77,15 @@ class Response extends SplBean
         $this->result = $result;
         return $this;
     }
+
+    public function jsonSerialize()
+    {
+        return [
+            'status'=>$this->status,
+            'msg'=>$this->msg,
+            'result'=>$this->result,
+        ];
+    }
+
+
 }

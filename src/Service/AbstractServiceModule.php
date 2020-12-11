@@ -6,6 +6,7 @@ namespace EasySwoole\Rpc\Service;
 
 use EasySwoole\Rpc\Network\Request;
 use EasySwoole\Rpc\Network\Response;
+use Swoole\Coroutine\Socket;
 
 abstract class AbstractServiceModule
 {
@@ -13,6 +14,8 @@ abstract class AbstractServiceModule
     private $request;
     /** @var Response */
     private $response;
+    /** @var Socket */
+    private $socket;
 
     /** @var array $allowMethodReflections */
     protected $allowMethodReflections = [];
@@ -65,22 +68,23 @@ abstract class AbstractServiceModule
 
     }
 
-    protected function onActionNotFound(Request $request)
+    protected function actionNotFound(Request $request)
     {
 
     }
 
-    public function __exec(Request $request, Response $response)
+    public function __exec(Request $request, Response $response,Socket $socket)
     {
         $this->request = $request;
         $this->response = $response;
+        $this->socket = $socket;
         try {
             if ($this->onRequest($request) !== false) {
                 $action = $request->getAction();
                 if (isset($this->allowMethodReflections[$action])) {
                     $this->$action();
                 } else {
-                    $this->onActionNotFound($request);
+                    $this->actionNotFound($request);
                 }
             }
         } catch (\Throwable $throwable) {

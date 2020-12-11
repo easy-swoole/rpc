@@ -68,7 +68,7 @@ class ServiceWorker extends AbstractTcpProcess
 
     protected function reply(Socket $clientSocket, Response $response)
     {
-        $str = $response->__toString();
+        $str = json_encode($response,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         $str = Protocol::pack($str);
         $clientSocket->sendAll($str);
         $clientSocket->close();

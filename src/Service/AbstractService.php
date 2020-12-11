@@ -15,6 +15,8 @@ abstract class AbstractService
     private $request;
     /** @var Response */
     private $response;
+    /** @var Socket */
+    private $socket;
 
     abstract function serviceName(): string;
 
@@ -49,24 +51,25 @@ abstract class AbstractService
 
     }
 
-    protected function onModuleNotFound(Request $request)
+    protected function moduleNotFound(Request $request)
     {
 
     }
 
-    public function __exec(Request $request, Response $response,Socket $sock)
+    public function __exec(Request $request, Response $response,Socket $socket)
     {
         $this->request = $request;
         $this->response = $response;
+        $this->socket = $socket;
         try {
             if ($this->onRequest($request) !== false) {
                 $module = $this->modules[$request->getModule()] ?? null;
                 if ($module && $module instanceof AbstractServiceModule) {
                     //克隆模式，否则如果定义了成员属性会发生协程污染
                     $module = clone $module;
-                    $module->__exec($request, $response);
+                    $module->__exec($request, $response,$socket);
                 } else {
-                    $this->onModuleNotFound($request);
+                    $this->moduleNotFound($request);
                 }
             }
         } catch (\Throwable $throwable) {
