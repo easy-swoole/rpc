@@ -14,6 +14,30 @@ abstract class AbstractServiceModule
     /** @var Response */
     private $response;
 
+    /** @var array $allowMethodReflections */
+    protected $allowMethodReflections = [];
+
+    public function __construct()
+    {
+        $forbidList = [
+            '__hook', '__exec', '__destruct',
+            '__clone', '__construct', '__call',
+            '__callStatic', '__get', '__set',
+            '__isset', '__unset', '__sleep',
+            '__wakeup', '__toString', '__invoke',
+            '__set_state', '__clone', '__debugInfo',
+            'onRequest'
+        ];
+
+        $refClass = new \ReflectionClass(static::class);
+        $refMethods = $refClass->getMethods(\ReflectionMethod::IS_PUBLIC);
+        foreach ($refMethods as $refMethod) {
+            if ((!in_array($refMethod->getName(), $forbidList)) && (!$refMethod->isStatic())) {
+                $this->allowMethodReflections[$refMethod->getName()] = $refMethod;
+            }
+        }
+    }
+
     abstract function moduleName(): string;
 
     protected function request(): Request
@@ -48,8 +72,7 @@ abstract class AbstractServiceModule
         try {
             if ($this->onRequest($request) !== false) {
                 $action = $request->getAction();
-                //todo:这边需要实现和HTTP控制器一样，仅仅允许public方法调用，同时要过滤安全方法
-                if (method_exists($this, $action)) {
+                if (isset($this->allowMethodReflections[$action])) {
                     $this->$action();
                 } else {
                     $this->onActionNotFound($request);
