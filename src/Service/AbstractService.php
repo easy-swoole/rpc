@@ -6,6 +6,7 @@ namespace EasySwoole\Rpc\Service;
 
 use EasySwoole\Rpc\NetWork\Request;
 use EasySwoole\Rpc\NetWork\Response;
+use Swoole\Coroutine\Socket;
 
 abstract class AbstractService
 {
@@ -53,7 +54,7 @@ abstract class AbstractService
 
     }
 
-    public function __exec(Request $request, Response $response)
+    public function __exec(Request $request, Response $response,Socket $sock)
     {
         $this->request = $request;
         $this->response = $response;

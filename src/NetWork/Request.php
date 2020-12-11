@@ -26,7 +26,7 @@ class Request
     /**
      * @return string
      */
-    public function getService(): string
+    public function getService(): ?string
     {
         return $this->service;
     }
@@ -34,7 +34,7 @@ class Request
     /**
      * @return string
      */
-    public function getModule(): string
+    public function getModule(): ?string
     {
         return $this->module;
     }
@@ -42,7 +42,7 @@ class Request
     /**
      * @return string
      */
-    public function getAction(): string
+    public function getAction(): ?string
     {
         return $this->action;
     }

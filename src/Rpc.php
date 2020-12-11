@@ -53,7 +53,10 @@ class Rpc
             $config->setProcessName("{$this->config->getServerName()}.Rpc.Worker.{$i}");
             $config->setListenAddress($this->config->getServer()->getListenAddress());
             $config->setListenPort($this->config->getServer()->getListenPort());
-            $config->setArg($this->config);
+            $config->setArg([
+                'serviceList'=>$this->service,
+                'config'=>$this->config
+            ]);
             $p = new ServiceWorker($config);
             $list[] = $p;
         }
