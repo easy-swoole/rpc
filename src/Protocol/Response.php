@@ -4,7 +4,9 @@
 namespace EasySwoole\Rpc\Protocol;
 
 
-class Response implements \JsonSerializable
+use EasySwoole\Spl\SplBean;
+
+class Response extends SplBean
 {
     const STATUS_OK = 0;
     const STATUS_SERVICE_NODE_EMPTY = 1001;
@@ -77,14 +79,5 @@ class Response implements \JsonSerializable
     {
         $this->result = $result;
         return $this;
-    }
-
-    public function jsonSerialize()
-    {
-        return [
-            'status'=>$this->status,
-            'msg'=>$this->msg,
-            'result'=>$this->result,
-        ];
     }
 }

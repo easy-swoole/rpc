@@ -13,7 +13,7 @@ class UdpServiceFinder
     protected $enableListen = true;
     protected $enableBroadcast = true;
     /** @var null|string */
-    protected $secretKey = null;
+    protected $signatureKey = null;
 
     /**
      * @return string
@@ -114,16 +114,16 @@ class UdpServiceFinder
     /**
      * @return string|null
      */
-    public function getSecretKey(): ?string
+    public function getSignatureKey(): ?string
     {
-        return $this->secretKey;
+        return $this->signatureKey;
     }
 
     /**
-     * @param string|null $secretKey
+     * @param string|null $signatureKey
      */
-    public function setSecretKey(?string $secretKey): void
+    public function setSignatureKey(?string $signatureKey): void
     {
-        $this->secretKey = $secretKey;
+        $this->signatureKey = $signatureKey;
     }
 }

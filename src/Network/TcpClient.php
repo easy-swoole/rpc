@@ -52,13 +52,7 @@ class TcpClient
             $data = Protocol::unpack($data);
             $json = json_decode($data,true);
             if(is_array($json)){
-                if(isset($json['status'])){
-                    $res->setStatus($json['status']);
-                    $res->setMsg($json['msg']??null);
-                    $res->setResult($json['result']??null);
-                }else{
-                    $res->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
-                }
+                $res->restore($json);
             }else{
                 $res->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
             }
