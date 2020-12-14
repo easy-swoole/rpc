@@ -16,7 +16,7 @@ class Server
     /**
      * @return string
      */
-    public function getServerIp(): string
+    public function getServerIp(): ?string
     {
         return $this->serverIp;
     }

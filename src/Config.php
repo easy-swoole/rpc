@@ -5,6 +5,9 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\Config\Client as ClientConfig;
 use EasySwoole\Rpc\Config\Server;
 use EasySwoole\Rpc\Config\UdpAssist;
+use EasySwoole\Rpc\NodeManager\MemoryManager;
+use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
+use EasySwoole\Utility\Random;
 
 class Config
 {
@@ -15,6 +18,19 @@ class Config
     private $server;
     /** @var UdpAssist */
     private $udpAssist;
+    /** @var NodeManagerInterface */
+    private $nodeManager;
+    /** @var string */
+    private $nodeId;
+
+    function __construct(NodeManagerInterface $manager = null)
+    {
+        $this->nodeId = Random::character(10);
+        if($manager == null){
+            $manager = new MemoryManager();
+        }
+        $this->nodeManager = $manager;
+    }
 
     /**
      * @return ClientConfig
@@ -87,5 +103,29 @@ class Config
     public function setServerName(string $serverName): void
     {
         $this->serverName = $serverName;
+    }
+
+    function nodeManager(NodeManagerInterface $manager = null):NodeManagerInterface
+    {
+        if($manager){
+            $this->nodeManager = $manager;
+        }
+        return $this->nodeManager;
+    }
+
+    /**
+     * @return string
+     */
+    public function getNodeId(): string
+    {
+        return $this->nodeId;
+    }
+
+    /**
+     * @param string $nodeId
+     */
+    public function setNodeId(string $nodeId): void
+    {
+        $this->nodeId = $nodeId;
     }
 }

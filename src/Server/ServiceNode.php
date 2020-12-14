@@ -4,7 +4,9 @@
 namespace EasySwoole\Rpc\Server;
 
 
-class ServiceNode
+use EasySwoole\Spl\SplBean;
+
+class ServiceNode extends SplBean
 {
     /** @var string */
     protected $service;
