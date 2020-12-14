@@ -56,165 +56,40 @@ tick进程：
 composer require easyswoole/rpc=4.x
 ``` 
 
-## 4.0.6版本后
-### 服务端  
-```
-
-
+## 实例代码
+### 服务端
+```php
 use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Network\Response;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Test\UserService;
-use EasySwoole\Rpc\NodeManager\RedisManager;
-use EasySwoole\Rpc\Test\OrderService;
-use EasySwoole\RedisPool\RedisPool;
-use EasySwoole\Redis\Config\RedisConfig;
-
-/*
- * 定义一个节点管理器
- */
-$redisPool = new RedisPool(new RedisConfig([
-    'host'=>'127.0.0.1'
-]));
-$manager = new RedisManager($redisPool);
+use EasySwoole\Rpc\Tests\Service\Module;
+use EasySwoole\Rpc\Tests\Service\Service;
+use Swoole\Http\Server;
+require 'vendor/autoload.php';
 
 $config = new Config();
-$config->setServerIp('127.0.0.1');
-$config->setNodeManager($manager);//设置节点管理器
-$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
-$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
-$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
-
+$config->getServer()->setServerIp('127.0.0.1');
 
 $rpc = new Rpc($config);
-$rpc->add(new UserService());    //注册服务
-$rpc->add(new OrderService());
 
-$list = $rpc->generateProcess(); //获取注册的rpc worker自定义进程
-foreach ($list['worker'] as $p){
-    $p->getProcess()->start();
-}
+$service = new Service();
+$service->addModule(new Module());
 
-foreach ($list['tickWorker'] as $p){//获取注册的rpc tick自定义进程(ps:处理广播和监听广播)
-    $p->getProcess()->start();
-}
+$rpc->addService($service);
 
-while($ret = \Swoole\Process::wait()) {
-    echo "PID={$ret['pid']}\n";
-}
-```
+$http = new Server('0.0.0.0', 9501);
 
-### 客户端
-```
+$rpc->attachServer($http);
 
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\NodeManager\RedisManager;
-use EasySwoole\Rpc\Response;
-use EasySwoole\RedisPool\RedisPool;
-use EasySwoole\Redis\Config\RedisConfig;
-
-
-$config = new Config();
-/*
- * 定义一个节点管理器
- */
-$redisPool = new RedisPool(new RedisConfig([
-    'host'=>'127.0.0.1'
-]));
-$manager = new RedisManager($redisPool);
-$config->setNodeManager($manager);
-$rpc = new Rpc($config);
-
-go(function () use ($rpc) {
+$http->on('request', function ($request, $response) use($rpc){
     $client = $rpc->client();
-    $client->addCall('UserService', 'register', ['arg1', 'arg2'])
-        ->setOnFail(function (Response $response) {
-            print_r($response->toArray());
-        })
-        ->setOnSuccess(function (Response $response) {
-            print_r($response->toArray());
-        });
-
+    $ctx1 = $client->addRequest('Service.Module');
+    $ctx2 = $client->addRequest('Service.Module.action');
+    $ctx2->setOnSuccess(function (Response $response){
+        var_dump($response->getMsg());
+    });
     $client->exec();
 });
-```
 
-## 4.0.6版本前
-
-## 示例代码
-#### EasySwoole 封装实现
-```php
-$config = new Config();
-$config->setServerIp('127.0.0.1');
-$config->setNodeManager(new RedisManager('127.0.0.1', 6379));//设置节点管理器
-$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
-$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
-$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
-
-$rpc = new Rpc($config);
-$rpc->add(new UserService());    //注册服务
-$rpc->add(new OrderService()); 
-$server=ServerManager::getInstance()->getSwooleServer();
-$rpc->attachToServer($server);  
-```
-### Test-Server
-#### 使用redis节点管理器
-```php
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Test\UserService;
-use EasySwoole\Rpc\NodeManager\RedisManager;
-use EasySwoole\Rpc\Test\OrderService;
-
-
-$config = new Config();
-$config->setServerIp('127.0.0.1');
-$config->setNodeManager(new RedisManager('127.0.0.1', 6379));//设置节点管理器
-$config->getBroadcastConfig()->setEnableBroadcast(true);//启用广播
-$config->getBroadcastConfig()->setEnableListen(true);   //启用监听
-$config->getBroadcastConfig()->setSecretKey('zhongguo');//设置加密秘钥
-
-$rpc = new Rpc($config);
-$rpc->add(new UserService());    //注册服务
-$rpc->add(new OrderService()); 
-
-$list = $rpc->generateProcess(); //获取注册的rpc worker自定义进程
-foreach ($list['worker'] as $p){
-    $p->getProcess()->start();
-}
-
-foreach ($list['tickWorker'] as $p){//获取注册的rpc tick自定义进程(ps:处理广播和监听广播)
-    $p->getProcess()->start();
-}
-
-while($ret = \Swoole\Process::wait()) {
-    echo "PID={$ret['pid']}\n";
-}
-
-```
-
-### Test-client
-```php
-use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\NodeManager\RedisManager;
-use EasySwoole\Rpc\Response;
-
-$config = new Config();
-$nodeManager = new RedisManager('127.0.0.1', 6379);
-$config->setNodeManager($nodeManager);
-$rpc = new Rpc($config);
-
-go(function () use ($rpc) {
-    $client = $rpc->client();
-    $client->addCall('UserService', 'register', ['arg1', 'arg2'])
-        ->setOnFail(function (Response $response) {
-            print_r($response->toArray());
-        })
-        ->setOnSuccess(function (Response $response) {
-            print_r($response->toArray());
-        });
-
-    $client->exec();
-});
+$http->start();
 ```
