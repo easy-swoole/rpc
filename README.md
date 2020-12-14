@@ -53,7 +53,7 @@ tick进程：
 
 ## Composer安装
 ```
-composer require easyswoole/rpc=4.x
+composer require easyswoole/rpc=5.x
 ``` 
 
 ## 实例代码
