@@ -4,6 +4,9 @@
 namespace EasySwoole\Rpc\Network;
 
 
+use EasySwoole\Rpc\Protocol\Protocol;
+use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Server\ServiceNode;
 use Swoole\Coroutine\Client;
 

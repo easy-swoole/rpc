@@ -1,7 +1,7 @@
 <?php
 
 
-namespace EasySwoole\Rpc\Network;
+namespace EasySwoole\Rpc\Protocol;
 
 
 class Response implements \JsonSerializable

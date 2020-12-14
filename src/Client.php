@@ -5,8 +5,8 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Rpc\Client\RequestContext;
-use EasySwoole\Rpc\Network\Request;
-use EasySwoole\Rpc\Network\Response;
+use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Network\TcpClient;
 use Swoole\Coroutine;
 use Swoole\Coroutine\Channel;

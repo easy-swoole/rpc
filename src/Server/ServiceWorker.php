@@ -6,9 +6,9 @@ namespace EasySwoole\Rpc\Server;
 
 use EasySwoole\Component\Process\Socket\AbstractTcpProcess;
 use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Network\Protocol;
-use EasySwoole\Rpc\Network\Request;
-use EasySwoole\Rpc\Network\Response;
+use EasySwoole\Rpc\Protocol\Protocol;
+use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Service\AbstractService;
 use Swoole\Coroutine\Socket;
 

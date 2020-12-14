@@ -60,7 +60,7 @@ composer require easyswoole/rpc=5.x
 ### 服务端
 ```php
 use EasySwoole\Rpc\Config;
-use EasySwoole\Rpc\Network\Response;
+use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Tests\Service\Module;
 use EasySwoole\Rpc\Tests\Service\Service;
