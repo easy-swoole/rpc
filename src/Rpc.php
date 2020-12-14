@@ -15,6 +15,7 @@ use EasySwoole\Component\Process\Config as ProcessConfig;
 class Rpc
 {
     private $config;
+    private $service = [];
 
     function __construct(Config $config)
     {
@@ -24,7 +25,10 @@ class Rpc
         $this->config = $config;
     }
 
-    private $service = [];
+    function getConfig():Config
+    {
+        return $this->config;
+    }
 
     function addService(AbstractService $service):Rpc
     {
@@ -34,7 +38,7 @@ class Rpc
 
     function client():Client
     {
-        return new Client($this->config->getClient());
+        return new Client($this->config);
     }
 
     function attachServer(Server $server)

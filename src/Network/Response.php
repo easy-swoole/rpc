@@ -7,7 +7,7 @@ namespace EasySwoole\Rpc\Network;
 class Response implements \JsonSerializable
 {
     const STATUS_OK = 0;
-    const STATUS_NODES_EMPTY = 1001;
+    const STATUS_SERVICE_NODE_EMPTY = 1001;
     const STATUS_CONNECT_TIMEOUT = 1002;
     const STATUS_SERVER_TIMEOUT = 1003;
     const STATUS_PACKAGE_READ_TIMEOUT = 2001;
@@ -87,6 +87,4 @@ class Response implements \JsonSerializable
             'result'=>$this->result,
         ];
     }
-
-
 }

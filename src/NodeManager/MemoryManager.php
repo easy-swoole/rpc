@@ -63,7 +63,7 @@ class MemoryManager implements NodeManagerInterface
            return null;
         }
         $all = count($list);
-        mt_srand(microtime());
+        mt_srand(microtime(true));
         $index = rand(0,$all - 1);
         return $list[$index];
     }

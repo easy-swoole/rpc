@@ -16,8 +16,9 @@ class Request extends SplBean
     protected $action;
     /** @var mixed */
     protected $arg;
+
     /**
-     * @return string
+     * @return string|null
      */
     public function getService(): ?string
     {
@@ -25,7 +26,15 @@ class Request extends SplBean
     }
 
     /**
-     * @return string
+     * @param string|null $service
+     */
+    public function setService(?string $service): void
+    {
+        $this->service = $service;
+    }
+
+    /**
+     * @return string|null
      */
     public function getModule(): ?string
     {
@@ -33,11 +42,27 @@ class Request extends SplBean
     }
 
     /**
-     * @return string
+     * @param string|null $module
+     */
+    public function setModule(?string $module): void
+    {
+        $this->module = $module;
+    }
+
+    /**
+     * @return string|null
      */
     public function getAction(): ?string
     {
         return $this->action;
+    }
+
+    /**
+     * @param string|null $action
+     */
+    public function setAction(?string $action): void
+    {
+        $this->action = $action;
     }
 
     /**
@@ -46,5 +71,13 @@ class Request extends SplBean
     public function getArg()
     {
         return $this->arg;
+    }
+
+    /**
+     * @param mixed $arg
+     */
+    public function setArg($arg): void
+    {
+        $this->arg = $arg;
     }
 }

@@ -4,7 +4,7 @@
 namespace EasySwoole\Rpc\Config;
 
 
-class UdpAssist
+class Assist
 {
     protected $listenAddress = '0.0.0.0';
     protected $listenPort = 9601;

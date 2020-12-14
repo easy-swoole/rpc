@@ -4,7 +4,7 @@
 namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\Config\Client as ClientConfig;
 use EasySwoole\Rpc\Config\Server;
-use EasySwoole\Rpc\Config\UdpAssist;
+use EasySwoole\Rpc\Config\Assist;
 use EasySwoole\Rpc\NodeManager\MemoryManager;
 use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Utility\Random;
@@ -16,8 +16,8 @@ class Config
     private $client;
     /** @var Server */
     private $server;
-    /** @var UdpAssist */
-    private $udpAssist;
+    /** @var Assist */
+    private $assist;
     /** @var NodeManagerInterface */
     private $nodeManager;
     /** @var string */
@@ -71,22 +71,22 @@ class Config
     }
 
     /**
-     * @return UdpAssist
+     * @return Assist
      */
-    public function getUdpAssist(): UdpAssist
+    public function getAssist(): Assist
     {
-        if(!$this->udpAssist){
-            $this->udpAssist = new UdpAssist();
+        if(!$this->assist){
+            $this->assist = new Assist();
         }
-        return $this->udpAssist;
+        return $this->assist;
     }
 
     /**
-     * @param UdpAssist $udpAssist
+     * @param Assist $assist
      */
-    public function setUdpAssist(UdpAssist $udpAssist): void
+    public function setAssist(Assist $assist): void
     {
-        $this->udpAssist = $udpAssist;
+        $this->assist = $assist;
     }
 
     /**

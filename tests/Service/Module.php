@@ -15,6 +15,6 @@ class Module extends AbstractServiceModule
 
     function action()
     {
-        $this->response()->setMsg("action");
+        $this->response()->setMsg("hello action");
     }
 }
