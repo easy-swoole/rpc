@@ -13,7 +13,7 @@ class UdpServiceFinder
     protected $enableListen = true;
     protected $enableBroadcast = true;
     /** @var null|string */
-    protected $signatureKey = null;
+    protected $encryptKey = 'EasySwoole';
 
     /**
      * @return string
@@ -114,16 +114,16 @@ class UdpServiceFinder
     /**
      * @return string|null
      */
-    public function getSignatureKey(): ?string
+    public function getEncryptKey(): ?string
     {
-        return $this->signatureKey;
+        return $this->encryptKey;
     }
 
     /**
-     * @param string|null $signatureKey
+     * @param string|null $encryptKey
      */
-    public function setSignatureKey(?string $signatureKey): void
+    public function setEncryptKey(?string $encryptKey): void
     {
-        $this->signatureKey = $signatureKey;
+        $this->encryptKey = $encryptKey;
     }
 }

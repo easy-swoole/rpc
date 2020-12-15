@@ -11,12 +11,12 @@ class UdpPack extends SplBean
     const OP_ALIVE = 0x1;
     const OP_SHUTDOWN = 0x2;
 
-    private $op;
-    private $agr;
-    /** @var string */
-    private $signature;
+    protected $op;
+    protected $arg;
     /** @var int */
-    private $time;
+    protected $packTime;
+    /** @var string|null */
+    protected $fromNodeId;
 
     /**
      * @return mixed
@@ -37,48 +37,48 @@ class UdpPack extends SplBean
     /**
      * @return mixed
      */
-    public function getAgr()
+    public function getArg()
     {
-        return $this->agr;
+        return $this->arg;
     }
 
     /**
-     * @param mixed $agr
+     * @param mixed $arg
      */
-    public function setAgr($agr): void
+    public function setArg($arg): void
     {
-        $this->agr = $agr;
-    }
-
-    /**
-     * @return string
-     */
-    public function getSignature(): string
-    {
-        return $this->signature;
-    }
-
-    /**
-     * @param string $signature
-     */
-    public function setSignature(string $signature): void
-    {
-        $this->signature = $signature;
+        $this->arg = $arg;
     }
 
     /**
      * @return int
      */
-    public function getTime(): int
+    public function getPackTime(): int
     {
-        return $this->time;
+        return $this->packTime;
     }
 
     /**
-     * @param int $time
+     * @param int $packTime
      */
-    public function setTime(int $time): void
+    public function setPackTime(int $packTime): void
     {
-        $this->time = $time;
+        $this->packTime = $packTime;
+    }
+
+    /**
+     * @return string|null
+     */
+    public function getFromNodeId(): ?string
+    {
+        return $this->fromNodeId;
+    }
+
+    /**
+     * @param string|null $fromNodeId
+     */
+    public function setFromNodeId(?string $fromNodeId): void
+    {
+        $this->fromNodeId = $fromNodeId;
     }
 }
