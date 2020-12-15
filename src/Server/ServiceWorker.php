@@ -6,6 +6,7 @@ namespace EasySwoole\Rpc\Server;
 
 use EasySwoole\Component\Process\Socket\AbstractTcpProcess;
 use EasySwoole\Rpc\Config;
+use EasySwoole\Rpc\Manager;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
@@ -15,13 +16,14 @@ use Swoole\Coroutine\Socket;
 class ServiceWorker extends AbstractTcpProcess
 {
     /** @var Config */
-    private $config;
-    private $serviceList = [];
+    private $rpcConfig;
+    /** @var Manager */
+    private $serviceManager;
 
     function run($arg)
     {
-        $this->config = $arg['config'];
-        $this->serviceList = $arg['serviceList'];
+        $this->rpcConfig = $arg['config'];
+        $this->serviceManager = $arg['manager'];
         parent::run($arg);
     }
 
@@ -29,7 +31,7 @@ class ServiceWorker extends AbstractTcpProcess
     {
         $response = new Response();
 
-        $header = $socket->recvAll(4, $this->config->getServer()->getNetworkReadTimeout());
+        $header = $socket->recvAll(4, $this->rpcConfig->getServer()->getNetworkReadTimeout());
         if (strlen($header) != 4) {
             $response->setStatus($response::STATUS_PACKAGE_READ_TIMEOUT);
             $this->reply($socket, $response);
@@ -37,12 +39,12 @@ class ServiceWorker extends AbstractTcpProcess
         }
 
         $allLength = Protocol::packDataLength($header);
-        if ($allLength > $this->config->getServer()->getMaxPackageSize()) {
+        if ($allLength > $this->rpcConfig->getServer()->getMaxPackageSize()) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
             $this->reply($socket, $response);
             return;
         }
-        $data = $socket->recvAll($allLength, $this->config->getServer()->getNetworkReadTimeout());
+        $data = $socket->recvAll($allLength, $this->rpcConfig->getServer()->getNetworkReadTimeout());
         if (strlen($data) != $allLength) {
             $response->setStatus($response::STATUS_PACKAGE_READ_TIMEOUT);
             $this->reply($socket, $response);
@@ -55,12 +57,17 @@ class ServiceWorker extends AbstractTcpProcess
             return;
         }
         $request = new Request($request);
+        $serviceList = $this->serviceManager->getServiceRegisterArray();
         try{
-            if(isset($this->serviceList[$request->getService()])){
+            if(isset($serviceList[$request->getService()])){
                 /** @var AbstractService $service */
                 //克隆模式，否则如果定义了成员属性会发生协程污染
-                $service = clone $this->serviceList[$request->getService()];
-                $service->__exec($request,$response,$socket);
+                $service = clone $serviceList[$request->getService()];
+                if($this->serviceManager->isAlive($service->serviceName())){
+                    $service->__exec($request,$response,$socket);
+                }else{
+                    $response->setStatus($response::STATUS_SERVICE_SHUTDOWN);
+                }
             }else{
                 $response->setStatus($response::STATUS_SERVICE_NOT_EXIST);
             }
@@ -81,7 +88,7 @@ class ServiceWorker extends AbstractTcpProcess
 
     protected function onException(\Throwable $throwable, ...$args)
     {
-        $call = $this->config->getOnException();
+        $call = $this->rpcConfig->getOnException();
         if(is_callable($call)){
             call_user_func($call,$throwable);
         }else{

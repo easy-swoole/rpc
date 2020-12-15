@@ -8,21 +8,26 @@ use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 use EasySwoole\Rpc\Exception\Exception;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\ServiceWorker;
-use EasySwoole\Rpc\Service\AbstractService;
 use Swoole\Server;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 
 class Rpc
 {
     private $config;
-    private $service = [];
+    private $manager;
 
     function __construct(Config $config)
     {
         if(empty($config->getServer()->getServerIp())){
             throw new Exception("ServerIp is require for Rpc Server Config");
         }
+        $this->manager = new Manager($config);
         $this->config = $config;
+    }
+
+    function serviceManager():Manager
+    {
+        return $this->manager;
     }
 
     function getConfig():Config
@@ -30,20 +35,9 @@ class Rpc
         return $this->config;
     }
 
-    function addService(AbstractService $service):Rpc
-    {
-        $this->service[$service->serviceName()] = $service;
-        return $this;
-    }
-
-    function offline(?string $serviceName = null)
-    {
-
-    }
-
     function client():Client
     {
-        return new Client($this->config);
+        return new Client($this->config->getNodeManager(),$this->config->getClient());
     }
 
     function attachServer(Server $server)
@@ -67,7 +61,7 @@ class Rpc
             $config->setListenAddress($this->config->getServer()->getListenAddress());
             $config->setListenPort($this->config->getServer()->getListenPort());
             $config->setArg([
-                'serviceList'=>$this->service,
+                'manager'=>$this->manager,
                 'config'=>$this->config
             ]);
             $p = new ServiceWorker($config);
@@ -84,7 +78,7 @@ class Rpc
         $config->setProcessGroup("{$this->config->getServerName()}.Rpc");
         $config->setProcessName("{$this->config->getServerName()}.Rpc.AssistWorker");
         $config->setArg([
-            'serviceList'=>$this->service,
+            'manager'=>$this->manager,
             'config'=>$this->config
         ]);
         return new AssistWorker($config);

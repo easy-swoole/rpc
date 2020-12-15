@@ -5,19 +5,23 @@ namespace EasySwoole\Rpc;
 
 
 use EasySwoole\Rpc\Client\RequestContext;
+use EasySwoole\Rpc\NodeManager\NodeManagerInterface;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Network\TcpClient;
 use Swoole\Coroutine;
 use Swoole\Coroutine\Channel;
+use EasySwoole\Rpc\Config\Client as ClientConfig;
 
 class Client
 {
-    private $config;
+    private $nodeManager;
     private $requestContext = [];
+    private $config;
 
-    function __construct(Config $config)
+    function __construct(NodeManagerInterface $manager, ClientConfig $config)
     {
+        $this->nodeManager = $manager;
         $this->config = $config;
     }
 
@@ -45,7 +49,7 @@ class Client
                 $action = array_shift($requestPaths);
                 $node = $requestContext->getServiceNode();
                 if(!$node){
-                    $node = $this->config->getNodeManager()->getNode($service,$requestContext->getServiceVersion());
+                    $node = $this->nodeManager->getNode($service,$requestContext->getServiceVersion());
                 }
                 $res = new Response();
                 if(empty($node)){
@@ -57,7 +61,7 @@ class Client
                     $pack->setModule($module);
                     $pack->setAction($action);
                     $pack->setArg($requestContext->getArg());
-                    $client = new TcpClient($this->config->getClient()->getMaxPackageSize(),$timeout);
+                    $client = new TcpClient($this->config->getMaxPackageSize(),$timeout);
                     if(!$client->connect($node)){
                         $res->setStatus(Response::STATUS_CONNECT_TIMEOUT);
                     }else{
