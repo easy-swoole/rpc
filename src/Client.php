@@ -94,12 +94,32 @@ class Client
 
     private function execCallback(Response $response,RequestContext $context)
     {
+        //失败状态监测
+        $failStatus = [
+            Response::STATUS_CONNECT_TIMEOUT,
+            Response::STATUS_SERVER_TIMEOUT,
+            Response::STATUS_SERVICE_SHUTDOWN,
+            Response::STATUS_SERVICE_ERROR
+        ];
+        if(in_array($response->getStatus(),$failStatus)){
+            if($context->getServiceNode()){
+                $this->nodeManager->failDown($context->getServiceNode());
+            }
+        }
         $call = null;
+        $globalCall = null;
         if($response->getStatus() === Response::STATUS_OK){
+            $globalCall = $this->config->getOnGlobalSuccess();
             $call = $context->getOnSuccess();
         }else{
+            $globalCall = $this->config->getOnGlobalFail();
             $call = $context->getOnFail();
         }
+
+        if(is_callable($globalCall)){
+            call_user_func($globalCall,$response,$context);
+        }
+
         if(is_callable($call)){
             call_user_func($call,$response,$context);
         }

@@ -87,6 +87,12 @@ class MemoryManager implements NodeManagerInterface
         return true;
     }
 
+    function failDown(ServiceNode $serviceNode): bool
+    {
+        $this->table->set($this->getTableKey($serviceNode),['lastFailTime'=>time()]);
+        return true;
+    }
+
     private function getTableKey(ServiceNode $serviceNode)
     {
         return substr(md5($serviceNode->getIp().$serviceNode->getPort()),8,16);
