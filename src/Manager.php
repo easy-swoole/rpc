@@ -36,10 +36,12 @@ class Manager
             $node = $this->getLocalServiceNode($service);
             $this->serviceTable->set($service,['isOnline'=>0]);
             $this->config->getNodeManager()->offline($node);
-            $pack = new UdpPack();
-            $pack->setOp(UdpPack::OP_SHUTDOWN);
-            $pack->setArg($node);
-            $udpClient->broadcast($pack);
+            if($this->config->getAssist()->getUdpServiceFinder()->isEnableBroadcast()){
+                $pack = new UdpPack();
+                $pack->setOp(UdpPack::OP_SHUTDOWN);
+                $pack->setArg($node);
+                $udpClient->broadcast($pack);
+            }
         }
     }
 
@@ -64,10 +66,12 @@ class Manager
             $node = $this->getLocalServiceNode($service);
             $this->serviceTable->set($service,['isOnline'=>1]);
             $this->config->getNodeManager()->alive($node);
-            $pack = new UdpPack();
-            $pack->setOp(UdpPack::OP_ALIVE);
-            $pack->setArg($node);
-            $udpClient->broadcast($pack);
+            if($this->config->getAssist()->getUdpServiceFinder()->isEnableBroadcast()){
+                $pack = new UdpPack();
+                $pack->setOp(UdpPack::OP_ALIVE);
+                $pack->setArg($node);
+                $udpClient->broadcast($pack);
+            }
         }
     }
 
