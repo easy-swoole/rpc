@@ -36,7 +36,7 @@ class Rpc
         return $this;
     }
 
-    function offline(?string $serviceName)
+    function offline(?string $serviceName = null)
     {
 
     }

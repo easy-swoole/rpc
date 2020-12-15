@@ -68,7 +68,7 @@ class MemoryManager implements NodeManagerInterface
         return $list[$index];
     }
 
-    function deleteNode(ServiceNode $serviceNode): bool
+    function offline(ServiceNode $serviceNode): bool
     {
         $this->table->del($this->getTableKey($serviceNode));
         return true;

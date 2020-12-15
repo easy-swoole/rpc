@@ -22,6 +22,8 @@ class Config
     private $nodeManager;
     /** @var string */
     private $nodeId;
+    /** @var callable|null */
+    private $onException;
 
     function __construct(NodeManagerInterface $manager = null)
     {
@@ -105,12 +107,14 @@ class Config
         $this->serverName = $serverName;
     }
 
-    function nodeManager(NodeManagerInterface $manager = null):NodeManagerInterface
+    function getNodeManager():?NodeManagerInterface
     {
-        if($manager){
-            $this->nodeManager = $manager;
-        }
         return $this->nodeManager;
+    }
+
+    function setNodeManager(NodeManagerInterface $manager)
+    {
+        $this->nodeManager = $manager;
     }
 
     /**
@@ -127,5 +131,21 @@ class Config
     public function setNodeId(string $nodeId): void
     {
         $this->nodeId = $nodeId;
+    }
+
+    /**
+     * @return callable|null
+     */
+    public function getOnException(): ?callable
+    {
+        return $this->onException;
+    }
+
+    /**
+     * @param callable|null $onException
+     */
+    public function setOnException(?callable $onException): void
+    {
+        $this->onException = $onException;
     }
 }

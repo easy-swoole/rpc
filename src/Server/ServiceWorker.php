@@ -66,8 +66,7 @@ class ServiceWorker extends AbstractTcpProcess
             }
         }catch (\Throwable $throwable){
             $response->setStatus(Response::STATUS_SERVICE_ERROR);
-            //这边强制对未捕获异常转错误。因为异常为导致整个worker直接退出，进而影响协程并行处理逻辑。
-            trigger_error($throwable->getMessage()."\n".$throwable->getTraceAsString());
+            $this->onException($throwable);
         }
         $this->reply($socket, $response);
     }
@@ -78,5 +77,15 @@ class ServiceWorker extends AbstractTcpProcess
         $str = Protocol::pack($str);
         $clientSocket->sendAll($str);
         $clientSocket->close();
+    }
+
+    protected function onException(\Throwable $throwable, ...$args)
+    {
+        $call = $this->config->getOnException();
+        if(is_callable($call)){
+            call_user_func($call,$throwable);
+        }else{
+            throw $throwable;
+        }
     }
 }

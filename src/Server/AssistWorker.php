@@ -74,11 +74,20 @@ class AssistWorker extends AbstractProcess
         }
     }
 
+    protected function onException(\Throwable $throwable, ...$args)
+    {
+        $call = $this->config->getOnException();
+        if(is_callable($call)){
+            call_user_func($call,$throwable);
+        }else{
+            throw $throwable;
+        }
+    }
 
     private function serviceAlive()
     {
         foreach ($this->getServiceNodes() as $node){
-            $this->config->nodeManager()->alive($node);
+            $this->config->getNodeManager()->alive($node);
         }
     }
 
@@ -113,12 +122,12 @@ class AssistWorker extends AbstractProcess
         switch ($pack->getOp()){
             case UdpPack::OP_ALIVE:{
                 $node = new ServiceNode($pack->getArg());
-                $this->config->nodeManager()->alive($node);
+                $this->config->getNodeManager()->alive($node);
                 break;
             }
             case UdpPack::OP_SHUTDOWN:{
                 $node = new ServiceNode($pack->getArg());
-                $this->config->nodeManager()->deleteNode($node);
+                $this->config->getNodeManager()->offline($node);
                 break;
             }
         }

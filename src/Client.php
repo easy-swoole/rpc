@@ -45,7 +45,7 @@ class Client
                 $action = array_shift($requestPaths);
                 $node = $requestContext->getServiceNode();
                 if(!$node){
-                    $node = $this->config->nodeManager()->getNode($service,$requestContext->getServiceVersion());
+                    $node = $this->config->getNodeManager()->getNode($service,$requestContext->getServiceVersion());
                 }
                 $res = new Response();
                 if(empty($node)){
