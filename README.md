@@ -75,7 +75,7 @@ $rpc = new Rpc($config);
 $service = new Service();
 $service->addModule(new Module());
 
-$rpc->addService($service);
+$rpc->serviceManager()->addService($service);
 
 $http = new Server('0.0.0.0', 9501);
 
