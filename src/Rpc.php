@@ -36,6 +36,11 @@ class Rpc
         return $this;
     }
 
+    function offline(?string $serviceName)
+    {
+
+    }
+
     function client():Client
     {
         return new Client($this->config);

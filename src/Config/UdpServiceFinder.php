@@ -8,7 +8,7 @@ class UdpServiceFinder
 {
     protected $listenAddress = '0.0.0.0';
     protected $listenPort = 9601;
-    protected $broadcastAddress = ['127.0.0.1'];
+    protected $broadcastAddress = ['127.0.0.1','255.255.255.255'];
     protected $broadcastInterval = 5000;
     protected $enableListen = true;
     protected $enableBroadcast = true;
