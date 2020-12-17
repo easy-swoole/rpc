@@ -24,6 +24,15 @@ class Manager
         $this->serviceTable->create();
     }
 
+    function onlineStatus():array
+    {
+        $list = [];
+        foreach ($this->serviceTable as $key => $value){
+            $list[$key] = (bool)$value['isOnline'];
+        }
+        return $list;
+    }
+
     function offline(?string $service = null)
     {
         if($service === null){
@@ -33,7 +42,7 @@ class Manager
         }
         $udpClient = new UdpClient($this->config->getAssist()->getUdpServiceFinder(),$this->config->getNodeId());
         foreach ($list as $service){
-            $node = $this->getLocalServiceNode($service);
+            $node = $this->getServiceNode($service);
             $this->serviceTable->set($service,['isOnline'=>0]);
             $this->config->getNodeManager()->offline($node);
             if($this->config->getAssist()->getUdpServiceFinder()->isEnableBroadcast()){
@@ -63,7 +72,7 @@ class Manager
         }
         $udpClient = new UdpClient($this->config->getAssist()->getUdpServiceFinder(),$this->config->getNodeId());
         foreach ($list as $service){
-            $node = $this->getLocalServiceNode($service);
+            $node = $this->getServiceNode($service);
             $this->serviceTable->set($service,['isOnline'=>1]);
             $this->config->getNodeManager()->alive($node);
             if($this->config->getAssist()->getUdpServiceFinder()->isEnableBroadcast()){
@@ -75,7 +84,7 @@ class Manager
         }
     }
 
-    function getLocalServiceNode(string $service):?ServiceNode
+    function getServiceNode(string $service):?ServiceNode
     {
         if(isset($this->serviceRegisterArray[$service])){
             $service = $this->serviceRegisterArray[$service];
@@ -91,7 +100,7 @@ class Manager
         }
     }
 
-    function getLocalServiceNodes():array
+    function getServiceNodes():array
     {
         $list = [];
         /** @var AbstractService $service */

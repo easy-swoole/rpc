@@ -34,7 +34,7 @@ class AssistWorker extends AbstractProcess
         if($udpServiceFinderConfig->isEnableBroadcast()){
             $udpClient = new UdpClient($udpServiceFinderConfig,$this->rpcConfig->getNodeId());
             Timer::getInstance()->loop($udpServiceFinderConfig->getBroadcastInterval(),function ()use($udpClient){
-                $list = $this->serviceManager->getLocalServiceNodes();
+                $list = $this->serviceManager->getServiceNodes();
                 /** @var ServiceNode $node */
                 foreach ($list as $node){
                     $pack = new UdpPack();
@@ -82,12 +82,12 @@ class AssistWorker extends AbstractProcess
 
     protected function onShutDown()
     {
-        foreach ($this->serviceManager->getLocalServiceNodes() as $node){
+        foreach ($this->serviceManager->getServiceNodes() as $node){
             $this->rpcConfig->getNodeManager()->offline($node);
         }
         //对外广播节点下线。
         $udpClient = new UdpClient($this->rpcConfig->getAssist()->getUdpServiceFinder(),$this->rpcConfig->getNodeId());
-        $list = $this->serviceManager->getLocalServiceNodes();
+        $list = $this->serviceManager->getServiceNodes();
         foreach ($list as $node){
             $pack = new UdpPack();
             $pack->setOp(UdpPack::OP_SHUTDOWN);
@@ -108,7 +108,7 @@ class AssistWorker extends AbstractProcess
 
     private function serviceAlive()
     {
-        foreach ($this->serviceManager->getLocalServiceNodes() as $node){
+        foreach ($this->serviceManager->getServiceNodes() as $node){
             if($this->serviceManager->isAlive($node->getService())){
                 $this->rpcConfig->getNodeManager()->alive($node);
             }else{
