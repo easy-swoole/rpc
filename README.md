@@ -62,7 +62,7 @@ composer require easyswoole/rpc=5.x
 use EasySwoole\Rpc\Config;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Tests\Service\Module;
+use EasySwoole\Rpc\Tests\Service\ModuleOne;
 use EasySwoole\Rpc\Tests\Service\Service;
 use Swoole\Http\Server;
 require 'vendor/autoload.php';
@@ -73,7 +73,7 @@ $config->getServer()->setServerIp('127.0.0.1');
 $rpc = new Rpc($config);
 
 $service = new Service();
-$service->addModule(new Module());
+$service->addModule(new ModuleOne());
 
 $rpc->serviceManager()->addService($service);
 
