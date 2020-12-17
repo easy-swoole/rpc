@@ -95,6 +95,6 @@ class MemoryManager implements NodeManagerInterface
 
     private function getTableKey(ServiceNode $serviceNode)
     {
-        return substr(md5($serviceNode->getIp().$serviceNode->getPort()),8,16);
+        return substr(md5($serviceNode->getIp().$serviceNode->getPort().$serviceNode->getService()),8,16);
     }
 }
