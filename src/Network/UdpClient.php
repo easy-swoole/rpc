@@ -7,7 +7,6 @@ namespace EasySwoole\Rpc\Network;
 use EasySwoole\Rpc\Config\UdpServiceFinder;
 use EasySwoole\Rpc\Protocol\UdpPack;
 use EasySwoole\Rpc\Utility\Openssl;
-use Swoole\Coroutine\Client;
 
 class UdpClient
 {
@@ -22,7 +21,8 @@ class UdpClient
 
     function send(UdpPack $pack,string $address,int $port)
     {
-        $client = new Client(SWOOLE_UDP);
+        $client = new \Swoole\Coroutine\Socket(AF_INET,SOCK_DGRAM);
+        $client->setOption(SOL_SOCKET, SO_BROADCAST, 1);
         $client->sendto( $address, $port,$this->pack2string($pack));
     }
 

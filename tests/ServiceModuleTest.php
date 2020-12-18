@@ -77,7 +77,9 @@ class ServiceModuleTest extends TestCase
 
     private function buildClient($path = '/')
     {
-        $client = new \Swoole\Coroutine\Http\Client('127.0.0.1', 9501);
+        $list = [9501, 9502];
+        $port = $list[array_rand($list,1)];
+        $client = new \Swoole\Coroutine\Http\Client('127.0.0.1', $port);
         $client->get($path);
         return $client;
     }
