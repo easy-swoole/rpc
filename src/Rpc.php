@@ -18,9 +18,6 @@ class Rpc
 
     function __construct(Config $config)
     {
-        if(empty($config->getServer()->getServerIp())){
-            throw new Exception("ServerIp is require for Rpc Server Config");
-        }
         $this->manager = new Manager($config);
         $this->config = $config;
     }
@@ -42,6 +39,9 @@ class Rpc
 
     function attachServer(Server $server)
     {
+        if(empty($this->config->getServer()->getServerIp())){
+            throw new Exception("ServerIp is require for Rpc Server Config");
+        }
         $serviceWorkers = $this->__getServiceWorker();
         /** @var ServiceWorker $value */
         foreach ($serviceWorkers as $serviceWorker) {
