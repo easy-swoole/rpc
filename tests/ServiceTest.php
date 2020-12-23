@@ -19,25 +19,27 @@ class ServiceTest extends TestCase
 
     function testNotFound()
     {
+        $ret = json_decode($this->buildClient('/?path=ServiceNotFound')
+            ->getBody(), true);
         $this->assertEquals(
-            $this->buildResponse()
+            $this->buildResponse(['responseUUID' => $ret['responseUUID']])
                 ->setStatus(\EasySwoole\Rpc\Protocol\Response::STATUS_NOT_AVAILABLE_NODE)
-                ->__toString(),
-            $this->buildClient('/?path=ServiceNotFound')
-                ->getBody()
+                ->jsonSerialize(),
+            $ret
         );
     }
 
 
     function testOnException()
     {
+        $ret = json_decode($this->buildClient('/?path=ServiceException')
+            ->getBody(), true);
         $this->assertEquals(
-            $this->buildResponse()
+            $this->buildResponse(['responseUUID' => $ret['responseUUID']])
                 ->setStatus(-1)
                 ->setMsg('the service exception')
-                ->__toString(),
-            $this->buildClient('/?path=ServiceException')
-                ->getBody()
+                ->jsonSerialize(),
+            $ret
         );
     }
 
@@ -48,9 +50,9 @@ class ServiceTest extends TestCase
         return $client;
     }
 
-    private function buildResponse(): Response
+    private function buildResponse($data = []): Response
     {
-        return new Response();
+        return new Response($data);
     }
 
     private function prepareService(): ServiceOne
