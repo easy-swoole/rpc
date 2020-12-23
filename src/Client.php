@@ -18,6 +18,10 @@ class Client
     private $nodeManager;
     private $requestContext = [];
     private $config;
+    /** @var callable|null */
+    private $onSuccess;
+    /** @var callable|null */
+    private $onFail;
 
     function __construct(NodeManagerInterface $manager, ClientConfig $config)
     {
@@ -32,6 +36,24 @@ class Client
         $req->setServiceVersion($serviceVersion);
         $this->requestContext[] = $req;
         return $req;
+    }
+
+    /**
+     * @param callable|null $onSuccess
+     */
+    public function setOnSuccess(?callable $onSuccess): Client
+    {
+        $this->onSuccess = $onSuccess;
+        return $this;
+    }
+
+    /**
+     * @param callable|null $onFail
+     */
+    public function setOnFail(?callable $onFail): Client
+    {
+        $this->onFail = $onFail;
+        return $this;
     }
 
     function exec(float $timeout = 3.0)
@@ -108,16 +130,23 @@ class Client
         }
         $call = null;
         $globalCall = null;
+        $clientCall = null;
         if($response->getStatus() === Response::STATUS_OK){
             $globalCall = $this->config->getOnGlobalSuccess();
             $call = $context->getOnSuccess();
+            $clientCall = $this->onSuccess;
         }else{
             $globalCall = $this->config->getOnGlobalFail();
             $call = $context->getOnFail();
+            $clientCall = $this->onFail;
         }
 
         if(is_callable($globalCall)){
             call_user_func($globalCall,$response,$context);
+        }
+
+        if(is_callable($clientCall)){
+            call_user_func($clientCall,$response,$context);
         }
 
         if(is_callable($call)){
