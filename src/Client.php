@@ -22,6 +22,8 @@ class Client
     private $onSuccess;
     /** @var callable|null */
     private $onFail;
+    /** @var mixed */
+    private $clientArg;
 
     function __construct(NodeManagerInterface $manager, ClientConfig $config)
     {
@@ -84,6 +86,7 @@ class Client
                     $pack->setAction($action);
                     $pack->setArg($requestContext->getArg());
                     $pack->setRequestUUID($requestContext->getRequestUUID());
+                    $pack->setClientArg($this->clientArg);
                     $client = new TcpClient($this->config->getMaxPackageSize(),$timeout);
                     if(!$client->connect($node)){
                         $res->setStatus(Response::STATUS_CONNECT_TIMEOUT);
@@ -114,6 +117,23 @@ class Client
         }
         return $all;
     }
+
+    /**
+     * @return mixed
+     */
+    public function getClientArg()
+    {
+        return $this->clientArg;
+    }
+
+    /**
+     * @param mixed $clientArg
+     */
+    public function setClientArg($clientArg): void
+    {
+        $this->clientArg = $clientArg;
+    }
+
 
     private function execCallback(Response $response,RequestContext $context)
     {

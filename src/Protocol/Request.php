@@ -18,6 +18,8 @@ class Request extends SplBean
     protected $arg;
     /** @var string */
     protected $requestUUID;
+    /** @var mixed */
+    protected $clientArg;
 
     /**
      * @return string|null
@@ -97,5 +99,21 @@ class Request extends SplBean
     public function setRequestUUID(string $requestUUID): void
     {
         $this->requestUUID = $requestUUID;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getClientArg()
+    {
+        return $this->clientArg;
+    }
+
+    /**
+     * @param mixed $clientArg
+     */
+    public function setClientArg($clientArg): void
+    {
+        $this->clientArg = $clientArg;
     }
 }
