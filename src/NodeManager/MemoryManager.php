@@ -76,6 +76,8 @@ class MemoryManager implements NodeManagerInterface
             $node->__weight = $weight;
         }
 
+        mt_srand(microtime(true));
+        $allWeight = rand(0,$allWeight - 1);
         foreach ($list as $node){
             $allWeight = $allWeight - $node->__weight;
             if($allWeight <= 0){
