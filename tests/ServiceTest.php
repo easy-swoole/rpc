@@ -21,7 +21,7 @@ class ServiceTest extends TestCase
     {
         $this->assertEquals(
             $this->buildResponse()
-                ->setStatus(\EasySwoole\Rpc\Protocol\Response::STATUS_SERVICE_NODE_EMPTY)
+                ->setStatus(\EasySwoole\Rpc\Protocol\Response::STATUS_NOT_AVAILABLE_NODE)
                 ->__toString(),
             $this->buildClient('/?path=ServiceNotFound')
                 ->getBody()

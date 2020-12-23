@@ -75,7 +75,7 @@ class Client
                 }
                 $res = new Response();
                 if(empty($node)){
-                    $res->setStatus(Response::STATUS_SERVICE_NODE_EMPTY);
+                    $res->setStatus(Response::STATUS_NOT_AVAILABLE_NODE);
                 }else{
                     $requestContext->setServiceNode($node);
                     $pack = new Request();
