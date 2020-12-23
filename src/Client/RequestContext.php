@@ -32,9 +32,10 @@ class RequestContext
     /**
      * @param string $requestPath
      */
-    public function setRequestPath(string $requestPath): void
+    public function setRequestPath(string $requestPath): RequestContext
     {
         $this->requestPath = $requestPath;
+        return $this;
     }
 
     /**
@@ -48,9 +49,10 @@ class RequestContext
     /**
      * @param int|null $serviceVersion
      */
-    public function setServiceVersion(?int $serviceVersion): void
+    public function setServiceVersion(?int $serviceVersion): RequestContext
     {
         $this->serviceVersion = $serviceVersion;
+        return $this;
     }
 
     /**
@@ -64,9 +66,10 @@ class RequestContext
     /**
      * @param mixed $arg
      */
-    public function setArg($arg): void
+    public function setArg($arg): RequestContext
     {
         $this->arg = $arg;
+        return $this;
     }
 
     /**
@@ -80,9 +83,10 @@ class RequestContext
     /**
      * @param callable|null $onSuccess
      */
-    public function setOnSuccess(?callable $onSuccess): void
+    public function setOnSuccess(?callable $onSuccess): RequestContext
     {
         $this->onSuccess = $onSuccess;
+        return $this;
     }
 
     /**
@@ -96,9 +100,10 @@ class RequestContext
     /**
      * @param callable|null $onFail
      */
-    public function setOnFail(?callable $onFail): void
+    public function setOnFail(?callable $onFail): RequestContext
     {
         $this->onFail = $onFail;
+        return $this;
     }
 
     /**
@@ -112,8 +117,9 @@ class RequestContext
     /**
      * @param ServiceNode|null $serviceNode
      */
-    public function setServiceNode(?ServiceNode $serviceNode): void
+    public function setServiceNode(?ServiceNode $serviceNode): RequestContext
     {
         $this->serviceNode = $serviceNode;
+        return $this;
     }
 }
