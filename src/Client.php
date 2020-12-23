@@ -101,7 +101,7 @@ class Client
         $left = $timeout;
         while ((time() < $start + $timeout) && $all > 0){
             $t = microtime(true);
-            $ret = $channel->pop($left);
+            $ret = $channel->pop($left + 1);
             if($ret){
                 $all--;
                 $this->execCallback($ret['response'],$ret['context']);
