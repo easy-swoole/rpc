@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc\Client;
 
 
 use EasySwoole\Rpc\Server\ServiceNode;
+use EasySwoole\Utility\Random;
 
 class RequestContext
 {
@@ -20,6 +21,20 @@ class RequestContext
     private $onFail;
     /** @var ServiceNode|null */
     private $serviceNode;
+    /** @var string */
+    private $requestUUID;
+
+    public function __construct()
+    {
+        $this->requestUUID = Random::makeUUIDV4();
+    }
+    /**
+     * @return string
+     */
+    public function getRequestUUID(): string
+    {
+        return $this->requestUUID;
+    }
 
     /**
      * @return string

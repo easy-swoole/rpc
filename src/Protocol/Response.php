@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc\Protocol;
 
 
 use EasySwoole\Spl\SplBean;
+use EasySwoole\Utility\Random;
 
 class Response extends SplBean
 {
@@ -26,6 +27,8 @@ class Response extends SplBean
     protected $result;
     /** @var mixed $msg */
     protected $msg;
+    /** @var string */
+    protected $responseUUID;
 
     public static function status2msg(int $status)
     {
@@ -121,5 +124,12 @@ class Response extends SplBean
     {
         $this->result = $result;
         return $this;
+    }
+
+    protected function initialize(): void
+    {
+        if(empty($this->responseUUID)){
+            $this->responseUUID = Random::makeUUIDV4();
+        }
     }
 }

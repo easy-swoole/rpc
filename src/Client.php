@@ -83,6 +83,7 @@ class Client
                     $pack->setModule($module);
                     $pack->setAction($action);
                     $pack->setArg($requestContext->getArg());
+                    $pack->setRequestUUID($requestContext->getRequestUUID());
                     $client = new TcpClient($this->config->getMaxPackageSize(),$timeout);
                     if(!$client->connect($node)){
                         $res->setStatus(Response::STATUS_CONNECT_TIMEOUT);
@@ -101,7 +102,7 @@ class Client
         $left = $timeout;
         while ((time() < $start + $timeout) && $all > 0){
             $t = microtime(true);
-            $ret = $channel->pop($left + 1);
+            $ret = $channel->pop($left + 0.01);
             if($ret){
                 $all--;
                 $this->execCallback($ret['response'],$ret['context']);
