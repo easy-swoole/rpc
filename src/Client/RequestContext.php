@@ -46,6 +46,7 @@ class RequestContext
 
     /**
      * @param string $requestPath
+     * @return $this
      */
     public function setRequestPath(string $requestPath): RequestContext
     {
@@ -63,6 +64,7 @@ class RequestContext
 
     /**
      * @param int|null $serviceVersion
+     * @return $this
      */
     public function setServiceVersion(?int $serviceVersion): RequestContext
     {
@@ -80,6 +82,7 @@ class RequestContext
 
     /**
      * @param mixed $arg
+     * @return $this
      */
     public function setArg($arg): RequestContext
     {
@@ -97,6 +100,7 @@ class RequestContext
 
     /**
      * @param callable|null $onSuccess
+     * @return $this
      */
     public function setOnSuccess(?callable $onSuccess): RequestContext
     {
@@ -114,6 +118,7 @@ class RequestContext
 
     /**
      * @param callable|null $onFail
+     * @return $this
      */
     public function setOnFail(?callable $onFail): RequestContext
     {
@@ -131,6 +136,7 @@ class RequestContext
 
     /**
      * @param ServiceNode|null $serviceNode
+     * @return $this
      */
     public function setServiceNode(?ServiceNode $serviceNode): RequestContext
     {
