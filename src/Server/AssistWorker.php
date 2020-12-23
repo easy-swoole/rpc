@@ -54,6 +54,7 @@ class AssistWorker extends AbstractProcess
                 $socketServer = new Coroutine\Socket(AF_INET, SOCK_DGRAM);
                 $address = $udpServiceFinderConfig->getListenAddress();
                 $port = $udpServiceFinderConfig->getListenPort();
+                $socketServer->setOption(SOL_SOCKET, SO_REUSEPORT, 1);
                 $socketServer->bind($address,$port);
                 $openssl = null;
                 $secretKey = $udpServiceFinderConfig->getEncryptKey();
