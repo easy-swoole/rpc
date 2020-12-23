@@ -62,10 +62,27 @@ class MemoryManager implements NodeManagerInterface
         if(empty($list)){
            return null;
         }
-        $all = count($list);
-        mt_srand(microtime(true));
-        $index = rand(0,$all - 1);
-        return $list[$index];
+        $allWeight = 0;
+        $time = time();
+        foreach ($list as $node){
+            $key = $this->getTableKey($node);
+            $lastFailTime = $this->table->get($key)['lastFailTime'];
+            if($time - $lastFailTime >= 10){
+                $weight = 10;
+            }else{
+                $weight = abs(10 - ($time - $lastFailTime));
+            }
+            $allWeight += $weight;
+            $node->__weight = $weight;
+        }
+
+        foreach ($list as $node){
+            $allWeight = $allWeight - $node->__weight;
+            if($allWeight <= 0){
+                return $node;
+            }
+        }
+        return null;
     }
 
     function offline(ServiceNode $serviceNode): bool
