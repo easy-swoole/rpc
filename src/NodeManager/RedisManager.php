@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\NodeManager;
 
+use EasySwoole\Redis\Redis;
 use EasySwoole\RedisPool\RedisPool;
 use EasySwoole\Rpc\ServiceNode;
 use EasySwoole\Utility\Random;
@@ -20,6 +21,7 @@ class RedisManager implements NodeManagerInterface
 
     function getServiceNodes(string $serviceName, ?string $version = null): array
     {
+        /** @var Redis $redis */
         $redis = $this->pool->getObj(15);
         try {
             $nodes = $redis->hGetAll("{$this->redisKey}_{$serviceName}");
@@ -60,6 +62,7 @@ class RedisManager implements NodeManagerInterface
 
     function deleteServiceNode(ServiceNode $serviceNode): bool
     {
+        /** @var Redis $redis */
         $redis = $this->pool->getObj(15);
         try {
             $redis->hDel($this->generateNodeKey($serviceNode), $serviceNode->getNodeId());
@@ -77,6 +80,8 @@ class RedisManager implements NodeManagerInterface
         if (empty($serviceNode->getLastHeartBeat())) {
             $serviceNode->setLastHeartBeat(time());
         }
+
+        /** @var Redis $redis */
         $redis = $this->pool->getObj(15);
         try {
             $redis->hSet($this->generateNodeKey($serviceNode), $serviceNode->getNodeId(), $serviceNode->__toString());

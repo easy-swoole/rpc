@@ -19,7 +19,7 @@
         "easyswoole/spl": "^1.0",
         "easyswoole/utility": "^1.0",
         "easyswoole/component": "^2.0",
-        "easyswoole/redis-pool": "^2.0"
+        "easyswoole/redis-pool": "~2.1.0"
     },
     "require-dev": {
         "easyswoole/swoole-ide-helper": "^1.1"
