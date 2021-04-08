@@ -24,6 +24,8 @@ class RequestContext
     /** @var string */
     private $requestUUID;
 
+    private $retryTimes = 0;
+
     public function __construct()
     {
         $this->requestUUID = Random::makeUUIDV4();
@@ -124,6 +126,19 @@ class RequestContext
     {
         $this->onFail = $onFail;
         return $this;
+    }
+
+    public function enableRetry(int $times): RequestContext
+    {
+        if($times >= 0){
+            $this->retryTimes = $times;
+        }
+        return $this;
+    }
+
+    public function getRetryTimes():int
+    {
+        return $this->retryTimes;
     }
 
     /**
