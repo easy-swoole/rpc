@@ -6,7 +6,7 @@ namespace EasySwoole\Rpc\Config;
 
 class Assist
 {
-    /** @var int  */
+    /** @var int */
     private $aliveInterval = 5000;
     /** @var UdpServiceFinder */
     private $udpServiceFinder;
@@ -32,7 +32,7 @@ class Assist
      */
     public function getUdpServiceFinder(): UdpServiceFinder
     {
-        if(!$this->udpServiceFinder){
+        if (!$this->udpServiceFinder) {
             $this->udpServiceFinder = new UdpServiceFinder();
         }
         return $this->udpServiceFinder;

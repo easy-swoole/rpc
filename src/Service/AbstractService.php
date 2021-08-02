@@ -30,12 +30,12 @@ abstract class AbstractService
         return $this->response;
     }
 
-    function serviceVersion(): int
+    public function serviceVersion(): int
     {
         return 1;
     }
 
-    function addModule(AbstractServiceModule $module): AbstractService
+    public function addModule(AbstractServiceModule $module): AbstractService
     {
         $this->modules[$module->moduleName()] = $module;
         return $this;
@@ -56,7 +56,7 @@ abstract class AbstractService
         $this->response()->setStatus(Response::STATUS_MODULE_NOT_EXIST);
     }
 
-    protected function getSocket():Socket
+    protected function getSocket(): Socket
     {
         return $this->socket;
     }
@@ -66,7 +66,7 @@ abstract class AbstractService
 
     }
 
-    public function __exec(Request $request, Response $response,Socket $socket)
+    public function __exec(Request $request, Response $response, Socket $socket)
     {
         $this->request = $request;
         $this->response = $response;
@@ -77,7 +77,7 @@ abstract class AbstractService
                 if ($module && $module instanceof AbstractServiceModule) {
                     //克隆模式，否则如果定义了成员属性会发生协程污染
                     $module = clone $module;
-                    $module->__exec($request, $response,$socket);
+                    $module->__exec($request, $response, $socket);
                 } else {
                     $this->moduleNotFound($request);
                 }

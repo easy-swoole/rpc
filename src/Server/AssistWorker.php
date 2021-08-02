@@ -20,27 +20,27 @@ class AssistWorker extends AbstractProcess
     /** @var Manager */
     private $serviceManager;
 
-    function run($arg)
+    public function run($arg)
     {
         $this->rpcConfig = $arg['config'];
         $this->serviceManager = $arg['manager'];
         //服务自刷新。
         $this->serviceAlive();
-        Timer::getInstance()->loop($this->rpcConfig->getAssist()->getAliveInterval(),function (){
+        Timer::getInstance()->loop($this->rpcConfig->getAssist()->getAliveInterval(), function () {
             $this->serviceAlive();
         });
 
         $udpServiceFinderConfig = $this->rpcConfig->getAssist()->getUdpServiceFinder();
-        if($udpServiceFinderConfig->isEnableBroadcast()){
-            $udpClient = new UdpClient($udpServiceFinderConfig,$this->rpcConfig->getNodeId());
-            Timer::getInstance()->loop($udpServiceFinderConfig->getBroadcastInterval(),function ()use($udpClient){
+        if ($udpServiceFinderConfig->isEnableBroadcast()) {
+            $udpClient = new UdpClient($udpServiceFinderConfig, $this->rpcConfig->getNodeId());
+            Timer::getInstance()->loop($udpServiceFinderConfig->getBroadcastInterval(), function () use ($udpClient) {
                 $list = $this->serviceManager->getServiceNodes();
                 /** @var ServiceNode $node */
-                foreach ($list as $node){
+                foreach ($list as $node) {
                     $pack = new UdpPack();
-                    if($this->serviceManager->isAlive($node->getService())){
+                    if ($this->serviceManager->isAlive($node->getService())) {
                         $pack->setOp(UdpPack::OP_ALIVE);
-                    }else{
+                    } else {
                         $pack->setOp(UdpPack::OP_SHUTDOWN);
                     }
                     $pack->setArg($node);
@@ -49,29 +49,29 @@ class AssistWorker extends AbstractProcess
             });
         }
 
-        if($udpServiceFinderConfig->isEnableListen()){
-            Coroutine::create(function ()use($udpServiceFinderConfig){
+        if ($udpServiceFinderConfig->isEnableListen()) {
+            Coroutine::create(function () use ($udpServiceFinderConfig) {
                 $socketServer = new Coroutine\Socket(AF_INET, SOCK_DGRAM);
                 $address = $udpServiceFinderConfig->getListenAddress();
                 $port = $udpServiceFinderConfig->getListenPort();
                 $socketServer->setOption(SOL_SOCKET, SO_REUSEPORT, 1);
-                $socketServer->bind($address,$port);
+                $socketServer->bind($address, $port);
                 $openssl = null;
                 $secretKey = $udpServiceFinderConfig->getEncryptKey();
                 if (!empty($secretKey)) {
                     $openssl = new Openssl($secretKey);
                 }
-                while (true){
+                while (true) {
                     $peer = null;
                     $data = $socketServer->recvfrom($peer);
-                    if(empty($data)){
+                    if (empty($data)) {
                         continue;
                     }
-                    if($openssl){
+                    if ($openssl) {
                         $data = $openssl->decrypt($data);
                     }
-                    $json = json_decode($data,true);
-                    if(!is_array($json)){
+                    $json = json_decode($data, true);
+                    if (!is_array($json)) {
                         continue;
                     }
                     $pack = new UdpPack($json);
@@ -83,13 +83,13 @@ class AssistWorker extends AbstractProcess
 
     protected function onShutDown()
     {
-        foreach ($this->serviceManager->getServiceNodes() as $node){
+        foreach ($this->serviceManager->getServiceNodes() as $node) {
             $this->rpcConfig->getNodeManager()->offline($node);
         }
         //对外广播节点下线。
-        $udpClient = new UdpClient($this->rpcConfig->getAssist()->getUdpServiceFinder(),$this->rpcConfig->getNodeId());
+        $udpClient = new UdpClient($this->rpcConfig->getAssist()->getUdpServiceFinder(), $this->rpcConfig->getNodeId());
         $list = $this->serviceManager->getServiceNodes();
-        foreach ($list as $node){
+        foreach ($list as $node) {
             $pack = new UdpPack();
             $pack->setOp(UdpPack::OP_SHUTDOWN);
             $pack->setArg($node);
@@ -100,19 +100,19 @@ class AssistWorker extends AbstractProcess
     protected function onException(\Throwable $throwable, ...$args)
     {
         $call = $this->rpcConfig->getOnException();
-        if(is_callable($call)){
-            call_user_func($call,$throwable);
-        }else{
+        if (is_callable($call)) {
+            call_user_func($call, $throwable);
+        } else {
             throw $throwable;
         }
     }
 
     private function serviceAlive()
     {
-        foreach ($this->serviceManager->getServiceNodes() as $node){
-            if($this->serviceManager->isAlive($node->getService())){
+        foreach ($this->serviceManager->getServiceNodes() as $node) {
+            if ($this->serviceManager->isAlive($node->getService())) {
                 $this->rpcConfig->getNodeManager()->alive($node);
-            }else{
+            } else {
                 $this->rpcConfig->getNodeManager()->offline($node);
             }
         }
@@ -121,26 +121,24 @@ class AssistWorker extends AbstractProcess
     private function handleUdpPack(UdpPack $pack)
     {
         /** 忽略过期数据 */
-        if(time() - $pack->getPackTime() > 5){
+        if (time() - $pack->getPackTime() > 5) {
             return;
         }
 
         /** 忽略自身广播 */
-        if($pack->getFromNodeId() === $this->rpcConfig->getNodeId()){
+        if ($pack->getFromNodeId() === $this->rpcConfig->getNodeId()) {
             return;
         }
 
-        switch ($pack->getOp()){
-            case UdpPack::OP_ALIVE:{
+        switch ($pack->getOp()) {
+            case UdpPack::OP_ALIVE:
                 $node = new ServiceNode($pack->getArg());
                 $this->rpcConfig->getNodeManager()->alive($node);
                 break;
-            }
-            case UdpPack::OP_SHUTDOWN:{
+            case UdpPack::OP_SHUTDOWN:
                 $node = new ServiceNode($pack->getArg());
                 $this->rpcConfig->getNodeManager()->offline($node);
                 break;
-            }
         }
     }
 }

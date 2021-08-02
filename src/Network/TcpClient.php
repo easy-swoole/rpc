@@ -14,57 +14,57 @@ class TcpClient
 {
     private $client;
 
-    function __construct(int $maxPackSize,float $timeout)
+    public function __construct(int $maxPackSize, float $timeout)
     {
         $this->client = new Client(SWOOLE_TCP);
         $this->client->set([
             'open_length_check' => true,
-            'package_length_type'   => 'N',
+            'package_length_type' => 'N',
             'package_length_offset' => 0,
-            'package_body_offset'   => 4,
-            'package_max_length'    => $maxPackSize,
-            'timeout'=>$timeout
+            'package_body_offset' => 4,
+            'package_max_length' => $maxPackSize,
+            'timeout' => $timeout
         ]);
     }
 
-    function connect(ServiceNode $node,float $timeout = null)
+    public function connect(ServiceNode $node, float $timeout = null)
     {
-        return $this->client->connect($node->getIp(),$node->getPort(),$timeout);
+        return $this->client->connect($node->getIp(), $node->getPort(), $timeout);
     }
 
-    function sendRequest(Request $request)
+    public function sendRequest(Request $request)
     {
         $data = $request->__tostring();
         $data = Protocol::pack($data);
         $len = strlen($data);
-        if($this->client->send($data) !== $len){
+        if ($this->client->send($data) !== $len) {
             return false;
-        }else{
+        } else {
             return true;
         }
     }
 
-    function recv(float $timeout = null)
+    public function recv(float $timeout = null)
     {
         $res = new Response();
         $data = $this->client->recv($timeout);
-        if($data){
+        if ($data) {
             $data = Protocol::unpack($data);
-            $json = json_decode($data,true);
-            if(is_array($json)){
+            $json = json_decode($data, true);
+            if (is_array($json)) {
                 $res->restore($json);
-            }else{
+            } else {
                 $res->setStatus(Response::STATUS_ILLEGAL_PACKAGE);
             }
-        }else{
+        } else {
             $res->setStatus(Response::STATUS_SERVER_TIMEOUT);
         }
         return $res;
     }
 
-    function __destruct()
+    public function __destruct()
     {
-        if($this->client->isConnected()){
+        if ($this->client->isConnected()) {
             $this->client->close();
         }
         unset($this->client);

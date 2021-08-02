@@ -8,9 +8,13 @@ use EasySwoole\Rpc\Server\ServiceNode;
 
 interface NodeManagerInterface
 {
-    function getNodes(string $serviceName,?int $version = null):array;
-    function getNode(string $serviceName,?int $version = null):?ServiceNode;
-    function failDown(ServiceNode $serviceNode):bool;
-    function offline(ServiceNode $serviceNode):bool ;
-    function alive(ServiceNode $serviceNode):bool;
+    public function getNodes(string $serviceName, ?int $version = null): array;
+
+    public function getNode(string $serviceName, ?int $version = null): ?ServiceNode;
+
+    public function failDown(ServiceNode $serviceNode): bool;
+
+    public function offline(ServiceNode $serviceNode): bool;
+
+    public function alive(ServiceNode $serviceNode): bool;
 }

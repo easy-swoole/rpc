@@ -104,7 +104,7 @@ class Request extends SplBean
     /**
      * @return mixed
      */
-    public function getClientArg()
+    public function getClientArg(): void
     {
         return $this->clientArg;
     }

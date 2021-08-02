@@ -32,41 +32,53 @@ class Response extends SplBean
 
     public static function status2msg(int $status)
     {
-        switch ($status){
-            case Response::STATUS_OK:{
+        switch ($status) {
+            case Response::STATUS_OK:
+            {
                 return 'ok';
             }
-            case Response::STATUS_NOT_AVAILABLE_NODE:{
+            case Response::STATUS_NOT_AVAILABLE_NODE:
+            {
                 return 'not available node';
             }
-            case Response::STATUS_CONNECT_TIMEOUT:{
+            case Response::STATUS_CONNECT_TIMEOUT:
+            {
                 return 'connect to service node timeout';
             }
-            case Response::STATUS_SERVER_TIMEOUT:{
+            case Response::STATUS_SERVER_TIMEOUT:
+            {
                 return 'service response timeout';
             }
-            case Response::STATUS_PACKAGE_READ_TIMEOUT:{
+            case Response::STATUS_PACKAGE_READ_TIMEOUT:
+            {
                 return 'service read client request timeout';
             }
-            case Response::STATUS_ILLEGAL_PACKAGE:{
+            case Response::STATUS_ILLEGAL_PACKAGE:
+            {
                 return 'service receive illegal client request';
             }
-            case Response::STATUS_SERVICE_SHUTDOWN:{
+            case Response::STATUS_SERVICE_SHUTDOWN:
+            {
                 return 'service node is shutdown';
             }
-            case Response::STATUS_SERVICE_NOT_EXIST:{
+            case Response::STATUS_SERVICE_NOT_EXIST:
+            {
                 return 'service not exist in server';
             }
-            case Response::STATUS_MODULE_NOT_EXIST:{
+            case Response::STATUS_MODULE_NOT_EXIST:
+            {
                 return 'module not exist in server';
             }
-            case Response::STATUS_ACTION_NOT_EXIST:{
+            case Response::STATUS_ACTION_NOT_EXIST:
+            {
                 return 'action not exist in server';
             }
-            case Response::STATUS_SERVICE_ERROR:{
+            case Response::STATUS_SERVICE_ERROR:
+            {
                 return 'server error';
             }
-            default:{
+            default:
+            {
                 return 'unknown error';
             }
         }
@@ -128,7 +140,7 @@ class Response extends SplBean
 
     protected function initialize(): void
     {
-        if(empty($this->responseUUID)){
+        if (empty($this->responseUUID)) {
             $this->responseUUID = Random::makeUUIDV4();
         }
     }

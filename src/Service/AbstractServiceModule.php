@@ -41,7 +41,7 @@ abstract class AbstractServiceModule
         }
     }
 
-    abstract function moduleName(): string;
+    public abstract function moduleName(): string;
 
     protected function request(): Request
     {
@@ -78,7 +78,7 @@ abstract class AbstractServiceModule
         return $this->socket;
     }
 
-    public function __exec(Request $request, Response $response,Socket $socket)
+    public function __exec(Request $request, Response $response, Socket $socket)
     {
         $this->request = $request;
         $this->response = $response;

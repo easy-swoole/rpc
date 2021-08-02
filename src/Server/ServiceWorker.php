@@ -20,7 +20,7 @@ class ServiceWorker extends AbstractTcpProcess
     /** @var Manager */
     private $serviceManager;
 
-    function run($arg)
+    public function run($arg)
     {
         $this->rpcConfig = $arg['config'];
         $this->serviceManager = $arg['manager'];
@@ -28,7 +28,7 @@ class ServiceWorker extends AbstractTcpProcess
         parent::run($arg);
     }
 
-    function onAccept(Socket $socket)
+    public function onAccept(Socket $socket)
     {
         $response = new Response();
 
@@ -52,27 +52,27 @@ class ServiceWorker extends AbstractTcpProcess
             return;
         }
         $request = json_decode($data, true);
-        if(!is_array($request)){
+        if (!is_array($request)) {
             $response->setStatus($response::STATUS_ILLEGAL_PACKAGE);
             $this->reply($socket, $response);
             return;
         }
         $request = new Request($request);
         $serviceList = $this->serviceManager->getServiceRegisterArray();
-        try{
-            if(isset($serviceList[$request->getService()])){
+        try {
+            if (isset($serviceList[$request->getService()])) {
                 /** @var AbstractService $service */
                 //克隆模式，否则如果定义了成员属性会发生协程污染
                 $service = clone $serviceList[$request->getService()];
-                if($this->serviceManager->isAlive($service->serviceName())){
-                    $service->__exec($request,$response,$socket);
-                }else{
+                if ($this->serviceManager->isAlive($service->serviceName())) {
+                    $service->__exec($request, $response, $socket);
+                } else {
                     $response->setStatus($response::STATUS_SERVICE_SHUTDOWN);
                 }
-            }else{
+            } else {
                 $response->setStatus($response::STATUS_SERVICE_NOT_EXIST);
             }
-        }catch (\Throwable $throwable){
+        } catch (\Throwable $throwable) {
             $response->setStatus(Response::STATUS_SERVICE_ERROR);
             $this->onException($throwable);
         }
@@ -81,7 +81,7 @@ class ServiceWorker extends AbstractTcpProcess
 
     protected function reply(Socket $clientSocket, Response $response)
     {
-        $str = json_encode($response,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        $str = json_encode($response, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $str = Protocol::pack($str);
         $clientSocket->sendAll($str);
         $clientSocket->close();
@@ -90,9 +90,9 @@ class ServiceWorker extends AbstractTcpProcess
     protected function onException(\Throwable $throwable, ...$args)
     {
         $call = $this->rpcConfig->getOnException();
-        if(is_callable($call)){
-            call_user_func($call,$throwable);
-        }else{
+        if (is_callable($call)) {
+            call_user_func($call, $throwable);
+        } else {
             throw $throwable;
         }
     }

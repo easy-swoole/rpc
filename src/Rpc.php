@@ -16,28 +16,28 @@ class Rpc
     private $config;
     private $manager;
 
-    function __construct(Config $config)
+    public function __construct(Config $config)
     {
         $this->manager = new Manager($config);
         $this->config = $config;
     }
 
-    function serviceManager():Manager
+    public function serviceManager():Manager
     {
         return $this->manager;
     }
 
-    function getConfig():Config
+    public function getConfig(): Config
     {
         return $this->config;
     }
 
-    function client():Client
+    public function client(): Client
     {
         return new Client($this->config->getNodeManager(),$this->config->getClient());
     }
 
-    function attachServer(Server $server)
+    public function attachServer(Server $server)
     {
         if(empty($this->config->getServer()->getServerIp())){
             throw new Exception("ServerIp is require for Rpc Server Config");
@@ -51,7 +51,7 @@ class Rpc
     }
 
     /** 不希望用户主动调用 */
-    function __getServiceWorker():array
+    public function __getServiceWorker(): array
     {
         $list = [];
         for($i = 0;$i < $this->config->getServer()->getWorkerNum();$i++){
@@ -72,7 +72,7 @@ class Rpc
 
 
     /** 不希望用户主动调用 */
-    function __getAssistWorker():AssistWorker
+    public function __getAssistWorker(): AssistWorker
     {
         $config = new ProcessConfig();
         $config->setProcessGroup("{$this->config->getServerName()}.Rpc");

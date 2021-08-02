@@ -30,6 +30,7 @@ class RequestContext
     {
         $this->requestUUID = Random::makeUUIDV4();
     }
+
     /**
      * @return string
      */
@@ -130,13 +131,13 @@ class RequestContext
 
     public function enableRetry(int $times): RequestContext
     {
-        if($times >= 0){
+        if ($times >= 0) {
             $this->retryTimes = $times;
         }
         return $this;
     }
 
-    public function getRetryTimes():int
+    public function getRetryTimes(): int
     {
         return $this->retryTimes;
     }

@@ -26,7 +26,7 @@ class Config
     private $onException;
     private $maxMem = '512M';
 
-    function __construct(NodeManagerInterface $manager = null)
+    public function __construct(NodeManagerInterface $manager = null)
     {
         $this->nodeId = Random::character(10);
         if($manager == null){
@@ -108,12 +108,12 @@ class Config
         $this->serverName = $serverName;
     }
 
-    function getNodeManager():?NodeManagerInterface
+    public function getNodeManager():?NodeManagerInterface
     {
         return $this->nodeManager;
     }
 
-    function setNodeManager(NodeManagerInterface $manager)
+    public function setNodeManager(NodeManagerInterface $manager)
     {
         $this->nodeManager = $manager;
     }

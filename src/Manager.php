@@ -20,11 +20,11 @@ class Manager
     {
         $this->config = $config;
         $this->serviceTable = new Table(2048);
-        $this->serviceTable->column('isOnline',Table::TYPE_INT,1);
+        $this->serviceTable->column('isOnline', Table::TYPE_INT, 1);
         $this->serviceTable->create();
     }
 
-    function onlineStatus():array
+    public function onlineStatus(): array
     {
         $list = [];
         foreach ($this->serviceTable as $key => $value){
@@ -33,7 +33,7 @@ class Manager
         return $list;
     }
 
-    function offline(?string $service = null)
+    public function offline(?string $service = null)
     {
         if($service === null){
             $list = [$service];
@@ -54,7 +54,7 @@ class Manager
         }
     }
 
-    function isAlive(string $service):bool
+    public function isAlive(string $service): bool
     {
         $info = $this->serviceTable->get($service);
         if($info && $info['isOnline'] == 1){
@@ -63,7 +63,7 @@ class Manager
         return false;
     }
 
-    function online(?string $service = null)
+    public function online(?string $service = null)
     {
         if($service === null){
             $list = [$service];
@@ -84,7 +84,7 @@ class Manager
         }
     }
 
-    function getServiceNode(string $service):?ServiceNode
+    public function getServiceNode(string $service): ?ServiceNode
     {
         if(isset($this->serviceRegisterArray[$service])){
             $service = $this->serviceRegisterArray[$service];
@@ -100,7 +100,7 @@ class Manager
         }
     }
 
-    function getServiceNodes():array
+    public function getServiceNodes(): array
     {
         $list = [];
         /** @var AbstractService $service */
@@ -124,7 +124,7 @@ class Manager
         return $this->serviceRegisterArray;
     }
 
-    function addService(AbstractService $service):Manager
+    public function addService(AbstractService $service): Manager
     {
         $this->serviceRegisterArray[$service->serviceName()] = $service;
         $this->serviceTable->set($service->serviceName(),['isOnline'=>1]);
