@@ -77,6 +77,7 @@ class Rpc
         $config = new ProcessConfig();
         $config->setProcessGroup("{$this->config->getServerName()}.Rpc");
         $config->setProcessName("{$this->config->getServerName()}.Rpc.AssistWorker");
+        $config->setEnableCoroutine(true);
         $config->setArg([
             'manager'=>$this->manager,
             'config'=>$this->config
