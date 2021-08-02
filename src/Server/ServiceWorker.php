@@ -24,6 +24,7 @@ class ServiceWorker extends AbstractTcpProcess
     {
         $this->rpcConfig = $arg['config'];
         $this->serviceManager = $arg['manager'];
+        ini_set('memory_limit', $this->rpcConfig->getMaxMem());
         parent::run($arg);
     }
 

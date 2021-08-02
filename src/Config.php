@@ -24,6 +24,7 @@ class Config
     private $nodeId;
     /** @var callable|null */
     private $onException;
+    private $maxMem = '512M';
 
     function __construct(NodeManagerInterface $manager = null)
     {
@@ -147,5 +148,21 @@ class Config
     public function setOnException(?callable $onException): void
     {
         $this->onException = $onException;
+    }
+
+    /**
+     * @return string
+     */
+    public function getMaxMem(): string
+    {
+        return $this->maxMem;
+    }
+
+    /**
+     * @param string $maxMem
+     */
+    public function setMaxMem(string $maxMem): void
+    {
+        $this->maxMem = $maxMem;
     }
 }
