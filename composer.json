@@ -12,13 +12,10 @@
         }
     ],
     "require": {
-        "php": ">=7.1.0",
+        "php": ">=8.1.0",
         "ext-swoole": ">=4.4.5",
         "ext-json": ">=1.0",
         "ext-openssl": ">=7.1",
-        "easyswoole/spl": "^1.0",
-        "easyswoole/utility": "^1.0",
-        "easyswoole/component": "^2.0",
         "ext-sockets": "*"
     },
     "require-dev": {
