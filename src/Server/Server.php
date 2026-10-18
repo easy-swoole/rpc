@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Component\Process\Manager as ProcessManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Protocol\Request;
@@ -20,9 +21,12 @@ class Server
 
     private AbstractNodeManager $nodeManager;
 
+    private ?AssistWorker $assistWorker = null;
+
     public function __construct(
         AbstractNodeManager $nodeManager,
         private readonly ServerConfig $config = new ServerConfig(),
+        private readonly DiscoveryConfig $discoveryConfig = new DiscoveryConfig(),
     )
     {
         $this->nodeManager = $nodeManager;
@@ -62,7 +66,7 @@ class Server
         return new AssistWorker(
             $this->serviceNodes,
             $this->nodeManager,
-            $config ?? new DiscoveryConfig(),
+            $config ?? $this->discoveryConfig,
         );
     }
 
@@ -121,15 +125,13 @@ class Server
         return $service->__dispatch($request, $response);
     }
 
-    public function attach(\Swoole\Server|Port $listener, int $maxPackageSize = 2097152): self
+    public function attachServer(\Swoole\Server $server, int $maxPackageSize = 2097152): self
     {
-        if ((int) $listener->port !== $this->config->listenPort) {
-            throw new \LogicException(sprintf(
-                'Swoole listener uses port %d, but RPC ServerConfig expects port %d.',
-                $listener->port,
-                $this->config->listenPort,
-            ));
+        if ($this->assistWorker !== null) {
+            throw new \LogicException('RPC Server is already attached.');
         }
+
+        $listener = $this->resolveListener($server);
         $listener->set([
             'open_length_check' => true,
             'package_length_type' => 'N',
@@ -147,10 +149,76 @@ class Server
             $server->send($fd, Protocol::pack((string) $response));
             $server->close($fd);
         });
-        foreach ($this->serviceNodes as $node) {
-            $this->nodeManager->online($node);
-        }
+
+        $this->assertUdpListenAvailable();
+        $this->assistWorker = $this->createAssistWorker();
+        ProcessManager::getInstance()
+            ->addProcess($this->assistWorker)
+            ->attachToServer($server);
+
         return $this;
+    }
+
+    private function resolveListener(\Swoole\Server $server): Port
+    {
+        foreach ($server->ports as $listener) {
+            if ((int) $listener->port === $this->config->listenPort) {
+                throw new \LogicException(sprintf(
+                    'Port %d is already registered on the Swoole server; RPC will not replace an existing listener.',
+                    $this->config->listenPort,
+                ));
+            }
+        }
+
+        $listener = $server->addListener(
+            $this->config->listenAddress,
+            $this->config->listenPort,
+            SWOOLE_SOCK_TCP,
+        );
+        if (!$listener instanceof Port) {
+            throw new \RuntimeException(sprintf(
+                'Unable to create RPC listener on %s:%d.',
+                $this->config->listenAddress,
+                $this->config->listenPort,
+            ));
+        }
+        return $listener;
+    }
+
+    private function assertUdpListenAvailable(): void
+    {
+        if (!$this->discoveryConfig->listen) {
+            return;
+        }
+
+        $error = null;
+        $probe = function () use (&$error): void {
+            $socket = new \Swoole\Coroutine\Socket(AF_INET, SOCK_DGRAM, 0);
+            try {
+                if (!$socket->bind($this->discoveryConfig->listenAddress, $this->discoveryConfig->listenPort)) {
+                    $error = $socket->errMsg !== '' ? $socket->errMsg : 'unknown socket error';
+                }
+            } catch (\Throwable $throwable) {
+                $error = $throwable->getMessage();
+            } finally {
+                $socket->close();
+            }
+        };
+
+        if (\Swoole\Coroutine::getCid() >= 0) {
+            $probe();
+        } else {
+            \Swoole\Coroutine\run($probe);
+        }
+
+        if ($error !== null) {
+            throw new \RuntimeException(sprintf(
+                'Unable to listen on RPC discovery UDP address %s:%d: %s.',
+                $this->discoveryConfig->listenAddress,
+                $this->discoveryConfig->listenPort,
+                $error,
+            ));
+        }
     }
 
     private static function uuid(): string

@@ -30,6 +30,8 @@ Client.addRequest()
 - `WeightedRandomNodeSelector`：根据 Service 声明的权重选择节点；
 - `TcpTransport`：使用带 4 字节长度头的 TCP 短连接传输 JSON。
 
+`Rpc` 构造函数只接收两个聚合对象：`RpcConfig` 保存不可变的运行配置，`RpcDependencies` 保存可替换组件。两者都能省略并自动创建默认对象，只通过 getter 暴露内部实例。
+
 ## 1. 定义服务
 
 只有标记了 `#[RpcAction]` 的 public 方法才能被远程调用。未标记的方法即使是 public，也不会暴露。
@@ -118,7 +120,7 @@ $rpc->server()->registerService($userService);
 
 ## 3. 启动 RPC 服务端
 
-### 挂载到独立 TCP Server
+### 挂载到 Swoole Server
 
 ```php
 <?php
@@ -126,48 +128,52 @@ $rpc->server()->registerService($userService);
 use App\Rpc\ProfileModule;
 use App\Rpc\UserService;
 use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\RpcConfig;
+use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Server\ServerConfig;
 use Swoole\Server;
 
 require __DIR__ . '/vendor/autoload.php';
 
-$rpc = new Rpc(serverConfig: new ServerConfig(
-    advertiseIp: '127.0.0.1', // 客户端实际连接的地址，不能填写 0.0.0.0
-    listenAddress: '0.0.0.0',
-    listenPort: 9601,
-    nodeName: 'user-rpc-1',
-));
+$rpc = new Rpc(
+    config: new RpcConfig(
+        server: new ServerConfig(
+            advertiseIp: '127.0.0.1', // 客户端实际连接的地址，不能填写 0.0.0.0
+            listenAddress: '0.0.0.0',
+            listenPort: 9601,
+            nodeName: 'user-rpc-1',
+        ),
+        discovery: new DiscoveryConfig(
+            listen: false,
+            broadcast: false,
+        ),
+    ),
+);
 
 $service = new UserService();
 $service->addModule(new ProfileModule());
 $rpc->server()->registerService($service);
 
-$server = new Server('0.0.0.0', 9601, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
-$rpc->server()->attach($server);
+$server = new Server('0.0.0.0', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+$rpc->server()->attachServer($server);
 $server->start();
 ```
 
-`attach()` 会校验 Swoole listener 的端口是否等于 `ServerConfig::listenPort`。
+`attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它还会自动创建并挂载 assist-worker。示例关闭了 UDP 服务发现，但 assist-worker 仍负责本机服务节点的上线、心跳和下线。
 
 ### 挂载到已有 Server 的子监听
 
-已有 HTTP Server 时，可通过 `addListener()` 单独增加 RPC TCP 端口：
+已有 HTTP Server 时只需传入主 Server，RPC subPort 会按配置自动创建：
 
 ```php
 use Swoole\Http\Server;
 
 $server = new Server('0.0.0.0', 9501);
-$rpcListener = $server->addListener('0.0.0.0', 9601, SWOOLE_SOCK_TCP);
-
-if (!$rpcListener instanceof Swoole\Server\Port) {
-    throw new RuntimeException('Unable to create RPC listener.');
-}
-
-$rpc->server()->attach($rpcListener);
+$rpc->server()->attachServer($server);
 $server->start();
 ```
 
-`attach()` 只负责 TCP 协议配置、请求监听和本机节点上线，不负责创建 assist-worker。
+调用方不再创建或传入 subPort。服务节点的上线、心跳和下线仍统一由自动挂载的 assist-worker 维护。
 
 ## 4. 客户端调用
 
@@ -178,6 +184,7 @@ $server->start();
 
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
@@ -193,7 +200,7 @@ $nodeManager->online(new ServiceNode(
     port: 9601,
 ));
 
-$rpc = new Rpc(nodeManager: $nodeManager);
+$rpc = new Rpc(dependencies: new RpcDependencies(nodeManager: $nodeManager));
 $client = $rpc->client();
 
 $context = $client->addRequest('User.getUser');
@@ -248,9 +255,12 @@ $client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
 
 ```php
 use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
+use EasySwoole\Rpc\RpcDependencies;
 
 $rpc = new Rpc(
-    failurePolicy: new ConsecutiveFailurePolicy(threshold: 5),
+    dependencies: new RpcDependencies(
+        failurePolicy: new ConsecutiveFailurePolicy(threshold: 5),
+    ),
 );
 ```
 
@@ -278,49 +288,51 @@ new DiscoveryConfig(
 );
 ```
 
-assist-worker 必须在所有服务注册完成后创建，并由调用方添加到主 Swoole Server：
+在构造 `Rpc` 时传入 UDP 服务发现配置；`attachServer()` 会自动完成端口预检和 assist-worker 挂载：
 
 ```php
-use EasySwoole\Component\Process\Manager as ProcessManager;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
+use EasySwoole\Rpc\RpcConfig;
 
-$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
-    listen: true,
-    listenAddress: '0.0.0.0',
-    listenPort: 9701,
-    broadcast: true,
-    broadcastAddresses: [
-        '127.0.0.1:9702',
-        '192.168.1.20:9701',
-    ],
-    heartbeatIntervalMs: 5000,
-    nodeTtlSeconds: 15,
-    secret: 'replace-with-a-shared-secret',
-));
+$rpc = new Rpc(
+    config: new RpcConfig(
+        server: $serverConfig,
+        discovery: new DiscoveryConfig(
+            listen: true,
+            listenAddress: '0.0.0.0',
+            listenPort: 9701,
+            broadcast: true,
+            broadcastAddresses: [
+                '127.0.0.1:9702',
+                '192.168.1.20:9701',
+            ],
+            heartbeatIntervalMs: 5000,
+            nodeTtlSeconds: 15,
+            secret: 'replace-with-a-shared-secret',
+        ),
+    ),
+);
 
-ProcessManager::getInstance()
-    ->addProcess($assistWorker)
-    ->attachToServer($server);
+$rpc->server()->attachServer($server);
 $server->start();
 ```
 
+当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 assist-worker 正式监听。
+
 每个参与服务发现的实例必须使用相同的 `secret`。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
 
-纯客户端网关也可以创建只监听、不广播的 assist-worker，用来接收服务节点：
+纯客户端网关可以配置为只监听、不广播，用来接收服务节点：
 
 ```php
-use EasySwoole\Component\Process\Manager as ProcessManager;
-
-$processManager = ProcessManager::getInstance();
-$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
-    listen: true,
-    listenPort: 9702,
-    broadcast: false,
-    secret: 'replace-with-a-shared-secret',
+$rpc = new Rpc(config: new RpcConfig(
+    discovery: new DiscoveryConfig(
+        listen: true,
+        listenPort: 9702,
+        broadcast: false,
+        secret: 'replace-with-a-shared-secret',
+    ),
 ));
-
-$processManager->addProcess($assistWorker);
-$processManager->attachToServer($gatewayServer);
+$rpc->server()->attachServer($gatewayServer);
 ```
 
 `AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。进程的注册、PID 信息、组件心跳和退出生命周期均由 `easyswoole/component` 的进程管理器统一维护。进入 `onShutDown()` 时，它会广播 OFFLINE 消息，并将本机注册的服务节点从 NodeManager 下线。
@@ -348,6 +360,7 @@ NodeManager 不负责选择节点。自定义负载策略需要实现 `NodeSelec
 
 ```php
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
+use EasySwoole\Rpc\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class FirstNodeSelector implements NodeSelectorInterface
@@ -358,7 +371,9 @@ final class FirstNodeSelector implements NodeSelectorInterface
     }
 }
 
-$rpc = new Rpc(nodeSelector: new FirstNodeSelector());
+$rpc = new Rpc(dependencies: new RpcDependencies(
+    nodeSelector: new FirstNodeSelector(),
+));
 ```
 
 默认的 `WeightedRandomNodeSelector` 根据 `serviceWeight()` 生成的节点权重随机选择。
@@ -369,6 +384,7 @@ $rpc = new Rpc(nodeSelector: new FirstNodeSelector());
 
 ```php
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
+use EasySwoole\Rpc\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class RedisNodeManager extends AbstractNodeManager
@@ -404,7 +420,9 @@ final class RedisNodeManager extends AbstractNodeManager
     }
 }
 
-$rpc = new Rpc(nodeManager: new RedisNodeManager());
+$rpc = new Rpc(dependencies: new RpcDependencies(
+    nodeManager: new RedisNodeManager(),
+));
 ```
 
 ## 9. 响应状态

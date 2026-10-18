@@ -35,7 +35,7 @@ final class AssistWorker extends AbstractProcess
         $this->onlineServices();
 
         if ($this->config->listen || $this->config->broadcast) {
-            $this->socket = new Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
             $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
             if ($this->config->listen && !$this->socket->bind($this->config->listenAddress, $this->config->listenPort)) {
                 throw new \RuntimeException('Unable to bind RPC discovery UDP socket.');

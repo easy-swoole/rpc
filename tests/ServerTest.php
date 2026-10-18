@@ -70,6 +70,66 @@ final class ServerTest extends TestCase
         self::assertSame('rpc-assist-worker', $worker->getProcessName());
     }
 
+    public function testRejectsRegisteredPortAndCreatesMissingRpcSubPort(): void
+    {
+        $mainPort = random_int(20000, 30000);
+        $rpcPort = $mainPort + 1;
+        $swooleServer = new \Swoole\Server('127.0.0.1', $mainPort, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+        $conflictingRpcServer = new Server(
+            new SwooleTableNodeManager(16),
+            new ServerConfig(listenAddress: '127.0.0.1', listenPort: $mainPort),
+            new DiscoveryConfig(listen: false, broadcast: false),
+        );
+
+        try {
+            (new \ReflectionMethod($conflictingRpcServer, 'resolveListener'))->invoke($conflictingRpcServer, $swooleServer);
+            self::fail('An existing Swoole listener must not be reused implicitly for RPC.');
+        } catch (\LogicException $exception) {
+            self::assertStringContainsString('already registered', $exception->getMessage());
+        }
+        self::assertCount(1, $swooleServer->ports);
+
+        $rpcServer = new Server(
+            new SwooleTableNodeManager(16),
+            new ServerConfig(listenAddress: '127.0.0.1', listenPort: $rpcPort),
+            new DiscoveryConfig(listen: false, broadcast: false),
+        );
+
+        $rpcServer->registerService(new TestService());
+        $rpcServer->attachServer($swooleServer);
+
+        self::assertCount(2, $swooleServer->ports);
+        self::assertSame($rpcPort, $swooleServer->ports[1]->port);
+        self::assertInstanceOf(
+            \EasySwoole\Rpc\Server\AssistWorker::class,
+            (new \ReflectionProperty($rpcServer, 'assistWorker'))->getValue($rpcServer),
+        );
+    }
+
+    public function testRejectsUnavailableUdpDiscoveryAddressBeforeWorkerStarts(): void
+    {
+        $errno = 0;
+        $error = '';
+        $occupied = stream_socket_server('udp://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND);
+        self::assertIsResource($occupied, $error);
+        $address = stream_socket_get_name($occupied, false);
+        self::assertIsString($address);
+        $udpPort = (int) substr($address, strrpos($address, ':') + 1);
+        $rpcServer = new Server(
+            new SwooleTableNodeManager(16),
+            new ServerConfig(),
+            new DiscoveryConfig(listen: true, listenAddress: '127.0.0.1', listenPort: $udpPort, broadcast: false),
+        );
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Unable to listen on RPC discovery UDP address');
+            (new \ReflectionMethod($rpcServer, 'assertUdpListenAvailable'))->invoke($rpcServer);
+        } finally {
+            fclose($occupied);
+        }
+    }
+
     public function testAssistProcessMarksLocalServicesOfflineDuringShutdown(): void
     {
         $manager = new SwooleTableNodeManager(16);

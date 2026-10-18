@@ -3,40 +3,28 @@
 namespace EasySwoole\Rpc;
 
 use EasySwoole\Rpc\Client\Client;
-use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Server\Server;
-use EasySwoole\Rpc\Server\ServerConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
-use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
-use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
-use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
-use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
-use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
 
 class Rpc
 {
     private Server $server;
 
-    private AbstractNodeManager $nodeManager;
-    private NodeSelectorInterface $nodeSelector;
-    private NodeFailurePolicyInterface $failurePolicy;
-
     public function __construct(
-        ?AbstractNodeManager $nodeManager = null,
-        ?ServerConfig $serverConfig = null,
-        ?NodeSelectorInterface $nodeSelector = null,
-        ?NodeFailurePolicyInterface $failurePolicy = null,
+        private readonly RpcConfig $config = new RpcConfig(),
+        private readonly RpcDependencies $dependencies = new RpcDependencies(),
     )
     {
-        $this->nodeManager = $nodeManager ?? new SwooleTableNodeManager();
-        $this->nodeSelector = $nodeSelector ?? new WeightedRandomNodeSelector();
-        $this->failurePolicy = $failurePolicy ?? new ConsecutiveFailurePolicy();
-        $this->server = new Server($this->nodeManager, $serverConfig ?? new ServerConfig());
+        $this->server = new Server(
+            $this->dependencies->getNodeManager(),
+            $this->config->getServer(),
+            $this->config->getDiscovery(),
+        );
     }
 
     public function getNodeManager(): AbstractNodeManager
     {
-        return $this->nodeManager;
+        return $this->dependencies->getNodeManager();
     }
 
     public function server(): Server
@@ -48,9 +36,9 @@ class Rpc
     {
         return (new Client(
             $this->getNodeManager(),
-            $this->nodeSelector,
-            $this->failurePolicy,
-        ))->setTransport(new TcpTransport());
+            $this->dependencies->getNodeSelector(),
+            $this->dependencies->getFailurePolicy(),
+        ))->setTransport($this->dependencies->getTransport());
     }
 
 }
