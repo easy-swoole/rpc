@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\AbstractInterface;
 
+use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 
@@ -45,6 +46,6 @@ abstract class AbstractServiceModule
             return false;
         }
         $method = new \ReflectionMethod($this, $action);
-        return $method->isPublic() && $method->getDeclaringClass()->getName() !== self::class;
+        return $method->isPublic() && $method->getAttributes(RpcAction::class) !== [];
     }
 }

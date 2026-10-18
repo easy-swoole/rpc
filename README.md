@@ -1,294 +1,445 @@
-# EasySwoole RPC
+# EasySwoole RPC 6.x
 
-## 6.x 快速开始
+基于 Swoole 协程与 TCP 短连接的 RPC 组件。服务端通过 `Service.action` 或 `Service.Module.action` 分发请求，客户端通过节点管理器发现服务节点，并发完成多个调用。
 
-```php
-use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\Server\ServerConfig;
-use Swoole\Http\Server;
+## 环境要求
 
-$rpc = new Rpc(serverConfig: new ServerConfig(
-    advertiseIp: '127.0.0.1',
-    listenPort: 9601,
-)); // 默认使用跨 Worker 共享的 Swoole Table 节点管理器
-$rpc->server()->registerService(new UserService());
-$server = new Server('0.0.0.0', 9501);
-$rpcListener = $server->addListener('0.0.0.0', 9601, SWOOLE_SOCK_TCP);
-$rpc->server()->attach($rpcListener);
+- PHP >= 8.1
+- Swoole >= 5.1
 
-$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
-    listenPort: 9701,
-    broadcastAddresses: ['127.0.0.1:9701', '127.0.0.1:9702'],
-    secret: 'change-me',
-));
-$server->addProcess($assistWorker->process());
-$server->start();
+```bash
+composer require easyswoole/rpc:^6.0
 ```
 
-服务权重由服务类自身声明；默认权重为 `10`，需要调整时覆盖 `serviceWeight()`：
+## 调用流程
 
-```php
-public function serviceWeight(): int
-{
-    return 20;
-}
+```text
+Client.addRequest()
+    → NodeManager.getNodes(serviceName)
+    → NodeSelector.select(nodes)
+    → TcpTransport.send()
+    → Swoole TCP listener
+    → Server.handle()
+    → Service / Module RpcAction
+    → Response
 ```
 
-客户端可以一次提交多个请求，`exec()` 会使用 Swoole 协程并发执行。连接失败、服务超时、服务关闭或服务异常时，故障节点会被下线；启用重试后会重新选择其他节点。
+默认组合：
 
-```php
-$client = $rpc->client();
-$client->addRequest('User.Profile.get')->setArg(['id' => 1])->enableRetry(1);
-$responses = $client->exec(3.0);
-```
+- `SwooleTableNodeManager`：在本机多个 Swoole Worker 间共享节点；
+- `WeightedRandomNodeSelector`：根据 Service 声明的权重选择节点；
+- `TcpTransport`：使用带 4 字节长度头的 TCP 短连接传输 JSON。
 
-assist-worker 是独立的 `Swoole\Process`，需要在所有服务注册完成后创建，并由调用方添加到主 Server。RPC 的 `attach()` 只负责主监听或 `Swoole\Server\Port` 上的 TCP 协议和事件。`listen` 和 `broadcast` 可分别控制 UDP 监听与广播；`secret` 用于 HMAC 验证发现消息。
+## 1. 定义服务
 
-服务对象只负责请求处理，不持有节点管理器。需要主动控制服务节点状态时，通过 Server 调用：`onlineService()`、`heartbeatService()`、`hibernateService()` 或 `offlineService()`；节点状态最终统一由 `AbstractNodeManager` 读写。
-
-很多传统的Phper并不懂RPC是什么，RPC全称Remote Procedure Call，中文译为远程过程调用,其实你可以把它理解为是一种架构性上的设计，或者是一种解决方案。
-例如在某庞大商场系统中，你可以把整个商场拆分为N个微服务（理解为N个独立的小模块也行），例如：
-    
-- 订单系统
-- 用户管理系统
-- 商品管理系统
-- 等等 
-
-那么在这样的架构中，就会存在一个Api网关的概念，或者是叫服务集成者。我的Api网关的职责，就是把一个请求
-，拆分成N个小请求，分发到各个小服务里面，再整合各个小服务的结果，返回给用户。例如在某次下单请求中，那么大概
-发送的逻辑如下：
-- Api网关接受请求
-- Api网关提取用户参数，请求用户管理系统，获取用户余额等信息，等待结果
-- Api网关提取商品参数，请求商品管理系统，获取商品剩余库存和价格等信息，等待结果。
-- Api网关融合用户管理系统、商品管理系统的返回结果，进行下一步调用（假设满足购买条件）
-- Api网关调用用户管理信息系统进行扣款，调用商品管理系统进行库存扣减，调用订单系统进行下单（事务逻辑和撤回可以用请求id保证，或者自己实现其他逻辑调度）
-- APi网关返回综合信息给用户
-
-而在以上发生的行为，就称为远程过程调用。而调用过程实现的通讯协议可以有很多，比如常见的HTTP协议。而EasySwoole RPC采用自定义短链接的TCP协议实现，每个请求包，都是一个JSON，从而方便实现跨平台调用。
-
-什么是服务熔断？
- 
-粗暴来理解，一般是某个服务故障或者是异常引起的，类似现实世界中的‘保险丝’，当某个异常条件被触发，直接熔断整个服务，而不是一直等到此服务超时。
-
-什么是服务降级?
-
-粗暴来理解，一般是从整体负荷考虑，就是当某个服务熔断之后，服务器将不再被调用，此时客户端可以自己准备一个本地的fallback回掉，返回一个缺省值，这样做，虽然服务水平下降，但好歹，比直接挂掉要强。
-服务降级处理是在客户端实现完成的，与服务端没有关系。
-
-什么是服务限流？
-
-粗暴来理解，例如某个服务器最多同时仅能处理100个请求，或者是cpu负载达到百分之80的时候，为了保护服务的稳定性，则不在希望继续收到
-新的连接。那么此时就要求客户端不再对其发起请求。因此EasySwoole RPC提供了NodeManager接口，你可以以任何的形式来
-监控你的服务提供者，在getNodes方法中，返回对应的服务器节点信息即可。  
-
-## EasySwoole RPC执行流程
-
-![](./resource/easyswoole-rpc.jpg)
-
-## Composer安装
-
-```
-composer require easyswoole/rpc=5.x
-``` 
-
-## rpc配置
+只有标记了 `#[RpcAction]` 的 public 方法才能被远程调用。未标记的方法即使是 public，也不会暴露。
 
 ```php
 <?php
 
-// 构造方法内用户可传入节点管理器实现`NodeManagerInterface` 默认`MemoryManager`
-$config = new \EasySwoole\Rpc\Config();
+namespace App\Rpc;
 
-/** 服务端配置 */
+use EasySwoole\Rpc\AbstractInterface\AbstractService;
+use EasySwoole\Rpc\Attribute\RpcAction;
+use EasySwoole\Rpc\Protocol\Request;
 
-// 设置服务名称
-$config->setServerName('User'); // 默认 EasySwoole
+final class UserService extends AbstractService
+{
+    public function serviceName(): string
+    {
+        return 'User';
+    }
 
-// 设置节点id
-$config->setNodeId(\EasySwoole\Utility\Random::character(10)); // 可忽略 构造函数已经设置
+    // 默认值为 10。权重越大，被选中的概率越高。
+    public function serviceWeight(): int
+    {
+        return 20;
+    }
 
-// 设置异常处理器 对Service-Worker 和 AssistWorker的异常进行处理 必须设置 防止未捕获导致进程退出
-$config->setOnException(function (\Throwable $throwable) {
+    #[RpcAction]
+    public function getUser(mixed $arg, Request $request): array
+    {
+        return [
+            'id' => (int) $arg['id'],
+            'name' => 'EasySwoole',
+            'requestId' => $request->getRequestUUID(),
+        ];
+    }
 
-});
-
-$serverConfig = $config->getServer();
-
-// 设置本机ip 必须设置
-$serverConfig->setServerIp('127.0.0.1');
-
-// 设置工作进程数量
-$serverConfig->setWorkerNum(4);
-
-// 设置监听地址及端口
-$serverConfig->setListenAddress('0.0.0.0');
-$serverConfig->setListenPort('9600');
-
-// 设置服务端最大接受包大小
-$serverConfig->setMaxPackageSize(1024 * 1024 * 2);
-
-// 设置接收客户端数据时间
-$serverConfig->setNetworkReadTimeout(3);
-
-/** 广播设置 */
-
-$assistConfig = $config->getAssist();
-
-// 服务定时自刷新到节点管理器
-$assistConfig->setAliveInterval(5000);
-
-// 广播进程设置
-$serviceFinderConfig = $assistConfig->getUdpServiceFinder();
-
-// 监听地址和端口
-$serviceFinderConfig->setEnableListen(true);
-$serviceFinderConfig->setListenAddress('0.0.0.0');
-$serviceFinderConfig->setListenPort(9600);
-
-// 设置广播地址
-$serviceFinderConfig->setEnableBroadcast(true);
-$serviceFinderConfig->setBroadcastAddress(['127.0.0.1:9600', '127.0.0.1:9601']);
-$serviceFinderConfig->setBroadcastInterval(5000); // 5s 广播一次
-
-// 设置广播秘钥
-$serviceFinderConfig->setEncryptKey('EasySwoole');
-
-/** 客户端设置 */
-
-// 如果只是暴露rpc服务 不进行调用别的rpc服务 可不用设置
-
-$clientConfig = $config->getClient();
-
-// 传输最大数据包大小
-$clientConfig->setMaxPackageSize(1024 * 1024 * 2);
-
-// 设置全局回调函数  成功及失败 $response->getStatus !== 0 全部为失败
-$clientConfig->setOnGlobalSuccess(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-$clientConfig->setOnGlobalFail(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-
-/** 注册服务 */
-
-$rpc = new \EasySwoole\Rpc\Rpc($config);
-
-$serviceOne = new \EasySwoole\Rpc\Tests\Service\ServiceOne();
-$serviceOne->addModule(new \EasySwoole\Rpc\Tests\Service\ModuleOne());
-$serviceOne->addModule(new \EasySwoole\Rpc\Tests\Service\ModuleTwo());
-
-$serviceTwo = new \EasySwoole\Rpc\Tests\Service\ServiceTwo();
-$serviceTwo->addModule(new \EasySwoole\Rpc\Tests\Service\ModuleOne());
-$serviceTwo->addModule(new \EasySwoole\Rpc\Tests\Service\ModuleTwo());
-
-$rpc->serviceManager()->addService($serviceOne);
-$rpc->serviceManager()->addService($serviceTwo);
-
-/** 客户端调用 */
-
-$client = $rpc->client();
-// 添加请求
-$ctx1 = $client->addRequest('ServiceOne.ModuleOne.action');
-// 设置参数
-$ctx1->setArg(['a','b','c']);
-$ctx1->setOnSuccess(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-$ctx1->setOnFail(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-
-$ctx2 = $client->addRequest('ServiceTwo.ModuleOne.action');
-// 设置参数
-$ctx2->setArg(['a','b','c']);
-$ctx2->setOnSuccess(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-$ctx2->setOnFail(function (\EasySwoole\Rpc\Protocol\Response $response){
-
-});
-
-$client->exec(3);
-
-/** 节点管理器 */
-
-// 用户在调用rpc过程中 当发现节点不可用 可自行调用下线
-
-$nodeManager = $rpc->getConfig()->getNodeManager();
-
-// 获取服务的所有节点
-$nodeManager->getNodes('serviceOne', 1);
-
-// 随机获取服务的一个节点
-$nodeManager->getNode('serviceOne', 1);
-
-// 下线一个服务节点
-$nodeManager->offline(new \EasySwoole\Rpc\Server\ServiceNode());
-
-// 刷新一个服务节点
-$nodeManager->alive(new \EasySwoole\Rpc\Server\ServiceNode());
-
-// 宕机一个服务节点
-$nodeManager->failDown(new \EasySwoole\Rpc\Server\ServiceNode());
+    // 没有 RpcAction，不可被远程调用。
+    public function internalHelper(): string
+    {
+        return 'internal';
+    }
+}
 ```
 
-## 独立使用
+调用路径：
+
+```text
+User.getUser
+```
+
+## 2. 可选：定义 Module
+
+服务可以通过 Module 继续分组。例如 `User.Profile.detail`：
 
 ```php
-use EasySwoole\Rpc\Config;
+<?php
+
+namespace App\Rpc;
+
+use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
+use EasySwoole\Rpc\Attribute\RpcAction;
+use EasySwoole\Rpc\Protocol\Request;
+
+final class ProfileModule extends AbstractServiceModule
+{
+    public function moduleName(): string
+    {
+        return 'Profile';
+    }
+
+    #[RpcAction]
+    public function detail(mixed $arg, Request $request): array
+    {
+        return ['userId' => (int) $arg['id'], 'bio' => 'Hello RPC'];
+    }
+}
+```
+
+注册 Module：
+
+```php
+$userService = new UserService();
+$userService->addModule(new ProfileModule());
+$rpc->server()->registerService($userService);
+```
+
+## 3. 启动 RPC 服务端
+
+### 挂载到独立 TCP Server
+
+```php
+<?php
+
+use App\Rpc\ProfileModule;
+use App\Rpc\UserService;
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\Server\ServerConfig;
+use Swoole\Server;
+
+require __DIR__ . '/vendor/autoload.php';
+
+$rpc = new Rpc(serverConfig: new ServerConfig(
+    advertiseIp: '127.0.0.1', // 客户端实际连接的地址，不能填写 0.0.0.0
+    listenAddress: '0.0.0.0',
+    listenPort: 9601,
+    nodeName: 'user-rpc-1',
+));
+
+$service = new UserService();
+$service->addModule(new ProfileModule());
+$rpc->server()->registerService($service);
+
+$server = new Server('0.0.0.0', 9601, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+$rpc->server()->attach($server);
+$server->start();
+```
+
+`attach()` 会校验 Swoole listener 的端口是否等于 `ServerConfig::listenPort`。
+
+### 挂载到已有 Server 的子监听
+
+已有 HTTP Server 时，可通过 `addListener()` 单独增加 RPC TCP 端口：
+
+```php
+use Swoole\Http\Server;
+
+$server = new Server('0.0.0.0', 9501);
+$rpcListener = $server->addListener('0.0.0.0', 9601, SWOOLE_SOCK_TCP);
+
+if (!$rpcListener instanceof Swoole\Server\Port) {
+    throw new RuntimeException('Unable to create RPC listener.');
+}
+
+$rpc->server()->attach($rpcListener);
+$server->start();
+```
+
+`attach()` 只负责 TCP 协议配置、请求监听和本机节点上线，不负责创建 assist-worker。
+
+## 4. 客户端调用
+
+客户端必须先能从 NodeManager 中取得服务节点。最简单的固定节点示例如下：
+
+```php
+<?php
+
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\Tests\Service\ModuleOne;
-use EasySwoole\Rpc\Tests\Service\ServiceOne;
-use Swoole\Http\Server;
-require 'vendor/autoload.php';
+use EasySwoole\Rpc\Server\ServiceNode;
+use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
-$config = new Config();
-$config->getServer()->setServerIp('127.0.0.1');
+require __DIR__ . '/vendor/autoload.php';
 
-$rpc = new Rpc($config);
+$nodeManager = new SwooleTableNodeManager();
+$nodeManager->online(new ServiceNode(
+    serviceName: 'User',
+    nodeId: 'user-rpc-1',
+    nodeName: 'user-rpc-1',
+    nodeWeight: 20,
+    ip: '127.0.0.1',
+    port: 9601,
+));
 
-$service = new ServiceOne();
-$service->addModule(new ModuleOne());
+$rpc = new Rpc(nodeManager: $nodeManager);
+$client = $rpc->client();
 
-$rpc->serviceManager()->addService($service);
-
-$http = new Server('0.0.0.0', 9501);
-
-$rpc->attachServer($http);
-
-$http->on('request', function ($request, $response) use($rpc){
-    $client = $rpc->client();
-    $ctx1 = $client->addRequest('Service.Module');
-    $ctx2 = $client->addRequest('Service.Module.action');
-    $ctx2->setArg('xxx');
-    $ctx2->setOnSuccess(function (Response $response){
-        var_dump($response->getMsg());
+$context = $client->addRequest('User.getUser');
+$context
+    ->setArg(['id' => 1001])
+    ->setClientArg(['traceId' => 'trace-001'])
+    ->enableRetry(1)
+    ->setOnSuccess(function (Response $response): void {
+        var_dump($response->getResult());
+    })
+    ->setOnFail(function (Response $response): void {
+        var_dump($response->getStatus(), $response->getMsg());
     });
-    $client->exec();
-});
 
-$http->start();
+$responses = $client->exec(timeout: 3.0);
+$response = $responses[0];
 ```
 
-## EasySwoole中使用
+Module 调用使用三段路径：
 
 ```php
-public static function mainServerCreate(EventRegister $register)
+$client = $rpc->client();
+$client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
+$response = $client->exec()[0];
+```
+
+### 并发调用多个服务
+
+同一个 Client 中加入的请求会通过 Swoole 协程并发执行，返回顺序与添加顺序一致：
+
+```php
+$client = $rpc->client();
+$client->addRequest('User.getUser')->setArg(['id' => 1001]);
+$client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
+
+[$userResponse, $profileResponse] = $client->exec(timeout: 3.0);
+```
+
+每次 `exec()` 后请求队列会被清空。需要发起下一批调用时重新调用 `addRequest()`。
+
+### 节点故障策略
+
+客户端不会因为一次业务异常就把节点全局下线。默认的 `ConsecutiveFailurePolicy` 行为如下：
+
+- `STATUS_SERVICE_ERROR`：视为业务执行异常，保留节点；
+- 连接失败、服务响应超时或读包超时：记录连续失败，默认累计 3 次后下线；
+- `STATUS_SERVICE_SHUTDOWN`：服务明确关闭，立即下线；
+- 低于下线阈值时，如果启用了重试，会重新选择节点，但不会修改全局节点表；
+- 节点成功响应后，连续网络失败计数会被清零。
+
+可以调整连续失败阈值，或注入自己的策略：
+
+```php
+use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
+
+$rpc = new Rpc(
+    failurePolicy: new ConsecutiveFailurePolicy(threshold: 5),
+);
+```
+
+自定义策略需要实现 `NodeFailurePolicyInterface`，并返回 `KEEP`、`RETRY_ANOTHER` 或 `OFFLINE`。
+
+## 5. UDP 服务发现与 assist-worker
+
+固定节点适合开发和简单部署。多节点部署可启用独立 assist-worker：
+
+- 进程启动时将本机服务节点标记为上线；
+- 通过独立定时器周期刷新本机节点心跳；
+- 进程关闭时将本机服务节点标记为下线；
+- 通过 UDP 广播本机服务节点；
+- 监听其他服务广播并更新本机 NodeManager；
+- 清理超时节点；
+- 进程退出时广播节点下线。
+
+本机节点的上线、心跳和下线属于 assist-worker 的基础职责，与 UDP 无关。只有采用无主化注册中心时，才需要开启 UDP 的 `listen` 或 `broadcast`；使用 Redis、Etcd 等集中式 NodeManager 时可以同时关闭它们：
+
+```php
+new DiscoveryConfig(
+    listen: false,
+    broadcast: false,
+    heartbeatIntervalMs: 5000,
+);
+```
+
+assist-worker 必须在所有服务注册完成后创建，并由调用方添加到主 Swoole Server：
+
+```php
+use EasySwoole\Component\Process\Manager as ProcessManager;
+use EasySwoole\Rpc\Server\DiscoveryConfig;
+
+$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
+    listen: true,
+    listenAddress: '0.0.0.0',
+    listenPort: 9701,
+    broadcast: true,
+    broadcastAddresses: [
+        '127.0.0.1:9702',
+        '192.168.1.20:9701',
+    ],
+    heartbeatIntervalMs: 5000,
+    nodeTtlSeconds: 15,
+    secret: 'replace-with-a-shared-secret',
+));
+
+ProcessManager::getInstance()
+    ->addProcess($assistWorker)
+    ->attachToServer($server);
+$server->start();
+```
+
+每个参与服务发现的实例必须使用相同的 `secret`。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+
+纯客户端网关也可以创建只监听、不广播的 assist-worker，用来接收服务节点：
+
+```php
+use EasySwoole\Component\Process\Manager as ProcessManager;
+
+$processManager = ProcessManager::getInstance();
+$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
+    listen: true,
+    listenPort: 9702,
+    broadcast: false,
+    secret: 'replace-with-a-shared-secret',
+));
+
+$processManager->addProcess($assistWorker);
+$processManager->attachToServer($gatewayServer);
+```
+
+`AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。进程的注册、PID 信息、组件心跳和退出生命周期均由 `easyswoole/component` 的进程管理器统一维护。进入 `onShutDown()` 时，它会广播 OFFLINE 消息，并将本机注册的服务节点从 NodeManager 下线。
+
+## 6. 服务节点生命周期
+
+Service 只负责请求处理，不持有 ServiceNode 或 NodeManager。节点状态由 Server 协调，并最终交给 `AbstractNodeManager`：
+
+```php
+$rpc->server()->onlineService('User');
+$rpc->server()->heartbeatService('User');
+$rpc->server()->hibernateService('User');
+$rpc->server()->offlineService('User');
+```
+
+获取节点信息：
+
+```php
+$nodes = $rpc->getNodeManager()->getNodes('User');
+```
+
+## 7. 自定义节点选择策略
+
+NodeManager 不负责选择节点。自定义负载策略需要实现 `NodeSelectorInterface`：
+
+```php
+use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
+use EasySwoole\Rpc\Server\ServiceNode;
+
+final class FirstNodeSelector implements NodeSelectorInterface
 {
-    $config = new \EasySwoole\Rpc\Config();
-    $config->getServer()->setServerIp('127.0.0.1');
-    
-    $rpc = new \EasySwoole\Rpc\Rpc($config);
-    
-    $service = new \EasySwoole\Rpc\Tests\Service\ServiceOne();
-    $service->addModule(new \EasySwoole\Rpc\Tests\Service\ModuleOne());
-    
-    $rpc->serviceManager()->addService($service);
-    
-    
-    $rpc->attachServer(ServerManager::getInstance()->getSwooleServer());
+    public function select(array $nodes): ?ServiceNode
+    {
+        return $nodes[0] ?? null;
+    }
 }
+
+$rpc = new Rpc(nodeSelector: new FirstNodeSelector());
+```
+
+默认的 `WeightedRandomNodeSelector` 根据 `serviceWeight()` 生成的节点权重随机选择。
+
+## 8. 自定义节点管理器
+
+需要使用 Redis、Consul 或其他注册中心时，继承 `AbstractNodeManager`：
+
+```php
+use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
+use EasySwoole\Rpc\Server\ServiceNode;
+
+final class RedisNodeManager extends AbstractNodeManager
+{
+    public function online(ServiceNode $node): bool
+    {
+        // 写入 Redis
+        return true;
+    }
+
+    public function heartbeat(ServiceNode $node): bool
+    {
+        // 刷新 TTL
+        return true;
+    }
+
+    public function hibernate(ServiceNode $node): bool
+    {
+        // 暂停节点
+        return true;
+    }
+
+    public function offline(ServiceNode $node): bool
+    {
+        // 删除节点
+        return true;
+    }
+
+    public function getNodes(string $serviceName): array
+    {
+        // 返回 list<ServiceNode>
+        return [];
+    }
+}
+
+$rpc = new Rpc(nodeManager: new RedisNodeManager());
+```
+
+## 9. 响应状态
+
+`Response::isSuccess()` 仅在状态为 `STATUS_OK` 时返回 `true`。
+
+| 状态 | 含义 |
+| --- | --- |
+| `STATUS_OK` | 调用成功 |
+| `STATUS_NOT_AVAILABLE_NODE` | 没有可用节点 |
+| `STATUS_CONNECT_TIMEOUT` | 节点连接失败或超时 |
+| `STATUS_SERVER_TIMEOUT` | 服务响应超时 |
+| `STATUS_PACKAGE_READ_TIMEOUT` | 服务端读取请求超时 |
+| `STATUS_ILLEGAL_PACKAGE` | 数据包或请求格式非法 |
+| `STATUS_SERVICE_SHUTDOWN` | 服务已停止接收请求 |
+| `STATUS_SERVICE_NOT_EXIST` | 服务不存在 |
+| `STATUS_MODULE_NOT_EXIST` | Module 不存在 |
+| `STATUS_ACTION_NOT_EXIST` | Action 不存在或未标记 `RpcAction` |
+| `STATUS_SERVICE_ERROR` | 服务执行异常 |
+
+## 10. 运行测试
+
+```bash
+composer install
+composer test
+```
+
+## 项目结构
+
+```text
+src/
+├── AbstractInterface/  抽象服务、节点管理器和扩展接口
+├── Attribute/          RpcAction 等 PHP Attribute
+├── Client/             客户端、请求上下文和 TCP Transport
+├── Protocol/           Request、Response 和长度头协议
+├── Server/             Server、ServiceNode、配置及 assist-worker
+└── Utility/            Swoole Table 节点管理和默认节点选择器
 ```

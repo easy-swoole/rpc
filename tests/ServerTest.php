@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Server\Server;
@@ -10,7 +11,7 @@ use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Tests\Fixtures\EchoModule;
 use EasySwoole\Rpc\Tests\Fixtures\TestService;
 use EasySwoole\Rpc\Tests\Fixtures\WeightedService;
-use EasySwoole\Rpc\Utility\MemoryNodeManager;
+use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use PHPUnit\Framework\TestCase;
 
 final class ServerTest extends TestCase
@@ -20,7 +21,7 @@ final class ServerTest extends TestCase
     protected function setUp(): void
     {
         $this->server = new Server(
-            new MemoryNodeManager(),
+            new SwooleTableNodeManager(16),
             new ServerConfig(advertiseIp: '10.0.0.8', listenPort: 9600, nodeName: 'rpc-server'),
         );
         $this->server->registerService((new TestService())->addModule(new EchoModule()));
@@ -48,7 +49,7 @@ final class ServerTest extends TestCase
 
     public function testWeightIsDeclaredByService(): void
     {
-        $server = new Server(new MemoryNodeManager(), new ServerConfig(nodeName: 'default'));
+        $server = new Server(new SwooleTableNodeManager(16), new ServerConfig(nodeName: 'default'));
         $server->registerService(new WeightedService());
         self::assertSame('default', $server->getServiceNode('Weighted')?->getNodeName());
         self::assertSame(25, $server->getServiceNode('Weighted')?->getNodeWeight());
@@ -63,24 +64,40 @@ final class ServerTest extends TestCase
     public function testCreatesIndependentAssistProcess(): void
     {
         $worker = $this->server->createAssistWorker(new DiscoveryConfig(listen: false, broadcast: false));
-        self::assertInstanceOf(\Swoole\Process::class, $worker->process());
-        self::assertSame($worker->process(), $worker->process());
+        self::assertInstanceOf(AbstractProcess::class, $worker);
+        self::assertInstanceOf(\Swoole\Process::class, $worker->getProcess());
+        self::assertSame($worker->getProcess(), $worker->getProcess());
+        self::assertSame('rpc-assist-worker', $worker->getProcessName());
+    }
+
+    public function testAssistProcessMarksLocalServicesOfflineDuringShutdown(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $server = new Server($manager);
+        $server->registerService(new TestService());
+        $server->onlineService('Test');
+        self::assertNotEmpty($manager->getNodes('Test'));
+
+        $worker = $server->createAssistWorker(new DiscoveryConfig(listen: false, broadcast: false));
+        (new \ReflectionMethod($worker, 'onShutDown'))->invoke($worker);
+
+        self::assertSame([], $manager->getNodes('Test'));
     }
 
     public function testServerCoordinatesServiceNodeLifecycle(): void
     {
-        $manager = new MemoryNodeManager();
+        $manager = new SwooleTableNodeManager(16);
         $server = new Server($manager);
         $server->registerService(new TestService());
 
         self::assertTrue($server->onlineService('Test'));
-        self::assertNotNull($manager->getNode('Test'));
+        self::assertNotEmpty($manager->getNodes('Test'));
         self::assertTrue($server->heartbeatService('Test'));
         self::assertTrue($server->hibernateService('Test'));
-        self::assertNull($manager->getNode('Test'));
+        self::assertSame([], $manager->getNodes('Test'));
         self::assertTrue($server->onlineService('Test'));
         self::assertTrue($server->offlineService('Test'));
-        self::assertNull($manager->getNode('Test'));
+        self::assertSame([], $manager->getNodes('Test'));
     }
 
     public function testLifecycleRejectsUnknownService(): void
@@ -100,6 +117,14 @@ final class ServerTest extends TestCase
         self::assertSame(Response::STATUS_SERVICE_NOT_EXIST, $this->server->handle(new Request('Missing.action'))->getStatus());
         self::assertSame(Response::STATUS_MODULE_NOT_EXIST, $this->server->handle(new Request('Test.Missing.action'))->getStatus());
         self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.missing'))->getStatus());
+    }
+
+    public function testOnlyAttributedMethodsAreExposedAsActions(): void
+    {
+        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.serviceName'))->getStatus());
+        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.serviceWeight'))->getStatus());
+        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.internalHelper'))->getStatus());
+        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.internalHelper'))->getStatus());
     }
 
     public function testConvertsServiceAndModuleExceptionsToResponses(): void

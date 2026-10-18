@@ -2,74 +2,82 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Component\Process\AbstractProcess;
+use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
+use Swoole\Coroutine\Socket;
 
-final class AssistWorker
+final class AssistWorker extends AbstractProcess
 {
-    private ?\Swoole\Process $process = null;
+    private ?Socket $socket = null;
+
+    private ?int $heartbeatTimerId = null;
+
+    private bool $running = false;
 
     /** @param array<string, ServiceNode> $serviceNodes */
     public function __construct(
         private readonly array $serviceNodes,
         private readonly AbstractNodeManager $nodeManager,
         private readonly DiscoveryConfig $config,
-    ) {}
+    ) {
+        $processConfig = new ProcessConfig();
+        $processConfig->setProcessName('rpc-assist-worker');
+        $processConfig->setProcessGroup('rpc');
+        $processConfig->setPipeType(ProcessConfig::PIPE_TYPE_NONE);
+        $processConfig->setEnableCoroutine(true);
+        parent::__construct($processConfig);
+    }
 
-    public function process(): \Swoole\Process
+    protected function run($arg): void
     {
-        return $this->process ??= new \Swoole\Process(function (): void {
-            $socket = new \Swoole\Coroutine\Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-            $socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
-            if ($this->config->listen && !$socket->bind($this->config->listenAddress, $this->config->listenPort)) {
+        $this->onlineServices();
+
+        if ($this->config->listen || $this->config->broadcast) {
+            $this->socket = new Socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
+            if ($this->config->listen && !$this->socket->bind($this->config->listenAddress, $this->config->listenPort)) {
                 throw new \RuntimeException('Unable to bind RPC discovery UDP socket.');
             }
+        }
+        $this->running = true;
 
-            $broadcast = function (string $action = DiscoveryMessage::HEARTBEAT) use ($socket): void {
-                if (!$this->config->broadcast) {
-                    return;
-                }
-                foreach ($this->serviceNodes as $node) {
-                    $packet = DiscoveryMessage::encode($action, $node, $this->config->secret);
-                    foreach ($this->config->broadcastAddresses as $address) {
-                        [$host, $port] = self::splitAddress($address);
-                        $socket->sendto($host, $port, $packet);
-                    }
-                }
-            };
+        $this->broadcast();
+        $this->heartbeatTimerId = $this->addTick($this->config->heartbeatIntervalMs, function (): void {
+            $this->heartbeatServices();
+            if ($this->nodeManager instanceof SwooleTableNodeManager) {
+                $this->nodeManager->prune($this->config->nodeTtlSeconds);
+            }
+            $this->broadcast();
+        });
 
-            \Swoole\Process::signal(SIGTERM, function () use ($broadcast, $socket): void {
-                $broadcast(DiscoveryMessage::OFFLINE);
-                \Swoole\Timer::clearAll();
-                $socket->close();
-                exit(0);
-            });
-
-            $broadcast();
-            \Swoole\Timer::tick($this->config->heartbeatIntervalMs, function () use ($broadcast): void {
-                foreach ($this->serviceNodes as $node) {
-                    $this->nodeManager->heartbeat($node);
-                }
-                if ($this->nodeManager instanceof SwooleTableNodeManager) {
-                    $this->nodeManager->prune($this->config->nodeTtlSeconds);
-                }
-                $broadcast();
-            });
-
-            if ($this->config->listen) {
-                while (true) {
-                    $peer = null;
-                    $packet = $socket->recvfrom($peer);
-                    if (is_string($packet) && $packet !== '') {
-                        try {
-                            self::handlePacket($packet, $this->nodeManager, $this->config->secret);
-                        } catch (\Throwable) {
-                            // Invalid or untrusted discovery datagrams are deliberately ignored.
-                        }
+        if ($this->config->listen) {
+            while ($this->running) {
+                $peer = null;
+                $packet = $this->socket->recvfrom($peer);
+                if (is_string($packet) && $packet !== '') {
+                    try {
+                        self::handlePacket($packet, $this->nodeManager, $this->config->secret);
+                    } catch (\Throwable) {
+                        // Invalid or untrusted discovery datagrams are deliberately ignored.
                     }
                 }
             }
-        }, false, SOCK_DGRAM, true);
+        }
+    }
+
+    protected function onShutDown(): void
+    {
+        $this->running = false;
+        $this->broadcast(DiscoveryMessage::OFFLINE);
+        $this->offlineServices();
+        if ($this->heartbeatTimerId !== null) {
+            $this->clearTick($this->heartbeatTimerId);
+            $this->heartbeatTimerId = null;
+        }
+        $this->socket?->close();
+        $this->socket = null;
     }
 
     public static function handlePacket(string $packet, AbstractNodeManager $manager, ?string $secret = null): void
@@ -89,5 +97,40 @@ final class AssistWorker
             throw new \InvalidArgumentException('Discovery address must use host:port format.');
         }
         return [substr($address, 0, $position), (int) substr($address, $position + 1)];
+    }
+
+    private function broadcast(string $action = DiscoveryMessage::HEARTBEAT): void
+    {
+        if (!$this->config->broadcast || $this->socket === null) {
+            return;
+        }
+        foreach ($this->serviceNodes as $node) {
+            $packet = DiscoveryMessage::encode($action, $node, $this->config->secret);
+            foreach ($this->config->broadcastAddresses as $address) {
+                [$host, $port] = self::splitAddress($address);
+                $this->socket->sendto($host, $port, $packet);
+            }
+        }
+    }
+
+    private function onlineServices(): void
+    {
+        foreach ($this->serviceNodes as $node) {
+            $this->nodeManager->online($node);
+        }
+    }
+
+    private function heartbeatServices(): void
+    {
+        foreach ($this->serviceNodes as $node) {
+            $this->nodeManager->heartbeat($node);
+        }
+    }
+
+    private function offlineServices(): void
+    {
+        foreach ($this->serviceNodes as $node) {
+            $this->nodeManager->offline($node);
+        }
     }
 }

@@ -6,6 +6,8 @@ use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\TransportInterface;
+use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
+use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 
 final class Client
 {
@@ -13,7 +15,11 @@ final class Client
     private array $requests = [];
     private ?TransportInterface $transport = null;
 
-    public function __construct(private readonly AbstractNodeManager $nodeManager) {}
+    public function __construct(
+        private readonly AbstractNodeManager $nodeManager,
+        private readonly NodeSelectorInterface $nodeSelector,
+        private readonly NodeFailurePolicyInterface $failurePolicy,
+    ) {}
     public function setTransport(TransportInterface $transport): self { $this->transport = $transport; return $this; }
     public function addRequest(string $path): RequestContext
     {
@@ -56,7 +62,8 @@ final class Client
         $service = explode('.', $context->getRequestPath(), 2)[0];
         $attempt = 0;
         do {
-            $node = $context->getServiceNode() ?? $this->nodeManager->getNode($service);
+            $node = $context->getServiceNode()
+                ?? $this->nodeSelector->select($this->nodeManager->getNodes($service));
             if ($node === null) {
                 $response = (new Response(bin2hex(random_bytes(16))))->setStatus(Response::STATUS_NOT_AVAILABLE_NODE);
                 break;
@@ -69,13 +76,11 @@ final class Client
                 $response = (new Response($request->getRequestUUID()))
                     ->setStatus(Response::STATUS_CONNECT_TIMEOUT)->setMsg($throwable->getMessage());
             }
-            if (in_array($response->getStatus(), [
-                Response::STATUS_CONNECT_TIMEOUT,
-                Response::STATUS_SERVER_TIMEOUT,
-                Response::STATUS_SERVICE_SHUTDOWN,
-                Response::STATUS_SERVICE_ERROR,
-            ], true)) {
+            $failureAction = $this->failurePolicy->evaluate($node, $response);
+            if ($failureAction === NodeFailureAction::OFFLINE) {
                 $this->nodeManager->offline($node);
+            }
+            if ($failureAction !== NodeFailureAction::KEEP) {
                 $context->setServiceNode(null);
             }
             $attempt++;
