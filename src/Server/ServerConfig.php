@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 final class ServerConfig
 {
     public function __construct(
@@ -17,10 +19,10 @@ final class ServerConfig
             self::validatePort($advertisePort, 'Advertise');
         }
         if ($advertiseIp === '') {
-            throw new \InvalidArgumentException('Advertise IP cannot be empty.');
+            throw new RpcException('Advertise IP cannot be empty.');
         }
         if ($heartbeatIntervalMs < 1) {
-            throw new \InvalidArgumentException('Heartbeat interval must be at least 1 millisecond.');
+            throw new RpcException('Heartbeat interval must be at least 1 millisecond.');
         }
     }
 
@@ -32,7 +34,7 @@ final class ServerConfig
     private static function validatePort(int $port, string $label): void
     {
         if ($port < 1 || $port > 65535) {
-            throw new \InvalidArgumentException(sprintf('%s port must be between 1 and 65535.', $label));
+            throw new RpcException(sprintf('%s port must be between 1 and 65535.', $label));
         }
     }
 }

@@ -8,6 +8,8 @@ use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
@@ -102,7 +104,9 @@ final class ClientTest extends TestCase
         $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
             ->setTransport($transport);
         $client->addRequest('Test.Echo.value')->enableRetry(3);
-        self::assertSame(ResponseStatus::SERVICE_ERROR, $client->exec()[0]->getStatus());
+        $response = $client->exec()[0];
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
         self::assertSame(1, $transport->calls);
         self::assertCount(1, $manager->getNodes('Test'));
     }
@@ -191,7 +195,52 @@ final class ClientTest extends TestCase
     {
         $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $client->addRequest('Test.action');
+    }
+
+    public function testExplicitOfflineHintImmediatelyRemovesNode(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $node = new ServiceNode('Test', nodeId: 'node');
+        $manager->online($node);
+        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(99)))
+            ->setTransport(new class implements TransportInterface {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return (new Response($request->getRequestUUID()))
+                        ->setStatus(ResponseStatus::SERVICE_ERROR)
+                        ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
+                }
+            });
+
+        $client->addRequest('Test.Echo.value');
+        $response = $client->exec()[0];
+
+        self::assertSame(NodeHealthStatus::OFFLINE, $response->getNodeHealthStatus());
+        self::assertSame([], $manager->getNodes('Test'));
+    }
+
+    public function testSuspectHintUsesConsecutiveFailureThreshold(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(2)))
+            ->setTransport(new class implements TransportInterface {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return (new Response($request->getRequestUUID()))
+                        ->setStatus(ResponseStatus::SERVICE_ERROR)
+                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                }
+            });
+
+        $client->addRequest('Test.Echo.value');
+        $client->exec();
+        self::assertCount(1, $manager->getNodes('Test'));
+
+        $client->addRequest('Test.Echo.value');
+        $client->exec();
+        self::assertSame([], $manager->getNodes('Test'));
     }
 }

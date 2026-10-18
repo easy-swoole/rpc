@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 final class ServiceNode implements \JsonSerializable
 {
     public function __construct(
@@ -14,16 +16,16 @@ final class ServiceNode implements \JsonSerializable
         private readonly string $listenAddress = '0.0.0.0',
     ) {
         if ($serviceName === '') {
-            throw new \InvalidArgumentException('Service name cannot be empty.');
+            throw new RpcException('Service name cannot be empty.');
         }
         if ($nodeId === '') {
-            throw new \InvalidArgumentException('Service node ID cannot be empty.');
+            throw new RpcException('Service node ID cannot be empty.');
         }
         if ($port < 1 || $port > 65535) {
-            throw new \InvalidArgumentException('Service node port must be between 1 and 65535.');
+            throw new RpcException('Service node port must be between 1 and 65535.');
         }
         if ($nodeWeight < 0) {
-            throw new \InvalidArgumentException('Service node weight cannot be negative.');
+            throw new RpcException('Service node weight cannot be negative.');
         }
     }
 

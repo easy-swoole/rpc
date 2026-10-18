@@ -4,14 +4,16 @@ namespace EasySwoole\Rpc\Client;
 
 use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\Protocol;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Protocol\ProtocolCodec;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
-use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class TcpTransport implements TransportInterface
 {
-    public function __construct(private readonly int $maxPackageSize = 2097152) {}
+    public function __construct(private readonly ProtocolCodec $codec, private readonly ProtocolConfig $config = new ProtocolConfig()) {}
 
     public function send(ServiceNode $node, Request $request, float $timeout): Response
     {
@@ -21,7 +23,7 @@ final class TcpTransport implements TransportInterface
             'package_length_type' => 'N',
             'package_length_offset' => 0,
             'package_body_offset' => 4,
-            'package_max_length' => $this->maxPackageSize,
+            'package_max_length' => $this->config->maxPackageSize,
         ]);
         try {
             if (!$client->connect($node->getIp(), $node->getPort(), $timeout)) {
@@ -31,7 +33,7 @@ final class TcpTransport implements TransportInterface
                     $client->errCode,
                 );
             }
-            if ($client->send(Protocol::pack(json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))) === false) {
+            if ($client->send(Protocol::pack($this->codec->encodeRequest($request))) === false) {
                 throw new TransportException(
                     ResponseStatus::TRANSPORT_ERROR,
                     $client->errMsg ?: 'Unable to send RPC request.',
@@ -47,7 +49,7 @@ final class TcpTransport implements TransportInterface
                 );
             }
             try {
-                return Response::fromJson(Protocol::unpack($packet));
+                return $this->codec->decodeResponse(Protocol::unpack($packet));
             } catch (\Throwable $throwable) {
                 throw new TransportException(
                     ResponseStatus::RESPONSE_DECODE_ERROR,

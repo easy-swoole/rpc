@@ -2,9 +2,12 @@
 
 namespace EasySwoole\Rpc\AbstractInterface;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 
 abstract class AbstractService
 {
@@ -22,20 +25,21 @@ abstract class AbstractService
     public function addModule(AbstractServiceModule $module): static
     {
         if ($this->frozen) {
-            throw new \LogicException(sprintf('Service "%s" is frozen and cannot add modules.', $this->serviceName()));
+            throw new RpcException(sprintf('Service "%s" is frozen and cannot add modules.', $this->serviceName()));
         }
         $moduleName = $module->moduleName();
         if ($moduleName === '') {
-            throw new \InvalidArgumentException('Module name cannot be empty.');
+            throw new RpcException('Module name cannot be empty.');
         }
         if (isset($this->modules[$moduleName])) {
-            throw new \LogicException(sprintf('Module "%s" is already registered.', $moduleName));
+            throw new RpcException(sprintf('Module "%s" is already registered.', $moduleName));
         }
         $this->modules[$moduleName] = $module;
         return $this;
     }
 
-    final public function __freeze(): void
+    /** @internal Called by ServiceRegistry after successful registration. */
+    final public function freeze(): void
     {
         $this->frozen = true;
     }
@@ -44,7 +48,9 @@ abstract class AbstractService
     {
         try {
             if (!$this->onRequest($request)) {
-                return $response->setStatus(ResponseStatus::SERVICE_SHUTDOWN);
+                return $response
+                    ->setStatus(ResponseStatus::SERVICE_SHUTDOWN)
+                    ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
             }
             $module = $this->modules[$request->getModule()] ?? null;
             if ($module === null) {
@@ -67,7 +73,10 @@ abstract class AbstractService
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
+        $response
+            ->setStatus(ResponseStatus::SERVICE_ERROR)
+            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
+            ->setMsg('Server error.');
         try {
             trigger_error(sprintf(
                 'Unhandled %s: %s in %s:%d',

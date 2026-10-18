@@ -6,6 +6,7 @@ use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 
 abstract class AbstractServiceModule
 {
@@ -15,7 +16,9 @@ abstract class AbstractServiceModule
     {
         try {
             if (!$this->onRequest($request)) {
-                return $response->setStatus(ResponseStatus::SERVICE_SHUTDOWN);
+                return $response
+                    ->setStatus(ResponseStatus::SERVICE_SHUTDOWN)
+                    ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
             }
             $action = $request->getAction();
             if (!$this->isActionAllowed($action)) {
@@ -42,7 +45,10 @@ abstract class AbstractServiceModule
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
+        $response
+            ->setStatus(ResponseStatus::SERVICE_ERROR)
+            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
+            ->setMsg('Server error.');
         try {
             trigger_error(sprintf(
                 'Unhandled %s: %s in %s:%d',

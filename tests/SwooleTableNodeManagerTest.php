@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
@@ -44,7 +46,7 @@ final class SwooleTableNodeManagerTest extends TestCase
 
     public function testRejectsInvalidNodeTtl(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         new SwooleTableNodeManager(nodeTtlSeconds: 0);
     }
 }

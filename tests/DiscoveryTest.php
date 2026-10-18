@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
@@ -92,7 +93,7 @@ final class DiscoveryTest extends TestCase
 
     public function testRejectsDatagramWithWrongSecret(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $node = new ServiceNode('Test', nodeId: 'node-one');
         DiscoveryMessage::decode(
             DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, new SecurityConfig(apiKey: 'one')),
@@ -102,7 +103,7 @@ final class DiscoveryTest extends TestCase
 
     public function testRejectsExpiredDiscoveryMessage(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('timestamp');
         $security = new SecurityConfig(apiKey: 'secret', timestampToleranceSeconds: 10);
         $node = new ServiceNode('Test', nodeId: 'node-one');

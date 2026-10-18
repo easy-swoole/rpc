@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\Server\ServiceNode;
 use PHPUnit\Framework\TestCase;
 
@@ -18,14 +20,14 @@ final class ServiceNodeTest extends TestCase
 
     public function testRejectsEmptyNodeId(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('Service node ID cannot be empty.');
         new ServiceNode('User', nodeId: '');
     }
 
     public function testRejectsInvalidConfiguration(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         new ServiceNode('User', nodeId: 'node', port: 0);
     }
 }

@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Utility;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\ServiceNode;
 
@@ -16,7 +18,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
     )
     {
         if ($nodeTtlSeconds < 1) {
-            throw new \InvalidArgumentException('Node TTL must be at least 1 second.');
+            throw new RpcException('Node TTL must be at least 1 second.');
         }
         $this->table = $table ?? new \Swoole\Table($size);
         if ($table === null) {
@@ -34,9 +36,14 @@ final class SwooleTableNodeManager extends AbstractNodeManager
 
     public function online(ServiceNode $node): bool
     {
+        try {
+            $encodedNode = json_encode($node, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new RpcException('Unable to encode service node.', previous: $exception);
+        }
         return $this->table->set($this->key($node), [
             'service' => $node->getServiceName(),
-            'node' => json_encode($node, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            'node' => $encodedNode,
             'heartbeat' => time(),
         ]);
     }
@@ -59,7 +66,12 @@ final class SwooleTableNodeManager extends AbstractNodeManager
             if ($row['service'] !== $serviceName) {
                 continue;
             }
-            $nodes[] = ServiceNode::fromArray(json_decode($row['node'], true, 512, JSON_THROW_ON_ERROR));
+            try {
+                $node = json_decode($row['node'], true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException $exception) {
+                throw new RpcException('Unable to decode service node.', previous: $exception);
+            }
+            $nodes[] = ServiceNode::fromArray($node);
         }
         return $nodes;
     }

@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
@@ -99,7 +101,7 @@ final class AssistWorker extends AbstractProcess
         $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
         if ($this->discoveryConfig->listen
             && !$this->socket->bind($this->discoveryConfig->listenAddress, $this->discoveryConfig->listenPort)) {
-            throw new \RuntimeException('Unable to bind RPC discovery UDP socket.');
+            throw new RpcException('Unable to bind RPC discovery UDP socket.');
         }
         $this->running = true;
     }
@@ -123,7 +125,7 @@ final class AssistWorker extends AbstractProcess
     {
         $position = strrpos($address, ':');
         if ($position === false) {
-            throw new \InvalidArgumentException('Discovery address must use host:port format.');
+            throw new RpcException('Discovery address must use host:port format.');
         }
         return [substr($address, 0, $position), (int) substr($address, $position + 1)];
     }

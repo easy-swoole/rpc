@@ -5,6 +5,9 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\Client\Client;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
+use EasySwoole\Rpc\Client\TcpTransport;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\Protocol\ProtocolCodec;
 
 class Rpc
 {
@@ -20,6 +23,7 @@ class Rpc
             $this->config->getServer(),
             $this->config->getDiscovery(),
             $this->config->getSecurity(),
+            $this->config->getProtocol(),
         );
     }
 
@@ -35,12 +39,12 @@ class Rpc
 
     public function client(): Client
     {
+        $codec = new ProtocolCodec(new PayloadSigner($this->config->getSecurity()));
         return (new Client(
             $this->getNodeManager(),
             $this->dependencies->getNodeSelector(),
             $this->dependencies->getFailurePolicy(),
-            $this->config->getSecurity(),
-        ))->setTransport($this->dependencies->getTransport());
+        ))->setTransport($this->dependencies->getTransport() ?? new TcpTransport($codec, $this->config->getProtocol()));
     }
 
 }

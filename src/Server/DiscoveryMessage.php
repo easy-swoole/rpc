@@ -3,6 +3,8 @@
 namespace EasySwoole\Rpc\Server;
 
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\Exception\RpcException;
 
 final class DiscoveryMessage
 {
@@ -17,10 +19,15 @@ final class DiscoveryMessage
     ): string
     {
         $payload = ['action' => $action, 'node' => $node->jsonSerialize(), 'timestamp' => $timestamp ?? time()];
-        return json_encode([
-            'payload' => $payload,
-            'signature' => $securityConfig->sign($payload),
-        ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $signer = new PayloadSigner($securityConfig);
+        try {
+            return json_encode([
+                'payload' => $payload,
+                'signature' => $signer->sign($payload),
+            ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new RpcException('Unable to encode discovery message.', previous: $exception);
+        }
     }
 
     public static function decode(
@@ -28,23 +35,27 @@ final class DiscoveryMessage
         SecurityConfig $securityConfig = new SecurityConfig(),
     ): array
     {
-        $envelope = json_decode($packet, true, 512, JSON_THROW_ON_ERROR);
+        try {
+            $envelope = json_decode($packet, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new RpcException('Unable to decode discovery message.', previous: $exception);
+        }
         if (!is_array($envelope['payload'] ?? null)) {
-            throw new \InvalidArgumentException('Invalid discovery payload.');
+            throw new RpcException('Invalid discovery payload.');
         }
         $payload = $envelope['payload'];
-        $securityConfig->verify(
+        (new PayloadSigner($securityConfig))->verify(
             $payload,
             $payload['timestamp'] ?? null,
             $envelope['signature'] ?? null,
         );
         if (!in_array($payload['action'] ?? null, [self::HEARTBEAT, self::OFFLINE], true)
             || !is_array($payload['node'] ?? null)) {
-            throw new \InvalidArgumentException('Invalid discovery message.');
+            throw new RpcException('Invalid discovery message.');
         }
         $node = ServiceNode::fromArray($payload['node']);
         if ($node->getServiceName() === '') {
-            throw new \InvalidArgumentException('Discovery node must contain a service name.');
+            throw new RpcException('Discovery node must contain a service name.');
         }
         return [$payload['action'], $node];
     }

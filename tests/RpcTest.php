@@ -8,6 +8,8 @@ use EasySwoole\Rpc\RpcDependencies;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Server\ServerConfig;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
+use EasySwoole\Rpc\Exception\RpcException;
+use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use PHPUnit\Framework\TestCase;
 
 final class RpcTest extends TestCase
@@ -41,8 +43,21 @@ final class RpcTest extends TestCase
         $config = new RpcConfig();
         self::assertInstanceOf(ServerConfig::class, $config->getServer());
         self::assertInstanceOf(DiscoveryConfig::class, $config->getDiscovery());
+        self::assertInstanceOf(ProtocolConfig::class, $config->getProtocol());
         self::assertSame($config->getServer(), $config->getServer());
         self::assertSame($config->getDiscovery(), $config->getDiscovery());
+    }
+
+    public function testDiscoveryConfigurationRejectsImplicitlyInvalidBroadcastSetup(): void
+    {
+        $this->expectException(RpcException::class);
+        new DiscoveryConfig(broadcast: true, broadcastAddresses: []);
+    }
+
+    public function testProtocolConfigurationRejectsInvalidPackageSize(): void
+    {
+        $this->expectException(RpcException::class);
+        new ProtocolConfig(maxPackageSize: 3);
     }
 
     public function testDependenciesCreateDefaultComponents(): void

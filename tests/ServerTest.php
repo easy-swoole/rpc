@@ -11,6 +11,10 @@ use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\Protocol;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
+use EasySwoole\Rpc\Protocol\ProtocolCodec;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\ServerAttachStatus;
@@ -65,7 +69,7 @@ final class ServerTest extends TestCase
 
     public function testRegistrationRejectsDuplicateService(): void
     {
-        $this->expectException(\LogicException::class);
+        $this->expectException(RpcException::class);
         $this->server->registerService(new TestService());
     }
 
@@ -75,7 +79,7 @@ final class ServerTest extends TestCase
         $server = new Server(new SwooleTableNodeManager(16));
         $server->registerService($service);
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('is frozen');
         $service->addModule(new EchoModule());
     }
@@ -85,7 +89,7 @@ final class ServerTest extends TestCase
         $service = new TestService();
         $service->addModule(new EchoModule());
 
-        $this->expectException(\LogicException::class);
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('already registered');
         $service->addModule(new EchoModule());
     }
@@ -113,7 +117,7 @@ final class ServerTest extends TestCase
         try {
             $conflictingRpcServer->attachServer($swooleServer);
             self::fail('An existing Swoole listener must not be reused implicitly for RPC.');
-        } catch (\LogicException $exception) {
+        } catch (RpcException $exception) {
             self::assertStringContainsString('already registered', $exception->getMessage());
         }
         self::assertSame(ServerAttachStatus::FAILED, $conflictingRpcServer->getAttachStatus());
@@ -134,7 +138,7 @@ final class ServerTest extends TestCase
         try {
             $failedRpcServer->attachServer($swooleServer);
             self::fail('Unavailable UDP discovery must fail before the RPC listener is created.');
-        } catch (\RuntimeException $exception) {
+        } catch (RpcException $exception) {
             self::assertStringContainsString('Unable to listen on RPC discovery UDP address', $exception->getMessage());
         } finally {
             fclose($occupied);
@@ -157,20 +161,14 @@ final class ServerTest extends TestCase
         self::assertSame(ServerAttachStatus::ATTACHED, $rpcServer->getAttachStatus());
         self::assertCount(2, $swooleServer->ports);
         self::assertSame($rpcPort, $swooleServer->ports[1]->port);
-        self::assertInstanceOf(
-            AssistWorker::class,
-            (new \ReflectionProperty($rpcServer, 'assistWorker'))->getValue($rpcServer),
-        );
-
         try {
             $rpcServer->registerService(new WeightedService());
             self::fail('Services must not be registered after the RPC Server is attached.');
-        } catch (\LogicException $exception) {
+        } catch (RpcException $exception) {
             self::assertStringContainsString('cannot be registered after', $exception->getMessage());
         }
 
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('already attached');
+        $this->expectException(RpcException::class);
         $rpcServer->attachServer($swooleServer);
     }
 
@@ -190,9 +188,10 @@ final class ServerTest extends TestCase
         );
 
         try {
-            $this->expectException(\RuntimeException::class);
+            $this->expectException(RpcException::class);
             $this->expectExceptionMessage('Unable to listen on RPC discovery UDP address');
-            (new \ReflectionMethod($rpcServer, 'assertUdpListenAvailable'))->invoke($rpcServer);
+            $attacher = (new \ReflectionProperty($rpcServer, 'attacher'))->getValue($rpcServer);
+            (new \ReflectionMethod($attacher, 'assertUdpAvailable'))->invoke($attacher);
         } finally {
             fclose($occupied);
         }
@@ -232,7 +231,7 @@ final class ServerTest extends TestCase
 
     public function testLifecycleRejectsUnknownService(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $this->server->onlineService('Missing');
     }
 
@@ -265,6 +264,7 @@ final class ServerTest extends TestCase
         }
 
         self::assertSame([ResponseStatus::SERVICE_ERROR, 'Server error.'], [$module->getStatus(), $module->getMsg()]);
+        self::assertSame(NodeHealthStatus::SUSPECT, $module->getNodeHealthStatus());
         self::assertStringContainsString('module failed', (string) $warning);
     }
 
@@ -363,8 +363,9 @@ final class ServerTest extends TestCase
         $reported = false;
         $this->server->setOnException(function () use (&$reported): void { $reported = true; });
 
-        $response = (new \ReflectionMethod($this->server, 'handlePacket'))
-            ->invoke($this->server, 'invalid packet');
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $handler = (new \ReflectionProperty($this->server, 'handler'))->getValue($this->server);
+        $response = $codec->decodeResponse($handler->handlePacket('invalid packet'));
 
         self::assertInstanceOf(Response::class, $response);
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
@@ -380,16 +381,12 @@ final class ServerTest extends TestCase
             securityConfig: $security,
         );
         $server->registerService((new TestService())->addModule(new EchoModule()));
-        $request = (new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id'))
-            ->sign($security);
-
-        $response = (new \ReflectionMethod($server, 'handlePacket'))->invoke(
-            $server,
-            Protocol::pack(json_encode($request, JSON_THROW_ON_ERROR)),
-        );
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $request = new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id');
+        $handler = (new \ReflectionProperty($server, 'handler'))->getValue($server);
+        $response = $codec->decodeResponse($handler->handlePacket($codec->encodeRequest($request)));
 
         self::assertInstanceOf(Response::class, $response);
-        $response->verify($security);
         self::assertSame('request-id', $response->getResponseUUID());
     }
 

@@ -33,6 +33,8 @@ Client.addRequest()
 
 `Rpc` 构造函数只接收两个聚合对象：`RpcConfig` 保存不可变的运行配置，`RpcDependencies` 保存可替换组件。两者都能省略并自动创建默认对象，只通过 getter 暴露内部实例。
 
+客户端与服务端内部职责已分开：`Client` 只管理调用批次，`RequestExecutor` 负责单次调用、重试与节点策略，`TcpTransport` 负责协议序列化和网络传输；服务端的 `Server` 只是对外门面，服务登记与冻结由 `ServiceRegistry` 管理，请求分发由 `ServerRequestHandler` 管理，Swoole listener 和 assist-worker 的挂载由 `SwooleServerAttacher` 管理。上述内部协作对象不会通过 `Server` 暴露。
+
 ## 1. 定义服务
 
 Service 只声明服务名称、权重并管理 Module，不直接暴露 Action。
@@ -113,7 +115,7 @@ $userService->addModule(new ProfileModule());
 $rpc->server()->registerService($userService);
 ```
 
-Service 注册后会被冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
+Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
 
 ## 3. 启动 RPC 服务端
 
@@ -168,6 +170,13 @@ Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处�
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
 assist-worker 通过当前 `$server->addProcess()` 直接挂载，不进入 `ProcessManager` 的全局待挂载列表，避免多个 Server 或多个 RPC 实例之间重复添加进程。`attachServer()` 先完成端口、UDP 和进程对象预检，再统一提交 listener 与进程挂载。状态可通过 `getAttachStatus()` 获取，包含 `PENDING`、`ATTACHING`、`ATTACHED` 和 `FAILED`；`hasAttach()` 仅在状态为 `ATTACHED` 时返回 `true`。每个 RPC Server 只允许尝试挂载一次，失败后不能在可能存在部分外部资源的同一个实例上重试。
+
+| ServerAttachStatus | 含义 |
+| --- | --- |
+| `PENDING` | 尚未执行 `attachServer()`，允许注册 Service |
+| `ATTACHING` | 正在执行预检和资源提交，不允许再修改 Service |
+| `ATTACHED` | listener 与 AssistWorker 已成功挂载 |
+| `FAILED` | 挂载失败；当前 RPC Server 实例不可重试，应重建 Swoole Server 和 RPC 实例 |
 
 ### 挂载到已有 Server 的子监听
 
@@ -334,7 +343,9 @@ $server->start();
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
-`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。客户端还会校验 Response UUID 是否与 Request UUID 一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；`ProtocolCodec` 在 Transport 真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。客户端还会校验 Response UUID 是否与 Request UUID 一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+
+`ProtocolConfig::maxPackageSize` 同时提供给服务端 listener 和默认 `TcpTransport`，避免两侧包大小限制各自配置后不一致。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 
@@ -480,23 +491,72 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 
 `Response::getStatus()` 返回 `ResponseStatus` 枚举；`Response::isSuccess()` 仅在状态为 `ResponseStatus::OK` 时返回 `true`。JSON 协议中仍使用对应的整数值。
 
-| 状态 | 含义 |
-| --- | --- |
-| `ResponseStatus::OK` | 调用成功 |
-| `ResponseStatus::NOT_AVAILABLE_NODE` | 没有可用节点 |
-| `ResponseStatus::CONNECT_TIMEOUT` | 节点连接失败或超时 |
-| `ResponseStatus::SERVER_TIMEOUT` | 服务响应超时 |
-| `ResponseStatus::TRANSPORT_ERROR` | 请求发送失败或未分类的传输错误 |
-| `ResponseStatus::RESPONSE_DECODE_ERROR` | 客户端无法解析服务端响应 |
-| `ResponseStatus::PACKAGE_READ_TIMEOUT` | 服务端读取请求超时 |
-| `ResponseStatus::ILLEGAL_PACKAGE` | 数据包或请求格式非法 |
-| `ResponseStatus::SERVICE_SHUTDOWN` | 服务已停止接收请求 |
-| `ResponseStatus::SERVICE_NOT_EXIST` | 服务不存在 |
-| `ResponseStatus::MODULE_NOT_EXIST` | Module 不存在 |
-| `ResponseStatus::ACTION_NOT_EXIST` | Action 不存在或未标记 `RpcAction` |
-| `ResponseStatus::SERVICE_ERROR` | 服务执行异常 |
+### NodeHealthStatus
 
-## 10. 运行测试
+`Response::getNodeHealthStatus()` 返回独立的 `NodeHealthStatus`，用于向客户端提供节点健康提示：
+
+| 节点标记 | 协议值 | 默认产生场景 | 默认处理 |
+| --- | --- | --- | --- |
+| `NodeHealthStatus::HEALTHY` | `healthy` | 正常响应，或业务代码已明确处理异常 | 保留节点；业务失败不会触发重试或下线 |
+| `NodeHealthStatus::SUSPECT` | `suspect` | 未处理的 Service/Module 异常，以及客户端传输或响应校验错误 | 进入连续失败统计，达到阈值后下线 |
+| `NodeHealthStatus::OFFLINE` | `offline` | 服务主动停止，或服务端明确要求摘除节点 | 立即下线，并在启用重试时选择其他节点 |
+
+正常响应和业务代码明确处理过的异常默认是 `HEALTHY`；Service 或 Module 未处理的异常默认是 `SUSPECT`；服务主动停止接收请求时是 `OFFLINE`。业务层捕获异常后可以明确保留节点：
+
+```php
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
+
+return $response
+    ->setStatus(ResponseStatus::SERVICE_ERROR)
+    ->setNodeHealthStatus(NodeHealthStatus::HEALTHY)
+    ->setMsg('Business operation failed.');
+```
+
+节点健康标记包含在 Response 签名中，不能在传输过程中被修改。它只是服务端提示，最终的重试和下线行为仍由 `NodeFailurePolicyInterface` 决定。
+
+### ResponseStatus
+
+| 状态 | 协议值 | 含义 |
+| --- | ---: | --- |
+| `ResponseStatus::OK` | `0` | 调用成功 |
+| `ResponseStatus::NOT_AVAILABLE_NODE` | `1001` | 没有可用节点 |
+| `ResponseStatus::CONNECT_TIMEOUT` | `1002` | 节点连接失败或超时 |
+| `ResponseStatus::SERVER_TIMEOUT` | `1003` | 服务响应超时 |
+| `ResponseStatus::TRANSPORT_ERROR` | `1004` | 请求发送失败或未分类的传输错误 |
+| `ResponseStatus::RESPONSE_DECODE_ERROR` | `1005` | 客户端无法解析响应、签名验证失败或响应 UUID 不匹配 |
+| `ResponseStatus::PACKAGE_READ_TIMEOUT` | `2001` | 服务端读取请求超时 |
+| `ResponseStatus::ILLEGAL_PACKAGE` | `2002` | 数据包、请求格式、请求签名或时间戳非法 |
+| `ResponseStatus::SERVICE_SHUTDOWN` | `3000` | 服务已停止接收请求；默认同时标记节点为 `OFFLINE` |
+| `ResponseStatus::SERVICE_NOT_EXIST` | `3001` | 服务不存在 |
+| `ResponseStatus::MODULE_NOT_EXIST` | `3002` | Module 不存在 |
+| `ResponseStatus::ACTION_NOT_EXIST` | `3003` | Action 不存在或未标记 `RpcAction` |
+| `ResponseStatus::SERVICE_ERROR` | `3004` | 服务执行异常；是否影响节点由 `NodeHealthStatus` 决定 |
+
+### NodeFailureAction
+
+`NodeFailureAction` 不进入网络协议，它是客户端 `NodeFailurePolicyInterface` 对 Response 作出的最终决策：
+
+| 决策 | 含义 |
+| --- | --- |
+| `NodeFailureAction::KEEP` | 保留当前节点，不自动重试 |
+| `NodeFailureAction::RETRY_ANOTHER` | 保留节点但为本次请求重新选择节点；是否继续取决于 `retryTimes` |
+| `NodeFailureAction::OFFLINE` | 从 NodeManager 中移除节点，并在允许重试时重新选择节点 |
+
+默认 `ConsecutiveFailurePolicy` 的转换关系如下：
+
+| 输入 | 决策 |
+| --- | --- |
+| `NodeHealthStatus::OFFLINE` 或 `ResponseStatus::SERVICE_SHUTDOWN` | `OFFLINE` |
+| `NodeHealthStatus::SUSPECT` | 未达到阈值时 `RETRY_ANOTHER`，达到阈值时 `OFFLINE` |
+| 连接、传输、响应超时或解码错误 | 未达到阈值时 `RETRY_ANOTHER`，达到阈值时 `OFFLINE` |
+| `NodeHealthStatus::HEALTHY` 的业务响应 | `KEEP` |
+
+## 10. 异常体系
+
+组件主动抛出的配置、协议、注册、挂载与客户端状态异常都继承 `EasySwoole\Rpc\Exception\RpcException`；`TransportException` 也继承该基类，并额外携带对应的 `ResponseStatus`。调用方可以统一捕获 `RpcException`，也可以单独捕获 `TransportException`。业务 Service 和 Module 抛出的异常仍按其各自 `onException()` 约定处理，不会被强制包装成组件异常。
+
+## 11. 运行测试
 
 ```bash
 composer install
@@ -509,8 +569,9 @@ composer test
 src/
 ├── AbstractInterface/  抽象服务、节点管理器和扩展接口
 ├── Attribute/          RpcAction 等 PHP Attribute
-├── Client/             客户端、请求上下文和 TCP Transport
-├── Protocol/           Request、Response 和长度头协议
-├── Server/             Server、ServiceNode、配置及 AssistWorker
+├── Client/             Client 编排、RequestExecutor 与 TCP Transport
+├── Exception/          RPC 统一异常基类
+├── Protocol/           DTO、签名编解码与长度头协议
+├── Server/             门面、ServiceRegistry、请求处理、挂载及 AssistWorker
 └── Utility/            Swoole Table 节点管理和默认节点选择器
 ```

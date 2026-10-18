@@ -2,10 +2,13 @@
 
 namespace EasySwoole\Rpc\Utility;
 
+use EasySwoole\Rpc\Exception\RpcException;
+
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\Client\NodeFailureAction;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
@@ -16,7 +19,7 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
     public function __construct(private readonly int $threshold = 3)
     {
         if ($threshold < 1) {
-            throw new \InvalidArgumentException('Failure threshold must be at least 1.');
+            throw new RpcException('Failure threshold must be at least 1.');
         }
     }
 
@@ -24,18 +27,21 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
     {
         $key = $node->getServiceName() . "\0" . $node->getNodeId();
 
-        if ($response->getStatus() === ResponseStatus::SERVICE_SHUTDOWN) {
+        if ($response->getNodeHealthStatus() === NodeHealthStatus::OFFLINE
+            || $response->getStatus() === ResponseStatus::SERVICE_SHUTDOWN) {
             unset($this->failures[$key]);
             return NodeFailureAction::OFFLINE;
         }
 
-        if (!in_array($response->getStatus(), [
-            ResponseStatus::CONNECT_TIMEOUT,
-            ResponseStatus::SERVER_TIMEOUT,
-            ResponseStatus::TRANSPORT_ERROR,
-            ResponseStatus::RESPONSE_DECODE_ERROR,
-            ResponseStatus::PACKAGE_READ_TIMEOUT,
-        ], true)) {
+        $isFailure = $response->getNodeHealthStatus() === NodeHealthStatus::SUSPECT
+            || in_array($response->getStatus(), [
+                ResponseStatus::CONNECT_TIMEOUT,
+                ResponseStatus::SERVER_TIMEOUT,
+                ResponseStatus::TRANSPORT_ERROR,
+                ResponseStatus::RESPONSE_DECODE_ERROR,
+                ResponseStatus::PACKAGE_READ_TIMEOUT,
+            ], true);
+        if (!$isFailure) {
             // A response from the service proves that the node is reachable.
             unset($this->failures[$key]);
             return NodeFailureAction::KEEP;

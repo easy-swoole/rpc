@@ -7,6 +7,10 @@ use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\NodeHealthStatus;
+use EasySwoole\Rpc\Protocol\ProtocolCodec;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\Exception\RpcException;
 use PHPUnit\Framework\TestCase;
 
 final class ProtocolTest extends TestCase
@@ -21,14 +25,15 @@ final class ProtocolTest extends TestCase
 
     public function testRejectsInvalidPacketLength(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         Protocol::unpack(pack('N', 100) . 'short');
     }
 
     public function testRequestJsonRoundTripKeepsLegacyThreePartPath(): void
     {
         $request = new Request('Test.Echo.value', ['id' => 1], ['trace' => 'x'], 'request-id');
-        $copy = Request::fromJson(json_encode($request, JSON_THROW_ON_ERROR));
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $copy = $codec->decodeRequest($codec->encodeRequest($request));
         self::assertSame('Test', $copy->getService());
         self::assertSame('Echo', $copy->getModule());
         self::assertSame('value', $copy->getAction());
@@ -38,7 +43,7 @@ final class ProtocolTest extends TestCase
 
     public function testRequestRequiresServiceModuleActionPath(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         new Request('Test.action');
     }
 
@@ -61,56 +66,73 @@ final class ProtocolTest extends TestCase
     public function testSignedRequestRoundTripAndTamperDetection(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
-        $request = (new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id'))
-            ->sign($security);
-        $json = json_encode($request, JSON_THROW_ON_ERROR);
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $request = new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id');
+        $json = $codec->encodeRequest($request);
 
-        self::assertSame('request-id', Request::fromJson($json, $security)->getRequestUUID());
+        self::assertSame('request-id', $codec->decodeRequest($json)->getRequestUUID());
 
         $tampered = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $tampered['arg']['id'] = 2;
-        $this->expectException(\InvalidArgumentException::class);
+        $tampered['payload']['arg']['id'] = 2;
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('signature');
-        Request::fromJson(json_encode($tampered, JSON_THROW_ON_ERROR), $security);
+        $codec->decodeRequest(json_encode($tampered, JSON_THROW_ON_ERROR));
+    }
+
+    public function testSignatureIsAddedOnlyWhenTheRequestIsSerializedForTransport(): void
+    {
+        $request = new Request('Test.Echo.value', requestUUID: 'request-id');
+        self::assertArrayNotHasKey('timestamp', $request->jsonSerialize());
+        self::assertArrayNotHasKey('signature', $request->jsonSerialize());
+
+        $encoded = (new ProtocolCodec(new PayloadSigner(new SecurityConfig(apiKey: 'key'))))
+            ->encodeRequest($request);
+        $envelope = json_decode($encoded, true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertIsInt($envelope['payload']['timestamp']);
+        self::assertIsString($envelope['signature']);
+        self::assertArrayNotHasKey('signature', $envelope['payload']);
     }
 
     public function testRejectsExpiredSignedRequest(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key', timestampToleranceSeconds: 10);
-        $request = (new Request('Test.Echo.value'))->sign($security, time() - 11);
+        $signer = new PayloadSigner($security);
+        $payload = (new Request('Test.Echo.value'))->jsonSerialize() + ['timestamp' => time() - 11];
+        $json = json_encode(['payload' => $payload, 'signature' => $signer->sign($payload)], JSON_THROW_ON_ERROR);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('timestamp');
-        Request::fromJson(json_encode($request, JSON_THROW_ON_ERROR), $security);
+        (new ProtocolCodec($signer))->decodeRequest($json);
     }
 
     public function testRequestSignatureUsesCanonicalObjectKeyOrder(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
-        $request = (new Request('Test.Echo.value', ['b' => 2, 'a' => 1]))->sign($security);
-        $data = $request->jsonSerialize();
-        $data['arg'] = ['a' => 1, 'b' => 2];
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $request = new Request('Test.Echo.value', ['b' => 2, 'a' => 1]);
+        $data = json_decode($codec->encodeRequest($request), true, 512, JSON_THROW_ON_ERROR);
+        $data['payload']['arg'] = ['a' => 1, 'b' => 2];
 
         self::assertSame(
             $request->getRequestUUID(),
-            Request::fromJson(json_encode($data, JSON_THROW_ON_ERROR), $security)->getRequestUUID(),
+            $codec->decodeRequest(json_encode($data, JSON_THROW_ON_ERROR))->getRequestUUID(),
         );
     }
 
     public function testSignedResponseRoundTripAndTamperDetection(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
-        $response = (new Response('response-id'))->setResult(['b' => 2, 'a' => 1])->sign($security);
-        $json = (string) $response;
-        $copy = Response::fromJson($json);
-        $copy->verify($security);
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $response = (new Response('response-id'))->setResult(['b' => 2, 'a' => 1]);
+        $json = $codec->encodeResponse($response);
+        $copy = $codec->decodeResponse($json);
         self::assertSame('response-id', $copy->getResponseUUID());
 
         $tampered = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $tampered['result']['a'] = 99;
-        $copy = Response::fromJson(json_encode($tampered, JSON_THROW_ON_ERROR));
-        $this->expectException(\InvalidArgumentException::class);
+        $tampered['payload']['nodeHealthStatus'] = NodeHealthStatus::OFFLINE->value;
+        $this->expectException(RpcException::class);
         $this->expectExceptionMessage('signature');
-        $copy->verify($security);
+        $codec->decodeResponse(json_encode($tampered, JSON_THROW_ON_ERROR));
     }
 }

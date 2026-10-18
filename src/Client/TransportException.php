@@ -2,9 +2,10 @@
 
 namespace EasySwoole\Rpc\Client;
 
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 
-final class TransportException extends \RuntimeException
+final class TransportException extends RpcException
 {
     public function __construct(
         private readonly ResponseStatus $responseStatus,
