@@ -2,48 +2,41 @@
 
 namespace EasySwoole\Rpc;
 
-use EasySwoole\Component\Singleton;
-use EasySwoole\Rpc\Exception\Runtime;
+use EasySwoole\Rpc\Client\Client;
+use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Server\Server;
-use EasySwoole\Rpc\Utility\AbstractNodeManager;
+use EasySwoole\Rpc\Server\ServerConfig;
+use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
+use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
 class Rpc
 {
-    use Singleton;
-
     private Server $server;
 
     private AbstractNodeManager $nodeManager;
 
-    function setNodeManager(AbstractNodeManager $nodeManager):Rpc
+    public function __construct(
+        ?AbstractNodeManager $nodeManager = null,
+        ?ServerConfig $serverConfig = null,
+    )
     {
-        $this->nodeManager = $nodeManager;
-        return $this;
+        $this->nodeManager = $nodeManager ?? new SwooleTableNodeManager();
+        $this->server = new Server($this->nodeManager, $serverConfig ?? new ServerConfig());
     }
 
-    function getNodeManager():AbstractNodeManager
+    public function getNodeManager(): AbstractNodeManager
     {
-        if(!isset($this->nodeManager)){
-            throw new Runtime("please set nodeManager first");
-        }
         return $this->nodeManager;
     }
 
-    function server():Server
+    public function server(): Server
     {
-        if(isset($this->server)){
-            return $this->server;
-        }
-        if(!isset($this->nodeManager)){
-            throw new Runtime("please set nodeManager first");
-        }
-        $this->server = new Server($this->nodeManager);
         return $this->server;
     }
 
-    function client()
+    public function client(): Client
     {
-
+        return (new Client($this->getNodeManager()))->setTransport(new TcpTransport());
     }
 
 }

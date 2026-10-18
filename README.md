@@ -1,5 +1,52 @@
 # EasySwoole RPC
 
+## 6.x 快速开始
+
+```php
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\Server\DiscoveryConfig;
+use EasySwoole\Rpc\Server\ServerConfig;
+use Swoole\Http\Server;
+
+$rpc = new Rpc(serverConfig: new ServerConfig(
+    advertiseIp: '127.0.0.1',
+    listenPort: 9601,
+)); // 默认使用跨 Worker 共享的 Swoole Table 节点管理器
+$rpc->server()->registerService(new UserService());
+$server = new Server('0.0.0.0', 9501);
+$rpcListener = $server->addListener('0.0.0.0', 9601, SWOOLE_SOCK_TCP);
+$rpc->server()->attach($rpcListener);
+
+$assistWorker = $rpc->server()->createAssistWorker(new DiscoveryConfig(
+    listenPort: 9701,
+    broadcastAddresses: ['127.0.0.1:9701', '127.0.0.1:9702'],
+    secret: 'change-me',
+));
+$server->addProcess($assistWorker->process());
+$server->start();
+```
+
+服务权重由服务类自身声明；默认权重为 `10`，需要调整时覆盖 `serviceWeight()`：
+
+```php
+public function serviceWeight(): int
+{
+    return 20;
+}
+```
+
+客户端可以一次提交多个请求，`exec()` 会使用 Swoole 协程并发执行。连接失败、服务超时、服务关闭或服务异常时，故障节点会被下线；启用重试后会重新选择其他节点。
+
+```php
+$client = $rpc->client();
+$client->addRequest('User.Profile.get')->setArg(['id' => 1])->enableRetry(1);
+$responses = $client->exec(3.0);
+```
+
+assist-worker 是独立的 `Swoole\Process`，需要在所有服务注册完成后创建，并由调用方添加到主 Server。RPC 的 `attach()` 只负责主监听或 `Swoole\Server\Port` 上的 TCP 协议和事件。`listen` 和 `broadcast` 可分别控制 UDP 监听与广播；`secret` 用于 HMAC 验证发现消息。
+
+服务对象只负责请求处理，不持有节点管理器。需要主动控制服务节点状态时，通过 Server 调用：`onlineService()`、`heartbeatService()`、`hibernateService()` 或 `offlineService()`；节点状态最终统一由 `AbstractNodeManager` 读写。
+
 很多传统的Phper并不懂RPC是什么，RPC全称Remote Procedure Call，中文译为远程过程调用,其实你可以把它理解为是一种架构性上的设计，或者是一种解决方案。
 例如在某庞大商场系统中，你可以把整个商场拆分为N个微服务（理解为N个独立的小模块也行），例如：
     
