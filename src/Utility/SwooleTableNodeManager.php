@@ -47,11 +47,6 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         return true;
     }
 
-    public function hibernate(ServiceNode $node): bool
-    {
-        return $this->offline($node);
-    }
-
     public function getNodes(string $serviceName): array
     {
         $nodes = [];

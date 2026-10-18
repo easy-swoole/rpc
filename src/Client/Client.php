@@ -4,6 +4,7 @@ namespace EasySwoole\Rpc\Client;
 
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
@@ -66,16 +67,19 @@ final class Client
             $node = $context->getServiceNode()
                 ?? $this->nodeSelector->select($this->nodeManager->getNodes($service));
             if ($node === null) {
-                $response = (new Response(bin2hex(random_bytes(16))))->setStatus(Response::STATUS_NOT_AVAILABLE_NODE);
+                $response = (new Response(bin2hex(random_bytes(16))))->setStatus(ResponseStatus::NOT_AVAILABLE_NODE);
                 break;
             }
             $context->setServiceNode($node);
             $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
             try {
                 $response = $this->transport->send($node, $request, $timeout);
+            } catch (TransportException $throwable) {
+                $response = (new Response($request->getRequestUUID()))
+                    ->setStatus($throwable->getResponseStatus())->setMsg($throwable->getMessage());
             } catch (\Throwable $throwable) {
                 $response = (new Response($request->getRequestUUID()))
-                    ->setStatus(Response::STATUS_CONNECT_TIMEOUT)->setMsg($throwable->getMessage());
+                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)->setMsg($throwable->getMessage());
             }
             $failureAction = $this->failurePolicy->evaluate($node, $response);
             if ($failureAction === NodeFailureAction::OFFLINE) {

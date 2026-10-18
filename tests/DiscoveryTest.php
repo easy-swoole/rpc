@@ -39,11 +39,6 @@ final class DiscoveryTest extends TestCase
                 return true;
             }
 
-            public function hibernate(ServiceNode $node): bool
-            {
-                return true;
-            }
-
             public function getNodes(string $serviceName): array
             {
                 return [];

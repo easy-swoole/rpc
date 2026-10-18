@@ -161,7 +161,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处理，不会重复通知全局处理器。Server 的全局 `onException` 只接收仍未被业务层处理的意外异常以及协议解析异常，回调只接收 `Throwable`，不参与 Response 构造。
+Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处理，不会重复通知全局处理器。默认实现通过 `trigger_error()` 将异常详情交给服务端日志或 error handler，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。业务层可以重写 `onException()` 自定义处理。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE`，同样不会通知全局处理器。Server 的全局 `onException` 只接收仍未被业务层处理的意外异常，回调只接收 `Throwable`，不参与 Response 构造。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -253,9 +253,9 @@ $client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
 
 客户端不会因为一次业务异常就把节点全局下线。默认的 `ConsecutiveFailurePolicy` 行为如下：
 
-- `STATUS_SERVICE_ERROR`：视为业务执行异常，保留节点；
+- `ResponseStatus::SERVICE_ERROR`：视为业务执行异常，保留节点；
 - 连接失败、服务响应超时或读包超时：记录连续失败，默认累计 3 次后下线；
-- `STATUS_SERVICE_SHUTDOWN`：服务明确关闭，立即下线；
+- `ResponseStatus::SERVICE_SHUTDOWN`：服务明确关闭，立即下线；
 - 低于下线阈值时，如果启用了重试，会重新选择节点，但不会修改全局节点表；
 - 节点成功响应后，连续网络失败计数会被清零。
 
@@ -361,7 +361,6 @@ Service 只负责请求处理，不持有 ServiceNode 或 NodeManager。节点�
 ```php
 $rpc->server()->onlineService('User');
 $rpc->server()->heartbeatService('User');
-$rpc->server()->hibernateService('User');
 $rpc->server()->offlineService('User');
 ```
 
@@ -407,7 +406,7 @@ NodeManager 实例会在 Swoole 主进程中创建，并在 fork 后同时被 Wo
 - 网络客户端、Socket、协程客户端等进程相关资源必须在子进程中延迟创建；
 - 必须记录连接所属 PID；发现 `getmypid()` 变化时，丢弃继承来的连接并在当前进程重新连接；
 - 不得依赖普通 PHP 成员变量在多个进程间共享状态；需要共享内存时使用 fork 前创建的 `Swoole\Table` 等跨进程设施；
-- `online()`、`heartbeat()`、`offline()`、`hibernate()` 和 `getNodes()` 必须支持多个进程并发调用。
+- `online()`、`heartbeat()`、`offline()` 和 `getNodes()` 必须支持多个进程并发调用。
 
 Redis 类型的实现可以使用下面的按 PID 建连模式：
 
@@ -450,12 +449,6 @@ final class RedisNodeManager extends AbstractNodeManager
         return true;
     }
 
-    public function hibernate(ServiceNode $node): bool
-    {
-        // 暂停节点
-        return true;
-    }
-
     public function offline(ServiceNode $node): bool
     {
         // 删除节点
@@ -479,21 +472,23 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 
 ## 9. 响应状态
 
-`Response::isSuccess()` 仅在状态为 `STATUS_OK` 时返回 `true`。
+`Response::getStatus()` 返回 `ResponseStatus` 枚举；`Response::isSuccess()` 仅在状态为 `ResponseStatus::OK` 时返回 `true`。JSON 协议中仍使用对应的整数值。
 
 | 状态 | 含义 |
 | --- | --- |
-| `STATUS_OK` | 调用成功 |
-| `STATUS_NOT_AVAILABLE_NODE` | 没有可用节点 |
-| `STATUS_CONNECT_TIMEOUT` | 节点连接失败或超时 |
-| `STATUS_SERVER_TIMEOUT` | 服务响应超时 |
-| `STATUS_PACKAGE_READ_TIMEOUT` | 服务端读取请求超时 |
-| `STATUS_ILLEGAL_PACKAGE` | 数据包或请求格式非法 |
-| `STATUS_SERVICE_SHUTDOWN` | 服务已停止接收请求 |
-| `STATUS_SERVICE_NOT_EXIST` | 服务不存在 |
-| `STATUS_MODULE_NOT_EXIST` | Module 不存在 |
-| `STATUS_ACTION_NOT_EXIST` | Action 不存在或未标记 `RpcAction` |
-| `STATUS_SERVICE_ERROR` | 服务执行异常 |
+| `ResponseStatus::OK` | 调用成功 |
+| `ResponseStatus::NOT_AVAILABLE_NODE` | 没有可用节点 |
+| `ResponseStatus::CONNECT_TIMEOUT` | 节点连接失败或超时 |
+| `ResponseStatus::SERVER_TIMEOUT` | 服务响应超时 |
+| `ResponseStatus::TRANSPORT_ERROR` | 请求发送失败或未分类的传输错误 |
+| `ResponseStatus::RESPONSE_DECODE_ERROR` | 客户端无法解析服务端响应 |
+| `ResponseStatus::PACKAGE_READ_TIMEOUT` | 服务端读取请求超时 |
+| `ResponseStatus::ILLEGAL_PACKAGE` | 数据包或请求格式非法 |
+| `ResponseStatus::SERVICE_SHUTDOWN` | 服务已停止接收请求 |
+| `ResponseStatus::SERVICE_NOT_EXIST` | 服务不存在 |
+| `ResponseStatus::MODULE_NOT_EXIST` | Module 不存在 |
+| `ResponseStatus::ACTION_NOT_EXIST` | Action 不存在或未标记 `RpcAction` |
+| `ResponseStatus::SERVICE_ERROR` | 服务执行异常 |
 
 ## 10. 运行测试
 

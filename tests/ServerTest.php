@@ -8,6 +8,7 @@ use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
 use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\ServerConfig;
@@ -175,9 +176,6 @@ final class ServerTest extends TestCase
         self::assertTrue($server->onlineService('Test'));
         self::assertNotEmpty($manager->getNodes('Test'));
         self::assertTrue($server->heartbeatService('Test'));
-        self::assertTrue($server->hibernateService('Test'));
-        self::assertSame([], $manager->getNodes('Test'));
-        self::assertTrue($server->onlineService('Test'));
         self::assertTrue($server->offlineService('Test'));
         self::assertSame([], $manager->getNodes('Test'));
     }
@@ -190,20 +188,34 @@ final class ServerTest extends TestCase
 
     public function testReturnsPreciseNotFoundStatuses(): void
     {
-        self::assertSame(Response::STATUS_SERVICE_NOT_EXIST, $this->server->handle(new Request('Missing.Echo.action'))->getStatus());
-        self::assertSame(Response::STATUS_MODULE_NOT_EXIST, $this->server->handle(new Request('Test.Missing.action'))->getStatus());
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.missing'))->getStatus());
+        self::assertSame(ResponseStatus::SERVICE_NOT_EXIST, $this->server->handle(new Request('Missing.Echo.action'))->getStatus());
+        self::assertSame(ResponseStatus::MODULE_NOT_EXIST, $this->server->handle(new Request('Test.Missing.action'))->getStatus());
+        self::assertSame(ResponseStatus::ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.missing'))->getStatus());
     }
 
     public function testServiceOnlyRoutesModulesAndModuleOnlyExposesAttributedActions(): void
     {
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.internalHelper'))->getStatus());
+        self::assertSame(ResponseStatus::ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.internalHelper'))->getStatus());
     }
 
     public function testConvertsModuleExceptionsToResponses(): void
     {
-        $module = $this->server->handle(new Request('Test.Echo.fail'));
-        self::assertSame([Response::STATUS_SERVICE_ERROR, 'module failed'], [$module->getStatus(), $module->getMsg()]);
+        $warning = null;
+        set_error_handler(function (int $severity, string $message) use (&$warning): bool {
+            if ($severity === E_USER_WARNING) {
+                $warning = $message;
+                return true;
+            }
+            return false;
+        });
+        try {
+            $module = $this->server->handle(new Request('Test.Echo.fail'));
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame([ResponseStatus::SERVICE_ERROR, 'Server error.'], [$module->getStatus(), $module->getMsg()]);
+        self::assertStringContainsString('module failed', (string) $warning);
     }
 
     public function testHandledBusinessExceptionIsNotReportedToGlobalServerHandler(): void
@@ -211,10 +223,44 @@ final class ServerTest extends TestCase
         $reported = false;
         $this->server->setOnException(function () use (&$reported): void { $reported = true; });
 
-        $response = $this->server->handle(new Request('Test.Echo.fail'));
+        set_error_handler(static fn (int $severity): bool => $severity === E_USER_WARNING);
+        try {
+            $response = $this->server->handle(new Request('Test.Echo.fail'));
+        } finally {
+            restore_error_handler();
+        }
 
         self::assertFalse($reported);
-        self::assertSame('module failed', $response->getMsg());
+        self::assertSame('Server error.', $response->getMsg());
+    }
+
+    public function testDefaultServiceExceptionHidesInternalMessage(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Broken'; }
+            protected function onRequest(Request $request): bool
+            {
+                throw new \RuntimeException('sensitive service detail');
+            }
+        };
+        $this->server->registerService($service);
+        $warning = null;
+        set_error_handler(function (int $severity, string $message) use (&$warning): bool {
+            if ($severity === E_USER_WARNING) {
+                $warning = $message;
+                return true;
+            }
+            return false;
+        });
+        try {
+            $response = $this->server->handle(new Request('Broken.Any.action'));
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame('Server error.', $response->getMsg());
+        self::assertStringContainsString('sensitive service detail', (string) $warning);
     }
 
     public function testReportsUnhandledExceptionToGlobalServerHandler(): void
@@ -228,7 +274,7 @@ final class ServerTest extends TestCase
         $response = $this->server->handle(new Request('Unexpected.Module.execute'));
 
         self::assertSame('unexpected after-request failure', $reported);
-        self::assertSame(Response::STATUS_SERVICE_ERROR, $response->getStatus());
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
     }
 
     public function testGlobalExceptionHandlerCannotBreakResponseLifecycle(): void
@@ -240,8 +286,21 @@ final class ServerTest extends TestCase
 
         $response = $this->server->handle(new Request('Unexpected.Module.execute'));
 
-        self::assertSame(Response::STATUS_SERVICE_ERROR, $response->getStatus());
-        self::assertSame('unexpected after-request failure', $response->getMsg());
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame('Server error.', $response->getMsg());
+    }
+
+    public function testIllegalClientPacketIsNotReportedToGlobalServerHandler(): void
+    {
+        $reported = false;
+        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
+
+        $response = (new \ReflectionMethod($this->server, 'handlePacket'))
+            ->invoke($this->server, 'invalid packet');
+
+        self::assertInstanceOf(Response::class, $response);
+        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+        self::assertFalse($reported);
     }
 
     public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void
@@ -250,14 +309,14 @@ final class ServerTest extends TestCase
             public function serviceName(): string { return 'Hook'; }
             protected function moduleNotFound(Request $request, Response $response): Response
             {
-                return $response->setStatus(Response::STATUS_MODULE_NOT_EXIST)->setMsg('custom module missing');
+                return $response->setStatus(ResponseStatus::MODULE_NOT_EXIST)->setMsg('custom module missing');
             }
         };
         $service->addModule(new class extends AbstractServiceModule {
             public function moduleName(): string { return 'Custom'; }
             protected function actionNotFound(Request $request, Response $response): Response
             {
-                return $response->setStatus(Response::STATUS_ACTION_NOT_EXIST)->setMsg('custom action missing');
+                return $response->setStatus(ResponseStatus::ACTION_NOT_EXIST)->setMsg('custom action missing');
             }
         });
         $this->server->registerService($service);

@@ -4,6 +4,7 @@ namespace EasySwoole\Rpc\AbstractInterface;
 
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 
 abstract class AbstractService
 {
@@ -27,7 +28,7 @@ abstract class AbstractService
     {
         try {
             if (!$this->onRequest($request)) {
-                return $response->setStatus(Response::STATUS_SERVICE_SHUTDOWN);
+                return $response->setStatus(ResponseStatus::SERVICE_SHUTDOWN);
             }
             $module = $this->modules[$request->getModule()] ?? null;
             if ($module === null) {
@@ -46,10 +47,17 @@ abstract class AbstractService
     protected function afterRequest(Request $request, Response $response): void {}
     protected function moduleNotFound(Request $request, Response $response): Response
     {
-        return $response->setStatus(Response::STATUS_MODULE_NOT_EXIST);
+        return $response->setStatus(ResponseStatus::MODULE_NOT_EXIST);
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        $response->setStatus(Response::STATUS_SERVICE_ERROR)->setMsg($throwable->getMessage());
+        trigger_error(sprintf(
+            'Unhandled %s: %s in %s:%d',
+            $throwable::class,
+            $throwable->getMessage(),
+            $throwable->getFile(),
+            $throwable->getLine(),
+        ), E_USER_WARNING);
+        $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
     }
 }

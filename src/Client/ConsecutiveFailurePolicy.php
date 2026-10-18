@@ -4,6 +4,7 @@ namespace EasySwoole\Rpc\Client;
 
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
@@ -22,15 +23,17 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
     {
         $key = $node->getServiceName() . "\0" . $node->getNodeId();
 
-        if ($response->getStatus() === Response::STATUS_SERVICE_SHUTDOWN) {
+        if ($response->getStatus() === ResponseStatus::SERVICE_SHUTDOWN) {
             unset($this->failures[$key]);
             return NodeFailureAction::OFFLINE;
         }
 
         if (!in_array($response->getStatus(), [
-            Response::STATUS_CONNECT_TIMEOUT,
-            Response::STATUS_SERVER_TIMEOUT,
-            Response::STATUS_PACKAGE_READ_TIMEOUT,
+            ResponseStatus::CONNECT_TIMEOUT,
+            ResponseStatus::SERVER_TIMEOUT,
+            ResponseStatus::TRANSPORT_ERROR,
+            ResponseStatus::RESPONSE_DECODE_ERROR,
+            ResponseStatus::PACKAGE_READ_TIMEOUT,
         ], true)) {
             // A response from the service proves that the node is reachable.
             unset($this->failures[$key]);

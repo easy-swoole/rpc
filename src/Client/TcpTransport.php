@@ -6,6 +6,7 @@ use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class TcpTransport implements TransportInterface
@@ -24,16 +25,36 @@ final class TcpTransport implements TransportInterface
         ]);
         try {
             if (!$client->connect($node->getIp(), $node->getPort(), $timeout)) {
-                throw new \RuntimeException($client->errMsg ?: 'Unable to connect to RPC node.', $client->errCode);
+                throw new TransportException(
+                    ResponseStatus::CONNECT_TIMEOUT,
+                    $client->errMsg ?: 'Unable to connect to RPC node.',
+                    $client->errCode,
+                );
             }
             if ($client->send(Protocol::pack(json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))) === false) {
-                throw new \RuntimeException($client->errMsg ?: 'Unable to send RPC request.', $client->errCode);
+                throw new TransportException(
+                    ResponseStatus::TRANSPORT_ERROR,
+                    $client->errMsg ?: 'Unable to send RPC request.',
+                    $client->errCode,
+                );
             }
             $packet = $client->recv($timeout);
             if (!is_string($packet) || $packet === '') {
-                throw new \RuntimeException($client->errMsg ?: 'RPC response timed out.', $client->errCode);
+                throw new TransportException(
+                    ResponseStatus::SERVER_TIMEOUT,
+                    $client->errMsg ?: 'RPC response timed out.',
+                    $client->errCode,
+                );
             }
-            return Response::fromJson(Protocol::unpack($packet));
+            try {
+                return Response::fromJson(Protocol::unpack($packet));
+            } catch (\Throwable $throwable) {
+                throw new TransportException(
+                    ResponseStatus::RESPONSE_DECODE_ERROR,
+                    'Unable to decode RPC response: ' . $throwable->getMessage(),
+                    previous: $throwable,
+                );
+            }
         } finally {
             if ($client->isConnected()) {
                 $client->close();

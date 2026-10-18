@@ -6,6 +6,7 @@ use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\Protocol;
 use Swoole\Server\Port;
 
@@ -95,11 +96,6 @@ class Server
         return $this->nodeManager->heartbeat($this->requireServiceNode($serviceName));
     }
 
-    public function hibernateService(string $serviceName): bool
-    {
-        return $this->nodeManager->hibernate($this->requireServiceNode($serviceName));
-    }
-
     public function offlineService(string $serviceName): bool
     {
         return $this->nodeManager->offline($this->requireServiceNode($serviceName));
@@ -129,13 +125,13 @@ class Server
         $response = new Response($request->getRequestUUID());
         $service = $this->getService($request->getService());
         if ($service === null) {
-            return $response->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
+            return $response->setStatus(ResponseStatus::SERVICE_NOT_EXIST);
         }
 
         try {
             return $service->__dispatch($request, $response);
         } catch (\Throwable $throwable) {
-            $response->setStatus(Response::STATUS_SERVICE_ERROR)->setMsg($throwable->getMessage());
+            $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
             $this->reportException($throwable);
             return $response;
         }
@@ -156,13 +152,7 @@ class Server
             'package_max_length' => $maxPackageSize,
         ]);
         $listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
-            try {
-                $request = Request::fromJson(Protocol::unpack($packet));
-                $response = $this->handle($request);
-            } catch (\Throwable $throwable) {
-                $response = (new Response(''))->setStatus(Response::STATUS_ILLEGAL_PACKAGE)->setMsg($throwable->getMessage());
-                $this->reportException($throwable);
-            }
+            $response = $this->handlePacket($packet);
             $server->send($fd, Protocol::pack((string) $response));
             $server->close($fd);
         });
@@ -178,6 +168,19 @@ class Server
         $server->addProcess($this->assistWorker->getProcess());
 
         return $this;
+    }
+
+    private function handlePacket(string $packet): Response
+    {
+        try {
+            $request = Request::fromJson(Protocol::unpack($packet));
+        } catch (\Throwable $throwable) {
+            return (new Response(''))
+                ->setStatus(ResponseStatus::ILLEGAL_PACKAGE)
+                ->setMsg($throwable->getMessage());
+        }
+
+        return $this->handle($request);
     }
 
     private function resolveListener(\Swoole\Server $server): Port

@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc\Tests;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
 use PHPUnit\Framework\TestCase;
 
 final class ProtocolTest extends TestCase
@@ -42,8 +43,17 @@ final class ProtocolTest extends TestCase
 
     public function testResponseJsonRoundTrip(): void
     {
-        $response = (new Response('response-id'))->setStatus(12)->setResult(['ok' => false])->setMsg('bad');
+        $response = (new Response('response-id'))->setStatus(ResponseStatus::SERVICE_ERROR)->setResult(['ok' => false])->setMsg('bad');
         $copy = Response::fromJson((string) $response);
         self::assertSame($response->jsonSerialize(), $copy->jsonSerialize());
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $copy->getStatus());
+        self::assertSame(ResponseStatus::SERVICE_ERROR->value, $copy->jsonSerialize()['status']);
+    }
+
+    public function testUnknownResponseStatusIsTreatedAsIllegalPackage(): void
+    {
+        $response = Response::fromJson('{"status":9999,"responseUUID":"id"}');
+
+        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
     }
 }
