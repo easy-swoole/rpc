@@ -113,6 +113,8 @@ $userService->addModule(new ProfileModule());
 $rpc->server()->registerService($userService);
 ```
 
+Service 注册后会被冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
+
 ## 3. 启动 RPC 服务端
 
 ### 挂载到 Swoole Server
@@ -161,7 +163,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处理，不会重复通知全局处理器。默认实现通过 `trigger_error()` 将异常详情交给服务端日志或 error handler，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。业务层可以重写 `onException()` 自定义处理。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE`，同样不会通知全局处理器。Server 的全局 `onException` 只接收仍未被业务层处理的意外异常，回调只接收 `Throwable`，不参与 Response 构造。
+Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处理，不会重复通知全局处理器。默认实现通过受保护的 `trigger_error()` 将异常详情交给服务端日志或 error handler；即使应用的 error handler 抛出异常，也不会影响 RPC 响应。客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。业务层可以重写 `onException()` 自定义处理。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，同样不会通知全局处理器。Server 的全局 `onException` 只接收仍未被业务层处理的意外异常，回调只接收 `Throwable`，不参与 Response 构造。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -247,7 +249,7 @@ $client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
 [$userResponse, $profileResponse] = $client->exec(timeout: 3.0);
 ```
 
-每次 `exec()` 后请求队列会被清空。需要发起下一批调用时重新调用 `addRequest()`。
+每次 `exec()` 后请求队列都会在 `finally` 中清空，即使回调或扩展组件抛出异常也不会重复执行旧请求。每个请求协程的意外异常会先被收集，所有协程结束后由 `exec()` 重新抛出第一个异常，不会静默丢失 Response。请求路径会在 `addRequest()` 时立即校验。
 
 ### 节点故障策略
 
@@ -332,7 +334,7 @@ $server->start();
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
-`SecurityConfig` 是 RPC 请求与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求体和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。客户端还会校验 Response UUID 是否与 Request UUID 一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 

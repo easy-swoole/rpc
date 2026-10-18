@@ -26,6 +26,7 @@ final class Client
     public function setTransport(TransportInterface $transport): self { $this->transport = $transport; return $this; }
     public function addRequest(string $path): RequestContext
     {
+        Request::validatePath($path);
         return $this->requests[] = new RequestContext($path);
     }
 
@@ -36,13 +37,17 @@ final class Client
             throw new \LogicException('Please set a client transport before exec().');
         }
         $responses = [];
-        $execute = function () use (&$responses, $timeout): void {
+        $errors = [];
+        $requests = $this->requests;
+        $execute = function () use (&$responses, &$errors, $requests, $timeout): void {
             $waitGroup = new \Swoole\Coroutine\WaitGroup();
-            foreach ($this->requests as $index => $context) {
+            foreach ($requests as $index => $context) {
                 $waitGroup->add();
-                \Swoole\Coroutine::create(function () use (&$responses, $index, $context, $timeout, $waitGroup): void {
+                \Swoole\Coroutine::create(function () use (&$responses, &$errors, $index, $context, $timeout, $waitGroup): void {
                     try {
                         $responses[$index] = $this->executeOne($context, $timeout);
+                    } catch (\Throwable $throwable) {
+                        $errors[$index] = $throwable;
                     } finally {
                         $waitGroup->done();
                     }
@@ -50,14 +55,21 @@ final class Client
             }
             $waitGroup->wait();
         };
-        if (\Swoole\Coroutine::getCid() >= 0) {
-            $execute();
-        } else {
-            \Swoole\Coroutine\run($execute);
+        try {
+            if (\Swoole\Coroutine::getCid() >= 0) {
+                $execute();
+            } else {
+                \Swoole\Coroutine\run($execute);
+            }
+            if ($errors !== []) {
+                ksort($errors);
+                throw reset($errors);
+            }
+            ksort($responses);
+            return array_values($responses);
+        } finally {
+            $this->requests = [];
         }
-        ksort($responses);
-        $this->requests = [];
-        return array_values($responses);
     }
 
     private function executeOne(RequestContext $context, float $timeout): Response
@@ -77,6 +89,18 @@ final class Client
                 ->sign($this->securityConfig);
             try {
                 $response = $this->transport->send($node, $request, $timeout);
+                try {
+                    $response->verify($this->securityConfig);
+                    if ($response->getResponseUUID() !== $request->getRequestUUID()) {
+                        throw new \UnexpectedValueException('RPC response UUID does not match request UUID.');
+                    }
+                } catch (\Throwable $throwable) {
+                    throw new TransportException(
+                        ResponseStatus::RESPONSE_DECODE_ERROR,
+                        $throwable->getMessage(),
+                        previous: $throwable,
+                    );
+                }
             } catch (TransportException $throwable) {
                 $response = (new Response($request->getRequestUUID()))
                     ->setStatus($throwable->getResponseStatus())->setMsg($throwable->getMessage());

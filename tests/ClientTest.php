@@ -145,4 +145,53 @@ final class ClientTest extends TestCase
         self::assertSame(ResponseStatus::SERVER_TIMEOUT, $response->getStatus());
         self::assertSame('response timeout', $response->getMsg());
     }
+
+    public function testRejectsMismatchedResponseUuid(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
+            ->setTransport(new class implements TransportInterface {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return new Response('another-request');
+                }
+            });
+
+        $client->addRequest('Test.Echo.value');
+
+        self::assertSame(ResponseStatus::RESPONSE_DECODE_ERROR, $client->exec()[0]->getStatus());
+    }
+
+    public function testCoroutineExceptionIsRethrownAndRequestQueueIsCleared(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
+            ->setTransport(new class implements TransportInterface {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return new Response($request->getRequestUUID());
+                }
+            });
+        $client->addRequest('Test.Echo.value')->setOnSuccess(static function (): never {
+            throw new \RuntimeException('callback failed');
+        });
+
+        try {
+            $client->exec();
+            self::fail('Callback exceptions must be rethrown after all coroutines finish.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('callback failed', $exception->getMessage());
+        }
+        self::assertSame([], $client->exec());
+    }
+
+    public function testAddRequestRejectsInvalidPathImmediately(): void
+    {
+        $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $client->addRequest('Test.action');
+    }
 }

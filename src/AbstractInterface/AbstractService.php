@@ -10,6 +10,7 @@ abstract class AbstractService
 {
     /** @var array<string, AbstractServiceModule> */
     private array $modules = [];
+    private bool $frozen = false;
 
     abstract public function serviceName(): string;
 
@@ -20,8 +21,23 @@ abstract class AbstractService
 
     public function addModule(AbstractServiceModule $module): static
     {
-        $this->modules[$module->moduleName()] = $module;
+        if ($this->frozen) {
+            throw new \LogicException(sprintf('Service "%s" is frozen and cannot add modules.', $this->serviceName()));
+        }
+        $moduleName = $module->moduleName();
+        if ($moduleName === '') {
+            throw new \InvalidArgumentException('Module name cannot be empty.');
+        }
+        if (isset($this->modules[$moduleName])) {
+            throw new \LogicException(sprintf('Module "%s" is already registered.', $moduleName));
+        }
+        $this->modules[$moduleName] = $module;
         return $this;
+    }
+
+    final public function __freeze(): void
+    {
+        $this->frozen = true;
     }
 
     public function __dispatch(Request $request, Response $response): Response
@@ -51,13 +67,17 @@ abstract class AbstractService
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        trigger_error(sprintf(
-            'Unhandled %s: %s in %s:%d',
-            $throwable::class,
-            $throwable->getMessage(),
-            $throwable->getFile(),
-            $throwable->getLine(),
-        ), E_USER_WARNING);
         $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
+        try {
+            trigger_error(sprintf(
+                'Unhandled %s: %s in %s:%d',
+                $throwable::class,
+                $throwable->getMessage(),
+                $throwable->getFile(),
+                $throwable->getLine(),
+            ), E_USER_WARNING);
+        } catch (\Throwable) {
+            // Error reporting must never alter the RPC response lifecycle.
+        }
     }
 }

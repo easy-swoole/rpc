@@ -23,10 +23,7 @@ final class Request implements \JsonSerializable
         ?int $timestamp = null,
     )
     {
-        $parts = explode('.', $path);
-        if (count($parts) !== 3 || in_array('', $parts, true)) {
-            throw new \InvalidArgumentException('Request path must be Service.Module.action.');
-        }
+        $parts = self::validatePath($path);
         $this->service = $parts[0];
         $this->module = $parts[1];
         $this->action = $parts[2];
@@ -44,6 +41,16 @@ final class Request implements \JsonSerializable
     public function getRequestUUID(): string { return $this->requestUUID; }
     public function getTimestamp(): int { return $this->timestamp; }
     public function getSignature(): ?string { return $this->signature; }
+
+    /** @return array{string, string, string} */
+    public static function validatePath(string $path): array
+    {
+        $parts = explode('.', $path);
+        if (count($parts) !== 3 || in_array('', $parts, true)) {
+            throw new \InvalidArgumentException('Request path must be Service.Module.action.');
+        }
+        return [$parts[0], $parts[1], $parts[2]];
+    }
 
     public function sign(SecurityConfig $securityConfig, ?int $timestamp = null): self
     {

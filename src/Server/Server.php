@@ -63,6 +63,7 @@ class Server
             port: $this->config->resolvedAdvertisePort(),
             listenAddress: $this->config->listenAddress,
         );
+        $service->__freeze();
         $this->service[$serviceName] = $service;
         $this->serviceNodes[$serviceName] = $node;
     }
@@ -194,13 +195,14 @@ class Server
     {
         try {
             $request = Request::fromJson(Protocol::unpack($packet), $this->securityConfig);
-        } catch (\Throwable $throwable) {
+        } catch (\Throwable) {
             return (new Response(''))
                 ->setStatus(ResponseStatus::ILLEGAL_PACKAGE)
-                ->setMsg($throwable->getMessage());
+                ->setMsg('Illegal RPC request.')
+                ->sign($this->securityConfig);
         }
 
-        return $this->handle($request);
+        return $this->handle($request)->sign($this->securityConfig);
     }
 
     private function assertListenerAvailable(\Swoole\Server $server): void

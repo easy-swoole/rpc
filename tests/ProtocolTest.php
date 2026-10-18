@@ -83,4 +83,34 @@ final class ProtocolTest extends TestCase
         $this->expectExceptionMessage('timestamp');
         Request::fromJson(json_encode($request, JSON_THROW_ON_ERROR), $security);
     }
+
+    public function testRequestSignatureUsesCanonicalObjectKeyOrder(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key');
+        $request = (new Request('Test.Echo.value', ['b' => 2, 'a' => 1]))->sign($security);
+        $data = $request->jsonSerialize();
+        $data['arg'] = ['a' => 1, 'b' => 2];
+
+        self::assertSame(
+            $request->getRequestUUID(),
+            Request::fromJson(json_encode($data, JSON_THROW_ON_ERROR), $security)->getRequestUUID(),
+        );
+    }
+
+    public function testSignedResponseRoundTripAndTamperDetection(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key');
+        $response = (new Response('response-id'))->setResult(['b' => 2, 'a' => 1])->sign($security);
+        $json = (string) $response;
+        $copy = Response::fromJson($json);
+        $copy->verify($security);
+        self::assertSame('response-id', $copy->getResponseUUID());
+
+        $tampered = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $tampered['result']['a'] = 99;
+        $copy = Response::fromJson(json_encode($tampered, JSON_THROW_ON_ERROR));
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('signature');
+        $copy->verify($security);
+    }
 }

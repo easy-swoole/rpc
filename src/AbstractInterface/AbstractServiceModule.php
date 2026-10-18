@@ -42,14 +42,18 @@ abstract class AbstractServiceModule
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        trigger_error(sprintf(
-            'Unhandled %s: %s in %s:%d',
-            $throwable::class,
-            $throwable->getMessage(),
-            $throwable->getFile(),
-            $throwable->getLine(),
-        ), E_USER_WARNING);
         $response->setStatus(ResponseStatus::SERVICE_ERROR)->setMsg('Server error.');
+        try {
+            trigger_error(sprintf(
+                'Unhandled %s: %s in %s:%d',
+                $throwable::class,
+                $throwable->getMessage(),
+                $throwable->getFile(),
+                $throwable->getLine(),
+            ), E_USER_WARNING);
+        } catch (\Throwable) {
+            // Error reporting must never alter the RPC response lifecycle.
+        }
     }
 
     private function isActionAllowed(string $action): bool

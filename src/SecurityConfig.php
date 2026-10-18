@@ -28,7 +28,7 @@ final class SecurityConfig
         }
         return hash_hmac(
             'sha256',
-            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            $this->canonicalJson($payload),
             $this->apiKey,
         );
     }
@@ -45,5 +45,35 @@ final class SecurityConfig
         if (!is_string($signature) || $signature === '' || !hash_equals((string) $expected, $signature)) {
             throw new \InvalidArgumentException('Invalid RPC signature.');
         }
+    }
+
+    private function canonicalJson(array $payload): string
+    {
+        // Normalize objects and numeric representations through JSON first, then
+        // recursively sort object keys so different encoders produce one signature.
+        $normalized = json_decode(
+            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+        return json_encode(
+            self::sortRecursively($normalized),
+            JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+        );
+    }
+
+    private static function sortRecursively(mixed $value): mixed
+    {
+        if (!is_array($value)) {
+            return $value;
+        }
+        foreach ($value as $key => $item) {
+            $value[$key] = self::sortRecursively($item);
+        }
+        if (!array_is_list($value)) {
+            ksort($value, SORT_STRING);
+        }
+        return $value;
     }
 }

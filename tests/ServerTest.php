@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
@@ -9,6 +10,7 @@ use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
+use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\ServerAttachStatus;
@@ -65,6 +67,27 @@ final class ServerTest extends TestCase
     {
         $this->expectException(\LogicException::class);
         $this->server->registerService(new TestService());
+    }
+
+    public function testRegistrationFreezesServiceModules(): void
+    {
+        $service = new TestService();
+        $server = new Server(new SwooleTableNodeManager(16));
+        $server->registerService($service);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('is frozen');
+        $service->addModule(new EchoModule());
+    }
+
+    public function testRejectsDuplicateModuleRegistration(): void
+    {
+        $service = new TestService();
+        $service->addModule(new EchoModule());
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('already registered');
+        $service->addModule(new EchoModule());
     }
 
     public function testCreatesAssistWorkerProcess(): void
@@ -261,6 +284,24 @@ final class ServerTest extends TestCase
         self::assertSame('Server error.', $response->getMsg());
     }
 
+    public function testThrowingPhpErrorHandlerCannotBreakBusinessErrorResponse(): void
+    {
+        $reported = false;
+        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
+        set_error_handler(static function (int $severity, string $message): never {
+            throw new \ErrorException($message, 0, $severity);
+        });
+        try {
+            $response = $this->server->handle(new Request('Test.Echo.fail'));
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame('Server error.', $response->getMsg());
+        self::assertFalse($reported);
+    }
+
     public function testDefaultServiceExceptionHidesInternalMessage(): void
     {
         $service = new class extends AbstractService {
@@ -327,7 +368,29 @@ final class ServerTest extends TestCase
 
         self::assertInstanceOf(Response::class, $response);
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+        self::assertSame('Illegal RPC request.', $response->getMsg());
         self::assertFalse($reported);
+    }
+
+    public function testNetworkResponseUsesTheSharedApiKeySignature(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key');
+        $server = new Server(
+            new SwooleTableNodeManager(16),
+            securityConfig: $security,
+        );
+        $server->registerService((new TestService())->addModule(new EchoModule()));
+        $request = (new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id'))
+            ->sign($security);
+
+        $response = (new \ReflectionMethod($server, 'handlePacket'))->invoke(
+            $server,
+            Protocol::pack(json_encode($request, JSON_THROW_ON_ERROR)),
+        );
+
+        self::assertInstanceOf(Response::class, $response);
+        $response->verify($security);
+        self::assertSame('request-id', $response->getResponseUUID());
     }
 
     public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void
