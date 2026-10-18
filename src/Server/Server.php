@@ -2,7 +2,6 @@
 
 namespace EasySwoole\Rpc\Server;
 
-use EasySwoole\Component\Process\Manager as ProcessManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Protocol\Request;
@@ -22,6 +21,11 @@ class Server
     private AbstractNodeManager $nodeManager;
 
     private ?AssistWorker $assistWorker = null;
+
+    private bool $hasAttach = false;
+
+    /** @var null|callable(\Throwable): void */
+    private $onException = null;
 
     public function __construct(
         AbstractNodeManager $nodeManager,
@@ -61,13 +65,15 @@ class Server
         return $this->config;
     }
 
-    public function createAssistWorker(?DiscoveryConfig $config = null): AssistWorker
+    public function hasAttach(): bool
     {
-        return new AssistWorker(
-            $this->serviceNodes,
-            $this->nodeManager,
-            $config ?? $this->discoveryConfig,
-        );
+        return $this->hasAttach;
+    }
+
+    public function setOnException(?callable $onException): static
+    {
+        $this->onException = $onException;
+        return $this;
     }
 
     public function getServiceNode(string $serviceName): ?ServiceNode
@@ -122,12 +128,18 @@ class Server
             return $response->setStatus(Response::STATUS_SERVICE_NOT_EXIST);
         }
 
-        return $service->__dispatch($request, $response);
+        try {
+            return $service->__dispatch($request, $response);
+        } catch (\Throwable $throwable) {
+            $response->setStatus(Response::STATUS_SERVICE_ERROR)->setMsg($throwable->getMessage());
+            $this->reportException($throwable);
+            return $response;
+        }
     }
 
     public function attachServer(\Swoole\Server $server, int $maxPackageSize = 2097152): self
     {
-        if ($this->assistWorker !== null) {
+        if ($this->hasAttach) {
             throw new \LogicException('RPC Server is already attached.');
         }
 
@@ -145,16 +157,21 @@ class Server
                 $response = $this->handle($request);
             } catch (\Throwable $throwable) {
                 $response = (new Response(''))->setStatus(Response::STATUS_ILLEGAL_PACKAGE)->setMsg($throwable->getMessage());
+                $this->reportException($throwable);
             }
             $server->send($fd, Protocol::pack((string) $response));
             $server->close($fd);
         });
 
         $this->assertUdpListenAvailable();
-        $this->assistWorker = $this->createAssistWorker();
-        ProcessManager::getInstance()
-            ->addProcess($this->assistWorker)
-            ->attachToServer($server);
+        $this->hasAttach = true;
+        $this->assistWorker = new AssistWorker(
+            $this->serviceNodes,
+            $this->nodeManager,
+            $this->config->heartbeatIntervalMs,
+            $this->discoveryConfig,
+        );
+        $server->addProcess($this->assistWorker->getProcess());
 
         return $this;
     }
@@ -218,6 +235,18 @@ class Server
                 $this->discoveryConfig->listenPort,
                 $error,
             ));
+        }
+    }
+
+    private function reportException(\Throwable $throwable): void
+    {
+        if ($this->onException === null) {
+            return;
+        }
+        try {
+            ($this->onException)($throwable);
+        } catch (\Throwable) {
+            // Exception reporting must never interrupt the RPC response lifecycle.
         }
     }
 

@@ -52,6 +52,7 @@ final class DiscoveryTest extends TestCase
         $worker = new AssistWorker(
             ['Test' => $node],
             $manager,
+            5000,
             new DiscoveryConfig(listen: false, broadcast: false),
         );
 
@@ -75,10 +76,27 @@ final class DiscoveryTest extends TestCase
         self::assertNull($selector->select($manager->getNodes('Test')));
     }
 
+    public function testAssistWorkerShutdownOfflinesLocalNode(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $node = new ServiceNode('Test', nodeId: 'local-node', ip: '127.0.0.1');
+        $manager->online($node);
+        $process = new AssistWorker(
+            ['Test' => $node],
+            $manager,
+            5000,
+            new DiscoveryConfig(listen: false, broadcast: false),
+        );
+
+        (new \ReflectionMethod($process, 'onShutDown'))->invoke($process);
+
+        self::assertSame([], $manager->getNodes('Test'));
+    }
+
     public function testRejectsDatagramWithWrongSecret(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $node = new ServiceNode('Test');
+        $node = new ServiceNode('Test', nodeId: 'node-one');
         DiscoveryMessage::decode(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, 'one'), 'two');
     }
 }

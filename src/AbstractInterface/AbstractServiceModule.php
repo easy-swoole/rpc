@@ -17,8 +17,8 @@ abstract class AbstractServiceModule
                 return $response->setStatus(Response::STATUS_SERVICE_SHUTDOWN);
             }
             $action = $request->getAction();
-            if ($action === null || !$this->isActionAllowed($action)) {
-                return $response->setStatus(Response::STATUS_ACTION_NOT_EXIST);
+            if (!$this->isActionAllowed($action)) {
+                return $this->actionNotFound($request, $response);
             }
             $result = $this->{$action}($request->getArg(), $request);
             if ($result instanceof Response) {
@@ -35,6 +35,10 @@ abstract class AbstractServiceModule
 
     protected function onRequest(Request $request): bool { return true; }
     protected function afterRequest(Request $request, Response $response): void {}
+    protected function actionNotFound(Request $request, Response $response): Response
+    {
+        return $response->setStatus(Response::STATUS_ACTION_NOT_EXIST);
+    }
     protected function onException(\Throwable $throwable, Response $response): void
     {
         $response->setStatus(Response::STATUS_SERVICE_ERROR)->setMsg($throwable->getMessage());

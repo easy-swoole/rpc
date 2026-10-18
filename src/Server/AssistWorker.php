@@ -11,16 +11,16 @@ use Swoole\Coroutine\Socket;
 final class AssistWorker extends AbstractProcess
 {
     private ?Socket $socket = null;
-
     private ?int $heartbeatTimerId = null;
-
+    private ?int $discoveryTimerId = null;
     private bool $running = false;
 
     /** @param array<string, ServiceNode> $serviceNodes */
     public function __construct(
         private readonly array $serviceNodes,
         private readonly AbstractNodeManager $nodeManager,
-        private readonly DiscoveryConfig $config,
+        private readonly int $heartbeatIntervalMs,
+        private readonly DiscoveryConfig $discoveryConfig,
     ) {
         $processConfig = new ProcessConfig();
         $processConfig->setProcessName('rpc-assist-worker');
@@ -33,37 +33,26 @@ final class AssistWorker extends AbstractProcess
     protected function run($arg): void
     {
         $this->onlineServices();
+        $this->heartbeatTimerId = $this->addTick(
+            $this->heartbeatIntervalMs,
+            fn () => $this->heartbeatServices(),
+        );
 
-        if ($this->config->listen || $this->config->broadcast) {
-            $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
-            $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
-            if ($this->config->listen && !$this->socket->bind($this->config->listenAddress, $this->config->listenPort)) {
-                throw new \RuntimeException('Unable to bind RPC discovery UDP socket.');
-            }
+        if (!$this->udpEnabled()) {
+            return;
         }
-        $this->running = true;
 
+        $this->startUdpDiscovery();
         $this->broadcast();
-        $this->heartbeatTimerId = $this->addTick($this->config->heartbeatIntervalMs, function (): void {
-            $this->heartbeatServices();
+        $this->discoveryTimerId = $this->addTick($this->discoveryConfig->broadcastIntervalMs, function (): void {
             if ($this->nodeManager instanceof SwooleTableNodeManager) {
-                $this->nodeManager->prune($this->config->nodeTtlSeconds);
+                $this->nodeManager->prune($this->discoveryConfig->nodeTtlSeconds);
             }
             $this->broadcast();
         });
 
-        if ($this->config->listen) {
-            while ($this->running) {
-                $peer = null;
-                $packet = $this->socket->recvfrom($peer);
-                if (is_string($packet) && $packet !== '') {
-                    try {
-                        self::handlePacket($packet, $this->nodeManager, $this->config->secret);
-                    } catch (\Throwable) {
-                        // Invalid or untrusted discovery datagrams are deliberately ignored.
-                    }
-                }
-            }
+        if ($this->discoveryConfig->listen) {
+            $this->receiveDiscoveryPackets();
         }
     }
 
@@ -75,6 +64,10 @@ final class AssistWorker extends AbstractProcess
         if ($this->heartbeatTimerId !== null) {
             $this->clearTick($this->heartbeatTimerId);
             $this->heartbeatTimerId = null;
+        }
+        if ($this->discoveryTimerId !== null) {
+            $this->clearTick($this->discoveryTimerId);
+            $this->discoveryTimerId = null;
         }
         $this->socket?->close();
         $this->socket = null;
@@ -90,6 +83,37 @@ final class AssistWorker extends AbstractProcess
         $manager->heartbeat($node);
     }
 
+    private function udpEnabled(): bool
+    {
+        return $this->discoveryConfig->listen || $this->discoveryConfig->broadcast;
+    }
+
+    private function startUdpDiscovery(): void
+    {
+        $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
+        $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
+        if ($this->discoveryConfig->listen
+            && !$this->socket->bind($this->discoveryConfig->listenAddress, $this->discoveryConfig->listenPort)) {
+            throw new \RuntimeException('Unable to bind RPC discovery UDP socket.');
+        }
+        $this->running = true;
+    }
+
+    private function receiveDiscoveryPackets(): void
+    {
+        while ($this->running) {
+            $peer = null;
+            $packet = $this->socket?->recvfrom($peer);
+            if (is_string($packet) && $packet !== '') {
+                try {
+                    self::handlePacket($packet, $this->nodeManager, $this->discoveryConfig->secret);
+                } catch (\Throwable) {
+                    // Invalid or untrusted discovery datagrams are deliberately ignored.
+                }
+            }
+        }
+    }
+
     private static function splitAddress(string $address): array
     {
         $position = strrpos($address, ':');
@@ -101,12 +125,12 @@ final class AssistWorker extends AbstractProcess
 
     private function broadcast(string $action = DiscoveryMessage::HEARTBEAT): void
     {
-        if (!$this->config->broadcast || $this->socket === null) {
+        if (!$this->discoveryConfig->broadcast || $this->socket === null) {
             return;
         }
         foreach ($this->serviceNodes as $node) {
-            $packet = DiscoveryMessage::encode($action, $node, $this->config->secret);
-            foreach ($this->config->broadcastAddresses as $address) {
+            $packet = DiscoveryMessage::encode($action, $node, $this->discoveryConfig->secret);
+            foreach ($this->discoveryConfig->broadcastAddresses as $address) {
                 [$host, $port] = self::splitAddress($address);
                 $this->socket->sendto($host, $port, $packet);
             }

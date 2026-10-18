@@ -34,6 +34,12 @@ final class ProtocolTest extends TestCase
         self::assertSame('request-id', $copy->getRequestUUID());
     }
 
+    public function testRequestRequiresServiceModuleActionPath(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new Request('Test.action');
+    }
+
     public function testResponseJsonRoundTrip(): void
     {
         $response = (new Response('response-id'))->setStatus(12)->setResult(['ok' => false])->setMsg('bad');

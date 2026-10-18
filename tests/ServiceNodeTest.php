@@ -7,22 +7,25 @@ use PHPUnit\Framework\TestCase;
 
 final class ServiceNodeTest extends TestCase
 {
-    public function testWithNodeIdReturnsNewImmutableNode(): void
+    public function testNodeIdentitySurvivesSerialization(): void
     {
-        $node = new ServiceNode('User', ip: '127.0.0.1', port: 9601, nodeWeight: 20);
-        $identified = $node->withNodeId('generated');
-        self::assertNotSame($node, $identified);
-        self::assertSame('', $node->getNodeId());
-        self::assertSame('generated', $identified->getNodeId());
-        self::assertSame($node->getServiceName(), $identified->getServiceName());
-        self::assertSame($node->getIp(), $identified->getIp());
-        self::assertSame($node->getPort(), $identified->getPort());
-        self::assertSame($node->getNodeWeight(), $identified->getNodeWeight());
+        $node = new ServiceNode('User', nodeId: 'generated', ip: '127.0.0.1', port: 9601, nodeWeight: 20);
+        $copy = ServiceNode::fromArray($node->jsonSerialize());
+        self::assertNotSame($node, $copy);
+        self::assertSame('generated', $copy->getNodeId());
+        self::assertSame($node->jsonSerialize(), $copy->jsonSerialize());
+    }
+
+    public function testRejectsEmptyNodeId(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Service node ID cannot be empty.');
+        new ServiceNode('User', nodeId: '');
     }
 
     public function testRejectsInvalidConfiguration(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        new ServiceNode('User', port: 0);
+        new ServiceNode('User', nodeId: 'node', port: 0);
     }
 }

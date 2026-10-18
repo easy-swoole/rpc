@@ -24,7 +24,7 @@ final class ClientTest extends TestCase
         };
         $called = false;
         $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))->setTransport($transport);
-        $client->addRequest('Test.echo')->setArg('value')->setOnSuccess(function (Response $response) use (&$called): void {
+        $client->addRequest('Test.Echo.value')->setArg('value')->setOnSuccess(function (Response $response) use (&$called): void {
             $called = $response->getResult() === 'value';
         });
         $responses = $client->exec();
@@ -39,7 +39,7 @@ final class ClientTest extends TestCase
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             { throw new \LogicException('must not be called'); }
         });
-        $client->addRequest('Missing.action');
+        $client->addRequest('Missing.Module.action');
         self::assertSame(Response::STATUS_NOT_AVAILABLE_NODE, $client->exec()[0]->getStatus());
     }
 
@@ -59,7 +59,7 @@ final class ClientTest extends TestCase
             }
         };
         $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(1)))->setTransport($transport);
-        $client->addRequest('Test.echo')->setServiceNode($failed)->enableRetry(1);
+        $client->addRequest('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
         self::assertTrue($client->exec()[0]->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
         self::assertSame(['healthy'], array_map(static fn (ServiceNode $node): string => $node->getNodeId(), $manager->getNodes('Test')));
@@ -76,7 +76,7 @@ final class ClientTest extends TestCase
                 return new Response($request->getRequestUUID());
             }
         });
-        $client->addRequest('Test.echo'); $client->addRequest('Test.echo');
+        $client->addRequest('Test.Echo.value'); $client->addRequest('Test.Echo.value');
         $start = microtime(true);
         self::assertCount(2, $client->exec());
         self::assertLessThan(0.09, microtime(true) - $start);
@@ -95,7 +95,7 @@ final class ClientTest extends TestCase
                         ->setMsg('business failed');
                 }
             });
-        $client->addRequest('Test.echo');
+        $client->addRequest('Test.Echo.value');
         self::assertSame(Response::STATUS_SERVICE_ERROR, $client->exec()[0]->getStatus());
         self::assertCount(1, $manager->getNodes('Test'));
     }
@@ -113,7 +113,7 @@ final class ClientTest extends TestCase
             });
 
         for ($attempt = 1; $attempt <= 3; $attempt++) {
-            $client->addRequest('Test.echo');
+            $client->addRequest('Test.Echo.value');
             self::assertSame(Response::STATUS_CONNECT_TIMEOUT, $client->exec()[0]->getStatus());
             self::assertCount($attempt < 3 ? 1 : 0, $manager->getNodes('Test'));
         }

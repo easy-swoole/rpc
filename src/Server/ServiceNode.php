@@ -6,7 +6,7 @@ final class ServiceNode implements \JsonSerializable
 {
     public function __construct(
         private readonly string $serviceName,
-        private readonly string $nodeId = '',
+        private readonly string $nodeId,
         private readonly string $nodeName = '',
         private readonly int $nodeWeight = 10,
         private readonly string $ip = '',
@@ -15,6 +15,9 @@ final class ServiceNode implements \JsonSerializable
     ) {
         if ($serviceName === '') {
             throw new \InvalidArgumentException('Service name cannot be empty.');
+        }
+        if ($nodeId === '') {
+            throw new \InvalidArgumentException('Service node ID cannot be empty.');
         }
         if ($port < 1 || $port > 65535) {
             throw new \InvalidArgumentException('Service node port must be between 1 and 65535.');
@@ -31,19 +34,6 @@ final class ServiceNode implements \JsonSerializable
     public function getIp(): string { return $this->ip; }
     public function getPort(): int { return $this->port; }
     public function getListenAddress(): string { return $this->listenAddress; }
-
-    public function withNodeId(string $nodeId): self
-    {
-        return new self(
-            serviceName: $this->serviceName,
-            nodeId: $nodeId,
-            nodeName: $this->nodeName,
-            nodeWeight: $this->nodeWeight,
-            ip: $this->ip,
-            port: $this->port,
-            listenAddress: $this->listenAddress,
-        );
-    }
 
     public function jsonSerialize(): array
     {

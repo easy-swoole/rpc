@@ -3,9 +3,13 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Component\Process\AbstractProcess;
+use EasySwoole\Rpc\AbstractInterface\AbstractService;
+use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
+use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Server\Server;
+use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\ServerConfig;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Tests\Fixtures\EchoModule;
@@ -27,9 +31,9 @@ final class ServerTest extends TestCase
         $this->server->registerService((new TestService())->addModule(new EchoModule()));
     }
 
-    public function testDispatchesServiceAction(): void
+    public function testDispatchesModuleAction(): void
     {
-        $response = $this->server->handle(new Request('Test.echo', ['a' => 1], requestUUID: 'id'));
+        $response = $this->server->handle(new Request('Test.Echo.value', ['a' => 1], requestUUID: 'id'));
         self::assertTrue($response->isSuccess());
         self::assertSame(['a' => 1], $response->getResult());
         self::assertSame('id', $response->getResponseUUID());
@@ -61,12 +65,12 @@ final class ServerTest extends TestCase
         $this->server->registerService(new TestService());
     }
 
-    public function testCreatesIndependentAssistProcess(): void
+    public function testCreatesAssistWorkerProcess(): void
     {
-        $worker = $this->server->createAssistWorker(new DiscoveryConfig(listen: false, broadcast: false));
+        $manager = new SwooleTableNodeManager(16);
+        $worker = new AssistWorker([], $manager, 5000, new DiscoveryConfig());
+
         self::assertInstanceOf(AbstractProcess::class, $worker);
-        self::assertInstanceOf(\Swoole\Process::class, $worker->getProcess());
-        self::assertSame($worker->getProcess(), $worker->getProcess());
         self::assertSame('rpc-assist-worker', $worker->getProcessName());
     }
 
@@ -96,14 +100,20 @@ final class ServerTest extends TestCase
         );
 
         $rpcServer->registerService(new TestService());
+        self::assertFalse($rpcServer->hasAttach());
         $rpcServer->attachServer($swooleServer);
 
+        self::assertTrue($rpcServer->hasAttach());
         self::assertCount(2, $swooleServer->ports);
         self::assertSame($rpcPort, $swooleServer->ports[1]->port);
         self::assertInstanceOf(
-            \EasySwoole\Rpc\Server\AssistWorker::class,
+            AssistWorker::class,
             (new \ReflectionProperty($rpcServer, 'assistWorker'))->getValue($rpcServer),
         );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('already attached');
+        $rpcServer->attachServer($swooleServer);
     }
 
     public function testRejectsUnavailableUdpDiscoveryAddressBeforeWorkerStarts(): void
@@ -130,7 +140,7 @@ final class ServerTest extends TestCase
         }
     }
 
-    public function testAssistProcessMarksLocalServicesOfflineDuringShutdown(): void
+    public function testAssistWorkerMarksLocalServicesOfflineDuringShutdown(): void
     {
         $manager = new SwooleTableNodeManager(16);
         $server = new Server($manager);
@@ -138,7 +148,12 @@ final class ServerTest extends TestCase
         $server->onlineService('Test');
         self::assertNotEmpty($manager->getNodes('Test'));
 
-        $worker = $server->createAssistWorker(new DiscoveryConfig(listen: false, broadcast: false));
+        $worker = new AssistWorker(
+            $server->allServiceNodes(),
+            $manager,
+            5000,
+            new DiscoveryConfig(listen: false, broadcast: false),
+        );
         (new \ReflectionMethod($worker, 'onShutDown'))->invoke($worker);
 
         self::assertSame([], $manager->getNodes('Test'));
@@ -166,32 +181,101 @@ final class ServerTest extends TestCase
         $this->server->onlineService('Missing');
     }
 
-    public function testDispatchesLegacyModuleAction(): void
-    {
-        $response = $this->server->handle(new Request('Test.Echo.value', 'hello'));
-        self::assertSame('hello', $response->getResult());
-    }
-
     public function testReturnsPreciseNotFoundStatuses(): void
     {
-        self::assertSame(Response::STATUS_SERVICE_NOT_EXIST, $this->server->handle(new Request('Missing.action'))->getStatus());
+        self::assertSame(Response::STATUS_SERVICE_NOT_EXIST, $this->server->handle(new Request('Missing.Echo.action'))->getStatus());
         self::assertSame(Response::STATUS_MODULE_NOT_EXIST, $this->server->handle(new Request('Test.Missing.action'))->getStatus());
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.missing'))->getStatus());
+        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.missing'))->getStatus());
     }
 
-    public function testOnlyAttributedMethodsAreExposedAsActions(): void
+    public function testServiceOnlyRoutesModulesAndModuleOnlyExposesAttributedActions(): void
     {
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.serviceName'))->getStatus());
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.serviceWeight'))->getStatus());
-        self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.internalHelper'))->getStatus());
         self::assertSame(Response::STATUS_ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.internalHelper'))->getStatus());
     }
 
-    public function testConvertsServiceAndModuleExceptionsToResponses(): void
+    public function testConvertsModuleExceptionsToResponses(): void
     {
-        $service = $this->server->handle(new Request('Test.fail'));
         $module = $this->server->handle(new Request('Test.Echo.fail'));
-        self::assertSame([Response::STATUS_SERVICE_ERROR, 'service failed'], [$service->getStatus(), $service->getMsg()]);
         self::assertSame([Response::STATUS_SERVICE_ERROR, 'module failed'], [$module->getStatus(), $module->getMsg()]);
+    }
+
+    public function testHandledBusinessExceptionIsNotReportedToGlobalServerHandler(): void
+    {
+        $reported = false;
+        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
+
+        $response = $this->server->handle(new Request('Test.Echo.fail'));
+
+        self::assertFalse($reported);
+        self::assertSame('module failed', $response->getMsg());
+    }
+
+    public function testReportsUnhandledExceptionToGlobalServerHandler(): void
+    {
+        $this->registerUnexpectedModule();
+        $reported = null;
+        $this->server->setOnException(function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable->getMessage();
+        });
+
+        $response = $this->server->handle(new Request('Unexpected.Module.execute'));
+
+        self::assertSame('unexpected after-request failure', $reported);
+        self::assertSame(Response::STATUS_SERVICE_ERROR, $response->getStatus());
+    }
+
+    public function testGlobalExceptionHandlerCannotBreakResponseLifecycle(): void
+    {
+        $this->registerUnexpectedModule();
+        $this->server->setOnException(static function (): never {
+            throw new \RuntimeException('logger failed');
+        });
+
+        $response = $this->server->handle(new Request('Unexpected.Module.execute'));
+
+        self::assertSame(Response::STATUS_SERVICE_ERROR, $response->getStatus());
+        self::assertSame('unexpected after-request failure', $response->getMsg());
+    }
+
+    public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Hook'; }
+            protected function moduleNotFound(Request $request, Response $response): Response
+            {
+                return $response->setStatus(Response::STATUS_MODULE_NOT_EXIST)->setMsg('custom module missing');
+            }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Custom'; }
+            protected function actionNotFound(Request $request, Response $response): Response
+            {
+                return $response->setStatus(Response::STATUS_ACTION_NOT_EXIST)->setMsg('custom action missing');
+            }
+        });
+        $this->server->registerService($service);
+
+        $missingModule = $this->server->handle(new Request('Hook.Missing.action'));
+        $missingAction = $this->server->handle(new Request('Hook.Custom.action'));
+
+        self::assertSame('custom module missing', $missingModule->getMsg());
+        self::assertSame('custom action missing', $missingAction->getMsg());
+    }
+
+    private function registerUnexpectedModule(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Unexpected'; }
+            protected function afterRequest(Request $request, Response $response): void
+            {
+                throw new \RuntimeException('unexpected after-request failure');
+            }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Module'; }
+            #[RpcAction]
+            public function execute(): string { return 'ok'; }
+        });
+        $this->server->registerService($service);
     }
 }

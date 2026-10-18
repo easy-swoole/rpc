@@ -4,6 +4,15 @@ namespace EasySwoole\Rpc\AbstractInterface;
 
 use EasySwoole\Rpc\Server\ServiceNode;
 
+/**
+ * Node manager implementations must be safe to use after Swoole forks.
+ *
+ * The same instance is created in the parent process and inherited by server
+ * workers and RPC custom processes. Shared-memory resources may be initialized
+ * before the fork, but process-bound resources such as Redis/Etcd clients,
+ * sockets and coroutine clients must be connected lazily in the child process
+ * and recreated whenever the current PID differs from their owner PID.
+ */
 abstract class AbstractNodeManager
 {
     abstract public function heartbeat(ServiceNode $node): bool;

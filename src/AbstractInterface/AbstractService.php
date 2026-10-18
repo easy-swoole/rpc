@@ -2,7 +2,6 @@
 
 namespace EasySwoole\Rpc\AbstractInterface;
 
-use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 
@@ -18,7 +17,7 @@ abstract class AbstractService
         return 10;
     }
 
-    public function addModule(AbstractServiceModule $module): self
+    public function addModule(AbstractServiceModule $module): static
     {
         $this->modules[$module->moduleName()] = $module;
         return $this;
@@ -30,22 +29,11 @@ abstract class AbstractService
             if (!$this->onRequest($request)) {
                 return $response->setStatus(Response::STATUS_SERVICE_SHUTDOWN);
             }
-            if ($request->getModule() !== null) {
-                $module = $this->modules[$request->getModule()] ?? null;
-                if ($module === null) {
-                    return $response->setStatus(Response::STATUS_MODULE_NOT_EXIST);
-                }
-                return $module->__dispatch($request, $response);
+            $module = $this->modules[$request->getModule()] ?? null;
+            if ($module === null) {
+                return $this->moduleNotFound($request, $response);
             }
-            $action = $request->getAction();
-            if ($action === null || !$this->isActionAllowed($action)) {
-                return $response->setStatus(Response::STATUS_ACTION_NOT_EXIST);
-            }
-            $result = $this->{$action}($request->getArg(), $request);
-            if ($result instanceof Response) {
-                return $result;
-            }
-            $response->setResult($result);
+            return $module->__dispatch($request, $response);
         } catch (\Throwable $throwable) {
             $this->onException($throwable, $response);
         } finally {
@@ -56,18 +44,12 @@ abstract class AbstractService
 
     protected function onRequest(Request $request): bool { return true; }
     protected function afterRequest(Request $request, Response $response): void {}
+    protected function moduleNotFound(Request $request, Response $response): Response
+    {
+        return $response->setStatus(Response::STATUS_MODULE_NOT_EXIST);
+    }
     protected function onException(\Throwable $throwable, Response $response): void
     {
         $response->setStatus(Response::STATUS_SERVICE_ERROR)->setMsg($throwable->getMessage());
     }
-
-    private function isActionAllowed(string $action): bool
-    {
-        if ($action === '' || str_starts_with($action, '__') || !method_exists($this, $action)) {
-            return false;
-        }
-        $method = new \ReflectionMethod($this, $action);
-        return $method->isPublic() && $method->getAttributes(RpcAction::class) !== [];
-    }
-
 }

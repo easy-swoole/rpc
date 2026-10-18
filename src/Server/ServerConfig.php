@@ -10,6 +10,7 @@ final class ServerConfig
         public readonly string $listenAddress = '0.0.0.0',
         public readonly ?int $advertisePort = null,
         public readonly string $nodeName = '',
+        public readonly int $heartbeatIntervalMs = 5000,
     ) {
         self::validatePort($listenPort, 'Listen');
         if ($advertisePort !== null) {
@@ -17,6 +18,9 @@ final class ServerConfig
         }
         if ($advertiseIp === '') {
             throw new \InvalidArgumentException('Advertise IP cannot be empty.');
+        }
+        if ($heartbeatIntervalMs < 1) {
+            throw new \InvalidArgumentException('Heartbeat interval must be at least 1 millisecond.');
         }
     }
 
