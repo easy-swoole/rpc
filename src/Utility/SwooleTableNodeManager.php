@@ -9,8 +9,15 @@ final class SwooleTableNodeManager extends AbstractNodeManager
 {
     private \Swoole\Table $table;
 
-    public function __construct(int $size = 1024, ?\Swoole\Table $table = null)
+    public function __construct(
+        int $size = 1024,
+        ?\Swoole\Table $table = null,
+        private readonly int $nodeTtlSeconds = 15,
+    )
     {
+        if ($nodeTtlSeconds < 1) {
+            throw new \InvalidArgumentException('Node TTL must be at least 1 second.');
+        }
         $this->table = $table ?? new \Swoole\Table($size);
         if ($table === null) {
             $this->table->column('service', \Swoole\Table::TYPE_STRING, 128);
@@ -48,25 +55,18 @@ final class SwooleTableNodeManager extends AbstractNodeManager
     public function getNodes(string $serviceName): array
     {
         $nodes = [];
-        foreach ($this->table as $row) {
+        $deadline = time() - $this->nodeTtlSeconds;
+        foreach ($this->table as $key => $row) {
+            if ($row['heartbeat'] < $deadline) {
+                $this->table->del((string) $key);
+                continue;
+            }
             if ($row['service'] !== $serviceName) {
                 continue;
             }
             $nodes[] = ServiceNode::fromArray(json_decode($row['node'], true, 512, JSON_THROW_ON_ERROR));
         }
         return $nodes;
-    }
-
-    public function prune(int $maxIdleSeconds): int
-    {
-        $removed = 0;
-        $deadline = time() - $maxIdleSeconds;
-        foreach ($this->table as $key => $row) {
-            if ($row['heartbeat'] < $deadline && $this->table->del((string) $key)) {
-                $removed++;
-            }
-        }
-        return $removed;
     }
 
     private function key(ServiceNode $node): string

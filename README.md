@@ -279,7 +279,7 @@ $rpc = new Rpc(
 `attachServer()` 只挂载一个 `AssistWorker` 进程，但进程内部保持两组独立职责：
 
 - 本机节点生命周期始终启用，负责上线、定时心跳和关闭下线；
-- UDP 服务发现仅在开启 `listen` 或 `broadcast` 时启用，负责广播、接收远端节点、清理过期节点和广播下线。
+- UDP 服务发现仅在开启 `listen` 或 `broadcast` 时启用，负责广播、接收远端节点和广播下线。
 
 本机节点心跳周期属于 `ServerConfig`：
 
@@ -317,7 +317,6 @@ $rpc = new Rpc(
                 '192.168.1.20:9701',
             ],
             broadcastIntervalMs: 5000,
-            nodeTtlSeconds: 15,
             secret: 'replace-with-a-shared-secret',
         ),
     ),
@@ -330,6 +329,14 @@ $server->start();
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
 每个参与服务发现的实例必须使用相同的 `secret`。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+
+节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
+
+```php
+$nodeManager = new SwooleTableNodeManager(nodeTtlSeconds: 30);
+```
+
+自定义 NodeManager 也必须在 `getNodes()` 中只返回当前可用节点。例如 Redis 实现可以依赖键 TTL，Etcd 实现可以依赖 lease，而不需要 `AssistWorker` 识别或清理具体存储。
 
 纯客户端网关可以配置为只监听、不广播，用来接收服务节点：
 

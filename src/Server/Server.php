@@ -39,6 +39,10 @@ class Server
 
     public function registerService(AbstractService $service): void
     {
+        if ($this->hasAttach) {
+            throw new \LogicException('Services cannot be registered after the RPC Server is attached.');
+        }
+
         $serviceName = $service->serviceName();
         if (isset($this->service[$serviceName])) {
             throw new \LogicException(sprintf('Service "%s" is already registered.', $serviceName));

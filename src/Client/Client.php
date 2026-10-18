@@ -62,6 +62,7 @@ final class Client
         $service = explode('.', $context->getRequestPath(), 2)[0];
         $attempt = 0;
         do {
+            $shouldRetry = false;
             $node = $context->getServiceNode()
                 ?? $this->nodeSelector->select($this->nodeManager->getNodes($service));
             if ($node === null) {
@@ -82,9 +83,10 @@ final class Client
             }
             if ($failureAction !== NodeFailureAction::KEEP) {
                 $context->setServiceNode(null);
+                $shouldRetry = true;
             }
             $attempt++;
-        } while (!$response->isSuccess() && $attempt <= $context->getRetryTimes());
+        } while ($shouldRetry && $attempt <= $context->getRetryTimes());
         $context->notify($response);
         return $response;
     }

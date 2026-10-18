@@ -111,6 +111,13 @@ final class ServerTest extends TestCase
             (new \ReflectionProperty($rpcServer, 'assistWorker'))->getValue($rpcServer),
         );
 
+        try {
+            $rpcServer->registerService(new WeightedService());
+            self::fail('Services must not be registered after the RPC Server is attached.');
+        } catch (\LogicException $exception) {
+            self::assertStringContainsString('cannot be registered after', $exception->getMessage());
+        }
+
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('already attached');
         $rpcServer->attachServer($swooleServer);

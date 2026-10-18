@@ -86,17 +86,22 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
+        $transport = new class implements TransportInterface {
+            public int $calls = 0;
+
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                $this->calls++;
+                return (new Response($request->getRequestUUID()))
+                    ->setStatus(Response::STATUS_SERVICE_ERROR)
+                    ->setMsg('business failed');
+            }
+        };
         $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
-            ->setTransport(new class implements TransportInterface {
-                public function send(ServiceNode $node, Request $request, float $timeout): Response
-                {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(Response::STATUS_SERVICE_ERROR)
-                        ->setMsg('business failed');
-                }
-            });
-        $client->addRequest('Test.Echo.value');
+            ->setTransport($transport);
+        $client->addRequest('Test.Echo.value')->enableRetry(3);
         self::assertSame(Response::STATUS_SERVICE_ERROR, $client->exec()[0]->getStatus());
+        self::assertSame(1, $transport->calls);
         self::assertCount(1, $manager->getNodes('Test'));
     }
 

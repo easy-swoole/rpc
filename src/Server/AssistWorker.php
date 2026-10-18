@@ -5,7 +5,6 @@ namespace EasySwoole\Rpc\Server;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
-use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use Swoole\Coroutine\Socket;
 
 final class AssistWorker extends AbstractProcess
@@ -43,13 +42,13 @@ final class AssistWorker extends AbstractProcess
         }
 
         $this->startUdpDiscovery();
-        $this->broadcast();
-        $this->discoveryTimerId = $this->addTick($this->discoveryConfig->broadcastIntervalMs, function (): void {
-            if ($this->nodeManager instanceof SwooleTableNodeManager) {
-                $this->nodeManager->prune($this->discoveryConfig->nodeTtlSeconds);
-            }
+        if ($this->discoveryConfig->broadcast) {
             $this->broadcast();
-        });
+            $this->discoveryTimerId = $this->addTick(
+                $this->discoveryConfig->broadcastIntervalMs,
+                fn () => $this->broadcast(),
+            );
+        }
 
         if ($this->discoveryConfig->listen) {
             $this->receiveDiscoveryPackets();
