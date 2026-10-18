@@ -21,8 +21,6 @@ class Server
 
     private AbstractNodeManager $nodeManager;
 
-    private ?AssistWorker $assistWorker = null;
-
     private bool $hasAttach = false;
 
     /** @var null|callable(\Throwable): void */
@@ -159,13 +157,13 @@ class Server
 
         $this->assertUdpListenAvailable();
         $this->hasAttach = true;
-        $this->assistWorker = new AssistWorker(
+        $assistWorker = new AssistWorker(
             $this->serviceNodes,
             $this->nodeManager,
             $this->config->heartbeatIntervalMs,
             $this->discoveryConfig,
         );
-        $server->addProcess($this->assistWorker->getProcess());
+        $server->addProcess($assistWorker->getProcess());
 
         return $this;
     }
