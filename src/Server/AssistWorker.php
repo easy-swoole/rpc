@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
@@ -20,6 +21,7 @@ final class AssistWorker extends AbstractProcess
         private readonly AbstractNodeManager $nodeManager,
         private readonly int $heartbeatIntervalMs,
         private readonly DiscoveryConfig $discoveryConfig,
+        private readonly SecurityConfig $securityConfig = new SecurityConfig(),
     ) {
         $processConfig = new ProcessConfig();
         $processConfig->setProcessName('rpc-assist-worker');
@@ -72,9 +74,13 @@ final class AssistWorker extends AbstractProcess
         $this->socket = null;
     }
 
-    public static function handlePacket(string $packet, AbstractNodeManager $manager, ?string $secret = null): void
+    public static function handlePacket(
+        string $packet,
+        AbstractNodeManager $manager,
+        SecurityConfig $securityConfig = new SecurityConfig(),
+    ): void
     {
-        [$action, $node] = DiscoveryMessage::decode($packet, $secret);
+        [$action, $node] = DiscoveryMessage::decode($packet, $securityConfig);
         if ($action === DiscoveryMessage::OFFLINE) {
             $manager->offline($node);
             return;
@@ -105,7 +111,7 @@ final class AssistWorker extends AbstractProcess
             $packet = $this->socket?->recvfrom($peer);
             if (is_string($packet) && $packet !== '') {
                 try {
-                    self::handlePacket($packet, $this->nodeManager, $this->discoveryConfig->secret);
+                    self::handlePacket($packet, $this->nodeManager, $this->securityConfig);
                 } catch (\Throwable) {
                     // Invalid or untrusted discovery datagrams are deliberately ignored.
                 }
@@ -128,7 +134,7 @@ final class AssistWorker extends AbstractProcess
             return;
         }
         foreach ($this->serviceNodes as $node) {
-            $packet = DiscoveryMessage::encode($action, $node, $this->discoveryConfig->secret);
+            $packet = DiscoveryMessage::encode($action, $node, $this->securityConfig);
             foreach ($this->discoveryConfig->broadcastAddresses as $address) {
                 [$host, $port] = self::splitAddress($address);
                 $this->socket->sendto($host, $port, $packet);

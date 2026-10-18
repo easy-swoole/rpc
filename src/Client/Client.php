@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Client;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
@@ -20,6 +21,7 @@ final class Client
         private readonly AbstractNodeManager $nodeManager,
         private readonly NodeSelectorInterface $nodeSelector,
         private readonly NodeFailurePolicyInterface $failurePolicy,
+        private readonly SecurityConfig $securityConfig = new SecurityConfig(),
     ) {}
     public function setTransport(TransportInterface $transport): self { $this->transport = $transport; return $this; }
     public function addRequest(string $path): RequestContext
@@ -71,7 +73,8 @@ final class Client
                 break;
             }
             $context->setServiceNode($node);
-            $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
+            $request = (new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg()))
+                ->sign($this->securityConfig);
             try {
                 $response = $this->transport->send($node, $request, $timeout);
             } catch (TransportException $throwable) {

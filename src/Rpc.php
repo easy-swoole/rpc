@@ -19,6 +19,7 @@ class Rpc
             $this->dependencies->getNodeManager(),
             $this->config->getServer(),
             $this->config->getDiscovery(),
+            $this->config->getSecurity(),
         );
     }
 
@@ -38,6 +39,7 @@ class Rpc
             $this->getNodeManager(),
             $this->dependencies->getNodeSelector(),
             $this->dependencies->getFailurePolicy(),
+            $this->config->getSecurity(),
         ))->setTransport($this->dependencies->getTransport());
     }
 

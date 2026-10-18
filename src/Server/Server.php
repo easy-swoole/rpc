@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Protocol\Request;
@@ -21,7 +22,9 @@ class Server
 
     private AbstractNodeManager $nodeManager;
 
-    private bool $hasAttach = false;
+    private ServerAttachStatus $attachStatus = ServerAttachStatus::PENDING;
+
+    private ?AssistWorker $assistWorker = null;
 
     /** @var null|callable(\Throwable): void */
     private $onException = null;
@@ -30,6 +33,7 @@ class Server
         AbstractNodeManager $nodeManager,
         private readonly ServerConfig $config = new ServerConfig(),
         private readonly DiscoveryConfig $discoveryConfig = new DiscoveryConfig(),
+        private readonly SecurityConfig $securityConfig = new SecurityConfig(),
     )
     {
         $this->nodeManager = $nodeManager;
@@ -38,8 +42,8 @@ class Server
 
     public function registerService(AbstractService $service): void
     {
-        if ($this->hasAttach) {
-            throw new \LogicException('Services cannot be registered after the RPC Server is attached.');
+        if ($this->attachStatus !== ServerAttachStatus::PENDING) {
+            throw new \LogicException('Services cannot be registered after RPC Server attachment has started.');
         }
 
         $serviceName = $service->serviceName();
@@ -70,7 +74,12 @@ class Server
 
     public function hasAttach(): bool
     {
-        return $this->hasAttach;
+        return $this->attachStatus === ServerAttachStatus::ATTACHED;
+    }
+
+    public function getAttachStatus(): ServerAttachStatus
+    {
+        return $this->attachStatus;
     }
 
     public function setOnException(?callable $onException): static
@@ -137,33 +146,46 @@ class Server
 
     public function attachServer(\Swoole\Server $server, int $maxPackageSize = 2097152): self
     {
-        if ($this->hasAttach) {
+        if ($this->attachStatus === ServerAttachStatus::ATTACHED) {
             throw new \LogicException('RPC Server is already attached.');
         }
+        if ($this->attachStatus !== ServerAttachStatus::PENDING) {
+            throw new \LogicException(sprintf(
+                'RPC Server attachment cannot be attempted again after status %s.',
+                $this->attachStatus->name,
+            ));
+        }
+        $this->attachStatus = ServerAttachStatus::ATTACHING;
 
-        $listener = $this->resolveListener($server);
-        $listener->set([
-            'open_length_check' => true,
-            'package_length_type' => 'N',
-            'package_length_offset' => 0,
-            'package_body_offset' => 4,
-            'package_max_length' => $maxPackageSize,
-        ]);
-        $listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
-            $response = $this->handlePacket($packet);
-            $server->send($fd, Protocol::pack((string) $response));
-            $server->close($fd);
-        });
+        try {
+            if ($maxPackageSize < 4) {
+                throw new \InvalidArgumentException('Maximum package size must be at least 4 bytes.');
+            }
 
-        $this->assertUdpListenAvailable();
-        $this->hasAttach = true;
-        $assistWorker = new AssistWorker(
-            $this->serviceNodes,
-            $this->nodeManager,
-            $this->config->heartbeatIntervalMs,
-            $this->discoveryConfig,
-        );
-        $server->addProcess($assistWorker->getProcess());
+            // Prepare: all checks and object construction happen before mutating the Swoole server.
+            $this->assertListenerAvailable($server);
+            $this->assertUdpListenAvailable();
+            $assistWorker = new AssistWorker(
+                $this->serviceNodes,
+                $this->nodeManager,
+                $this->config->heartbeatIntervalMs,
+                $this->discoveryConfig,
+                $this->securityConfig,
+            );
+
+            // Commit: Swoole has no listener/process rollback API. A commit failure is terminal.
+            $listener = $this->createListener($server);
+            $this->configureListener($listener, $maxPackageSize);
+            if ($server->addProcess($assistWorker->getProcess()) === false) {
+                throw new \RuntimeException('Unable to attach the RPC assist worker process.');
+            }
+
+            $this->assistWorker = $assistWorker;
+            $this->attachStatus = ServerAttachStatus::ATTACHED;
+        } catch (\Throwable $throwable) {
+            $this->attachStatus = ServerAttachStatus::FAILED;
+            throw $throwable;
+        }
 
         return $this;
     }
@@ -171,7 +193,7 @@ class Server
     private function handlePacket(string $packet): Response
     {
         try {
-            $request = Request::fromJson(Protocol::unpack($packet));
+            $request = Request::fromJson(Protocol::unpack($packet), $this->securityConfig);
         } catch (\Throwable $throwable) {
             return (new Response(''))
                 ->setStatus(ResponseStatus::ILLEGAL_PACKAGE)
@@ -181,7 +203,7 @@ class Server
         return $this->handle($request);
     }
 
-    private function resolveListener(\Swoole\Server $server): Port
+    private function assertListenerAvailable(\Swoole\Server $server): void
     {
         foreach ($server->ports as $listener) {
             if ((int) $listener->port === $this->config->listenPort) {
@@ -191,7 +213,10 @@ class Server
                 ));
             }
         }
+    }
 
+    private function createListener(\Swoole\Server $server): Port
+    {
         $listener = $server->addListener(
             $this->config->listenAddress,
             $this->config->listenPort,
@@ -205,6 +230,24 @@ class Server
             ));
         }
         return $listener;
+    }
+
+    private function configureListener(Port $listener, int $maxPackageSize): void
+    {
+        $listener->set([
+            'open_length_check' => true,
+            'package_length_type' => 'N',
+            'package_length_offset' => 0,
+            'package_body_offset' => 4,
+            'package_max_length' => $maxPackageSize,
+        ]);
+        if (!$listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
+            $response = $this->handlePacket($packet);
+            $server->send($fd, Protocol::pack((string) $response));
+            $server->close($fd);
+        })) {
+            throw new \RuntimeException('Unable to register the RPC receive callback.');
+        }
     }
 
     private function assertUdpListenAvailable(): void

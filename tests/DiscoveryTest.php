@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
@@ -65,9 +66,10 @@ final class DiscoveryTest extends TestCase
         $manager = new SwooleTableNodeManager(16);
         $selector = new WeightedRandomNodeSelector();
         $node = new ServiceNode('Test', nodeId: 'node-one', ip: '127.0.0.1');
-        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, 'secret'), $manager, 'secret');
+        $security = new SecurityConfig(apiKey: 'secret');
+        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, $security), $manager, $security);
         self::assertSame('node-one', $selector->select($manager->getNodes('Test'))?->getNodeId());
-        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::OFFLINE, $node, 'secret'), $manager, 'secret');
+        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::OFFLINE, $node, $security), $manager, $security);
         self::assertNull($selector->select($manager->getNodes('Test')));
     }
 
@@ -92,6 +94,22 @@ final class DiscoveryTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         $node = new ServiceNode('Test', nodeId: 'node-one');
-        DiscoveryMessage::decode(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, 'one'), 'two');
+        DiscoveryMessage::decode(
+            DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, new SecurityConfig(apiKey: 'one')),
+            new SecurityConfig(apiKey: 'two'),
+        );
+    }
+
+    public function testRejectsExpiredDiscoveryMessage(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('timestamp');
+        $security = new SecurityConfig(apiKey: 'secret', timestampToleranceSeconds: 10);
+        $node = new ServiceNode('Test', nodeId: 'node-one');
+
+        DiscoveryMessage::decode(
+            DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, $security, time() - 11),
+            $security,
+        );
     }
 }

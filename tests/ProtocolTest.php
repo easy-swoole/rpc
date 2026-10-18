@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
@@ -55,5 +56,31 @@ final class ProtocolTest extends TestCase
         $response = Response::fromJson('{"status":9999,"responseUUID":"id"}');
 
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+    }
+
+    public function testSignedRequestRoundTripAndTamperDetection(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key');
+        $request = (new Request('Test.Echo.value', ['id' => 1], requestUUID: 'request-id'))
+            ->sign($security);
+        $json = json_encode($request, JSON_THROW_ON_ERROR);
+
+        self::assertSame('request-id', Request::fromJson($json, $security)->getRequestUUID());
+
+        $tampered = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        $tampered['arg']['id'] = 2;
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('signature');
+        Request::fromJson(json_encode($tampered, JSON_THROW_ON_ERROR), $security);
+    }
+
+    public function testRejectsExpiredSignedRequest(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key', timestampToleranceSeconds: 10);
+        $request = (new Request('Test.Echo.value'))->sign($security, time() - 11);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('timestamp');
+        Request::fromJson(json_encode($request, JSON_THROW_ON_ERROR), $security);
     }
 }

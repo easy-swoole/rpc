@@ -11,6 +11,7 @@ use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
+use EasySwoole\Rpc\Server\ServerAttachStatus;
 use EasySwoole\Rpc\Server\ServerConfig;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Tests\Fixtures\EchoModule;
@@ -87,11 +88,35 @@ final class ServerTest extends TestCase
         );
 
         try {
-            (new \ReflectionMethod($conflictingRpcServer, 'resolveListener'))->invoke($conflictingRpcServer, $swooleServer);
+            $conflictingRpcServer->attachServer($swooleServer);
             self::fail('An existing Swoole listener must not be reused implicitly for RPC.');
         } catch (\LogicException $exception) {
             self::assertStringContainsString('already registered', $exception->getMessage());
         }
+        self::assertSame(ServerAttachStatus::FAILED, $conflictingRpcServer->getAttachStatus());
+        self::assertCount(1, $swooleServer->ports);
+
+        $errno = 0;
+        $error = '';
+        $occupied = stream_socket_server('udp://127.0.0.1:0', $errno, $error, STREAM_SERVER_BIND);
+        self::assertIsResource($occupied, $error);
+        $address = stream_socket_get_name($occupied, false);
+        self::assertIsString($address);
+        $udpPort = (int) substr($address, strrpos($address, ':') + 1);
+        $failedRpcServer = new Server(
+            new SwooleTableNodeManager(16),
+            new ServerConfig(listenAddress: '127.0.0.1', listenPort: $rpcPort),
+            new DiscoveryConfig(listen: true, listenAddress: '127.0.0.1', listenPort: $udpPort, broadcast: false),
+        );
+        try {
+            $failedRpcServer->attachServer($swooleServer);
+            self::fail('Unavailable UDP discovery must fail before the RPC listener is created.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('Unable to listen on RPC discovery UDP address', $exception->getMessage());
+        } finally {
+            fclose($occupied);
+        }
+        self::assertSame(ServerAttachStatus::FAILED, $failedRpcServer->getAttachStatus());
         self::assertCount(1, $swooleServer->ports);
 
         $rpcServer = new Server(
@@ -102,9 +127,11 @@ final class ServerTest extends TestCase
 
         $rpcServer->registerService(new TestService());
         self::assertFalse($rpcServer->hasAttach());
+        self::assertSame(ServerAttachStatus::PENDING, $rpcServer->getAttachStatus());
         $rpcServer->attachServer($swooleServer);
 
         self::assertTrue($rpcServer->hasAttach());
+        self::assertSame(ServerAttachStatus::ATTACHED, $rpcServer->getAttachStatus());
         self::assertCount(2, $swooleServer->ports);
         self::assertSame($rpcPort, $swooleServer->ports[1]->port);
         self::assertInstanceOf(

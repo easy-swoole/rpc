@@ -165,7 +165,7 @@ Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处�
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
-assist-worker 通过当前 `$server->addProcess()` 直接挂载，不进入 `ProcessManager` 的全局待挂载列表，避免多个 Server 或多个 RPC 实例之间重复添加进程。`$rpc->server()->hasAttach()` 可用于判断当前 RPC Server 是否已经执行过挂载；重复调用 `attachServer()` 会抛出异常。
+assist-worker 通过当前 `$server->addProcess()` 直接挂载，不进入 `ProcessManager` 的全局待挂载列表，避免多个 Server 或多个 RPC 实例之间重复添加进程。`attachServer()` 先完成端口、UDP 和进程对象预检，再统一提交 listener 与进程挂载。状态可通过 `getAttachStatus()` 获取，包含 `PENDING`、`ATTACHING`、`ATTACHED` 和 `FAILED`；`hasAttach()` 仅在状态为 `ATTACHED` 时返回 `true`。每个 RPC Server 只允许尝试挂载一次，失败后不能在可能存在部分外部资源的同一个实例上重试。
 
 ### 挂载到已有 Server 的子监听
 
@@ -303,6 +303,7 @@ $discoveryConfig = new DiscoveryConfig(
 ```php
 use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\RpcConfig;
+use EasySwoole\Rpc\SecurityConfig;
 
 $rpc = new Rpc(
     config: new RpcConfig(
@@ -317,7 +318,10 @@ $rpc = new Rpc(
                 '192.168.1.20:9701',
             ],
             broadcastIntervalMs: 5000,
-            secret: 'replace-with-a-shared-secret',
+        ),
+        security: new SecurityConfig(
+            apiKey: 'replace-with-a-shared-api-key',
+            timestampToleranceSeconds: 30,
         ),
     ),
 );
@@ -328,7 +332,7 @@ $server->start();
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
-每个参与服务发现的实例必须使用相同的 `secret`。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+`SecurityConfig` 是 RPC 请求与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求体和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 
@@ -346,8 +350,8 @@ $rpc = new Rpc(config: new RpcConfig(
         listen: true,
         listenPort: 9702,
         broadcast: false,
-        secret: 'replace-with-a-shared-secret',
     ),
+    security: new SecurityConfig(apiKey: 'replace-with-a-shared-api-key'),
 ));
 $rpc->server()->attachServer($gatewayServer);
 ```
