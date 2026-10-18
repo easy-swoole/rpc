@@ -1,8 +1,9 @@
 <?php
 
-namespace EasySwoole\Rpc\Client;
+namespace EasySwoole\Rpc\Utility;
 
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
+use EasySwoole\Rpc\Client\NodeFailureAction;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\ServiceNode;

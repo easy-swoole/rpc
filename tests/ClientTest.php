@@ -3,7 +3,6 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\Client\Client;
-use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
 use EasySwoole\Rpc\Client\TransportException;
 use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\Request;
@@ -12,6 +11,7 @@ use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
+use EasySwoole\Rpc\Utility\ConsecutiveFailurePolicy;
 use PHPUnit\Framework\TestCase;
 
 final class ClientTest extends TestCase

@@ -6,10 +6,10 @@ use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
 use EasySwoole\Rpc\AbstractInterface\TransportInterface;
-use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
 use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
+use EasySwoole\Rpc\Utility\ConsecutiveFailurePolicy;
 
 final class RpcDependencies
 {

@@ -264,7 +264,7 @@ $client->addRequest('User.Profile.detail')->setArg(['id' => 1001]);
 可以调整连续失败阈值，或注入自己的策略：
 
 ```php
-use EasySwoole\Rpc\Client\ConsecutiveFailurePolicy;
+use EasySwoole\Rpc\Utility\ConsecutiveFailurePolicy;
 use EasySwoole\Rpc\RpcDependencies;
 
 $rpc = new Rpc(
