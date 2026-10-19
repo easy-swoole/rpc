@@ -14,8 +14,13 @@ final class ProtocolCodec
     public function decodeRequest(string $json): Request
     {
         $payload = $this->decode($json);
-        $path = implode('.', array_filter([$payload['service'] ?? null, $payload['module'] ?? null, $payload['action'] ?? null], static fn ($v) => $v !== null));
-        return new Request($path, $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID'] ?? null);
+        foreach (['service', 'module', 'action', 'requestUUID'] as $field) {
+            if (!isset($payload[$field]) || !is_string($payload[$field]) || $payload[$field] === '') {
+                throw new RpcException(sprintf('RPC request contains an invalid %s.', $field));
+            }
+        }
+        $path = implode('.', [$payload['service'], $payload['module'], $payload['action']]);
+        return new Request($path, $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID']);
     }
 
     public function decodeResponse(string $json): Response

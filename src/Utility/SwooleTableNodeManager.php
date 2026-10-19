@@ -38,6 +38,11 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         return $this->online($node);
     }
 
+    public function nodeTtlSeconds(): ?int
+    {
+        return $this->nodeTtlSeconds;
+    }
+
     public function online(ServiceNode $node): bool
     {
         if (strlen($node->getServiceName()) > self::SERVICE_COLUMN_BYTES) {

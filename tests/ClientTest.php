@@ -125,6 +125,79 @@ final class ClientTest extends TestCase
         self::assertSame(['healthy'], array_map(static fn (ServiceNode $node): string => $node->getNodeId(), $manager->getNodes('Test')));
     }
 
+    public function testRetryExcludesPreviousNodeWhenAnotherNodeIsAvailable(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $failed = new ServiceNode('Test', nodeId: 'failed');
+        $healthy = new ServiceNode('Test', nodeId: 'healthy');
+        $manager->online($failed);
+        $manager->online($healthy);
+        $transport = new class extends TcpTransport {
+            public array $visited = [];
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                $this->visited[] = $node->getNodeId();
+                if ($node->getNodeId() === 'failed') {
+                    return (new Response($request->getRequestUUID()))
+                        ->setStatus(ResponseStatus::TRANSPORT_ERROR)
+                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                }
+                return (new Response($request->getRequestUUID()))->setResult('ok');
+            }
+        };
+        $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
+
+        self::assertTrue($batch->exec()[0]->isSuccess());
+        self::assertSame(['failed', 'healthy'], $transport->visited);
+        self::assertCount(2, $manager->getNodes('Test'));
+    }
+
+    public function testRetryCanReuseTheOnlyAvailableNode(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $node = new ServiceNode('Test', nodeId: 'only');
+        $manager->online($node);
+        $transport = new class extends TcpTransport {
+            public array $visited = [];
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                $this->visited[] = $node->getNodeId();
+                return (new Response($request->getRequestUUID()))
+                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
+                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+            }
+        };
+        $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->enableRetry(1);
+
+        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $batch->exec()[0]->getStatus());
+        self::assertSame(['only', 'only'], $transport->visited);
+    }
+
+    public function testRetryPreservesLastFailureWhenOfflineLeavesNoNode(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $node = new ServiceNode('Test', nodeId: 'only');
+        $manager->online($node);
+        $client = $this->client($manager, new ConsecutiveFailurePolicy(1), new class extends TcpTransport {
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                return (new Response($request->getRequestUUID()))
+                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
+                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+            }
+        });
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->enableRetry(1);
+
+        $response = $batch->exec()[0];
+        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
+        self::assertNotSame('', $response->getRequestUUID());
+    }
+
     public function testExecutesQueuedRequestsConcurrently(): void
     {
         $manager = new SwooleTableNodeManager(16);

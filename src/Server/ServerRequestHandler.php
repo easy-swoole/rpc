@@ -19,8 +19,11 @@ final class ServerRequestHandler
         $response = new Response($request->getRequestUUID());
         $service = $this->registry->find($request->getService());
         if ($service === null) { return $response->setStatus(ResponseStatus::SERVICE_NOT_EXIST); }
-        try { return $service->__dispatch($request, $response); }
-        catch (\Throwable $throwable) {
+        try {
+            // Response 由请求处理器创建和返回，Service/Module 只负责修改其内容。
+            $service->__dispatch($request, $response);
+            return $response;
+        } catch (\Throwable $throwable) {
             $response->setStatus(ResponseStatus::SERVICE_ERROR)->setNodeHealthStatus(NodeHealthStatus::SUSPECT)->setMsg('Server error.');
             $this->report($throwable);
             return $response;

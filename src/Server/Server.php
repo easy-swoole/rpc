@@ -26,7 +26,8 @@ final class Server
         ProtocolConfig $protocolConfig = new ProtocolConfig(),
         RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
     ) {
-        $this->registry = new ServiceRegistry($nodeManager, $config, self::uuid());
+        // 显式 nodeId 可在实例重启后覆盖旧记录；未配置时为当前 Server 自动生成 UUID。
+        $this->registry = new ServiceRegistry($nodeManager, $config, $config->nodeId ?? self::uuid());
         $this->handler = new ServerRequestHandler(
             $this->registry,
             new ProtocolCodec(new PayloadSigner($securityConfig)),

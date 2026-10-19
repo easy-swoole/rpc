@@ -26,6 +26,9 @@ final class Request implements \JsonSerializable
         $this->action = $parts[2];
         $this->arg = $arg;
         $this->clientArg = $clientArg;
+        if ($requestUUID === '') {
+            throw new RpcException('Request UUID cannot be empty.');
+        }
         $this->requestUUID = $requestUUID ?? self::uuid();
     }
 

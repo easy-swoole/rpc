@@ -11,6 +11,7 @@ final class ServerConfig
         public readonly int $listenPort = 9502,
         public readonly string $listenAddress = '0.0.0.0',
         public readonly ?int $advertisePort = null,
+        public readonly ?string $nodeId = null,
         public readonly string $nodeName = '',
         public readonly int $heartbeatIntervalMs = 5000,
     ) {
@@ -20,6 +21,9 @@ final class ServerConfig
         }
         if ($advertiseIp === '') {
             throw new RpcException('Advertise IP cannot be empty.');
+        }
+        if ($nodeId === '') {
+            throw new RpcException('Server node ID cannot be empty when configured.');
         }
         if ($heartbeatIntervalMs < 1) {
             throw new RpcException('Heartbeat interval must be at least 1 millisecond.');

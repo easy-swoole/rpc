@@ -13,6 +13,9 @@ use EasySwoole\Rpc\Server\ServiceNode;
  */
 abstract class AbstractNodeManager
 {
+    /** 返回节点过期秒数；不使用 TTL 的实现返回 null。 */
+    public function nodeTtlSeconds(): ?int { return null; }
+
     /**
      * 注册中心暂时不可用等运行失败应返回 false，而不是抛出异常。调用方会记录失败并继续正常的
      * 心跳或重试周期，使节点能够在网络恢复后自动恢复。

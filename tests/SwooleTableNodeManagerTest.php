@@ -11,6 +11,11 @@ use PHPUnit\Framework\TestCase;
 
 final class SwooleTableNodeManagerTest extends TestCase
 {
+    public function testExposesNodeTtlForServerIntervalValidation(): void
+    {
+        self::assertSame(30, (new SwooleTableNodeManager(nodeTtlSeconds: 30))->nodeTtlSeconds());
+    }
+
     public function testStoresNodesInSharedTable(): void
     {
         $manager = new SwooleTableNodeManager(16);

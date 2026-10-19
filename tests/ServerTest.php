@@ -60,6 +60,17 @@ final class ServerTest extends TestCase
         self::assertSame($node, $this->server->allServiceNodes()['Test']);
     }
 
+    public function testUsesConfiguredStableNodeId(): void
+    {
+        $server = new Server(
+            new SwooleTableNodeManager(16),
+            new ServerConfig(nodeId: 'stable-node-id'),
+        );
+        $server->registerService(new TestService());
+
+        self::assertSame('stable-node-id', $server->getServiceNode('Test')?->getNodeId());
+    }
+
     public function testWeightIsDeclaredByService(): void
     {
         $server = new Server(new SwooleTableNodeManager(16), new ServerConfig(nodeName: 'default'));
@@ -133,6 +144,40 @@ final class ServerTest extends TestCase
     {
         $this->expectException(RpcException::class);
         new AssistWorkerConfig(heartbeatIntervalMs: 0);
+    }
+
+    public function testServerConfigRejectsExplicitEmptyNodeId(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('node ID cannot be empty');
+        new ServerConfig(nodeId: '');
+    }
+
+    public function testRejectsHeartbeatIntervalThatCanOutliveNodeTtl(): void
+    {
+        $server = new Server(
+            new SwooleTableNodeManager(16, nodeTtlSeconds: 5),
+            new ServerConfig(heartbeatIntervalMs: 5000),
+        );
+        $attacher = (new \ReflectionProperty($server, 'attacher'))->getValue($server);
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('greater than the heartbeat interval');
+        (new \ReflectionMethod($attacher, 'assertNodeTtlIntervals'))->invoke($attacher);
+    }
+
+    public function testRejectsBroadcastIntervalThatCanOutliveNodeTtl(): void
+    {
+        $server = new Server(
+            new SwooleTableNodeManager(16, nodeTtlSeconds: 5),
+            new ServerConfig(heartbeatIntervalMs: 1000),
+            new DiscoveryConfig(broadcast: true, broadcastIntervalMs: 5000),
+        );
+        $attacher = (new \ReflectionProperty($server, 'attacher'))->getValue($server);
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('greater than the discovery broadcast interval');
+        (new \ReflectionMethod($attacher, 'assertNodeTtlIntervals'))->invoke($attacher);
     }
 
     public function testRejectsRegisteredPortAndCreatesMissingRpcSubPort(): void
@@ -280,59 +325,68 @@ final class ServerTest extends TestCase
         self::assertSame(ResponseStatus::ACTION_NOT_EXIST, $this->server->handle(new Request('Test.Echo.internalHelper'))->getStatus());
     }
 
+    public function testModuleActionMetadataIsPreparedWithoutRequiringParentConstructor(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Constructed'; }
+        };
+        $module = new class('dependency') extends AbstractServiceModule {
+            public function __construct(private readonly string $dependency) {}
+            public function moduleName(): string { return 'Custom'; }
+            #[RpcAction]
+            public function execute(): string { return $this->dependency; }
+        };
+        $service->addModule($module);
+        $this->server->registerService($service);
+
+        $response = $this->server->handle(new Request('Constructed.Custom.execute'));
+
+        self::assertSame(ResponseStatus::OK, $response->getStatus());
+        self::assertSame('dependency', $response->getResult());
+    }
+
     public function testConvertsModuleExceptionsToResponses(): void
     {
-        $warning = null;
-        set_error_handler(function (int $severity, string $message) use (&$warning): bool {
-            if ($severity === E_USER_WARNING) {
-                $warning = $message;
-                return true;
-            }
-            return false;
+        $reported = null;
+        $this->server->setOnException(function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
         });
-        try {
-            $module = $this->server->handle(new Request('Test.Echo.fail'));
-        } finally {
-            restore_error_handler();
-        }
+
+        $module = $this->server->handle(new Request('Test.Echo.fail'));
 
         self::assertSame([ResponseStatus::SERVICE_ERROR, 'Server error.'], [$module->getStatus(), $module->getMsg()]);
         self::assertSame(NodeHealthStatus::SUSPECT, $module->getNodeHealthStatus());
-        self::assertStringContainsString('module failed', (string) $warning);
+        self::assertInstanceOf(\RuntimeException::class, $reported);
+        self::assertSame('module failed', $reported->getMessage());
     }
 
     public function testHandledBusinessExceptionIsNotReportedToGlobalServerHandler(): void
     {
-        $reported = false;
-        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
-
-        set_error_handler(static fn (int $severity): bool => $severity === E_USER_WARNING);
-        try {
-            $response = $this->server->handle(new Request('Test.Echo.fail'));
-        } finally {
-            restore_error_handler();
-        }
-
-        self::assertFalse($reported);
-        self::assertSame('Server error.', $response->getMsg());
-    }
-
-    public function testThrowingPhpErrorHandlerCannotBreakBusinessErrorResponse(): void
-    {
-        $reported = false;
-        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
-        set_error_handler(static function (int $severity, string $message): never {
-            throw new \ErrorException($message, 0, $severity);
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Handled'; }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Business'; }
+            #[RpcAction]
+            public function execute(): never { throw new \RuntimeException('handled business failure'); }
+            protected function onException(\Throwable $throwable, Response $response): void
+            {
+                $response
+                    ->setStatus(ResponseStatus::SERVICE_ERROR)
+                    ->setNodeHealthStatus(NodeHealthStatus::HEALTHY)
+                    ->setMsg('Business operation failed.');
+            }
         });
-        try {
-            $response = $this->server->handle(new Request('Test.Echo.fail'));
-        } finally {
-            restore_error_handler();
-        }
+        $this->server->registerService($service);
+        $reported = false;
+        $this->server->setOnException(function () use (&$reported): void { $reported = true; });
 
-        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
-        self::assertSame('Server error.', $response->getMsg());
+        $response = $this->server->handle(new Request('Handled.Business.execute'));
+
         self::assertFalse($reported);
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
+        self::assertSame('Business operation failed.', $response->getMsg());
     }
 
     public function testDefaultServiceExceptionHidesInternalMessage(): void
@@ -345,23 +399,17 @@ final class ServerTest extends TestCase
             }
         };
         $this->server->registerService($service);
-        $warning = null;
-        set_error_handler(function (int $severity, string $message) use (&$warning): bool {
-            if ($severity === E_USER_WARNING) {
-                $warning = $message;
-                return true;
-            }
-            return false;
+        $reported = null;
+        $this->server->setOnException(function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
         });
-        try {
-            $response = $this->server->handle(new Request('Broken.Any.action'));
-        } finally {
-            restore_error_handler();
-        }
+
+        $response = $this->server->handle(new Request('Broken.Any.action'));
 
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
         self::assertSame('Server error.', $response->getMsg());
-        self::assertStringContainsString('sensitive service detail', (string) $warning);
+        self::assertInstanceOf(\RuntimeException::class, $reported);
+        self::assertSame('sensitive service detail', $reported->getMessage());
     }
 
     public function testReportsUnhandledExceptionToGlobalServerHandler(): void
@@ -468,7 +516,7 @@ final class ServerTest extends TestCase
         self::assertInstanceOf(RpcException::class, $reported);
     }
 
-    public function testModuleCannotReplaceTheCurrentRequestUuid(): void
+    public function testActionCannotReturnAResponseObject(): void
     {
         $service = new class extends AbstractService {
             public function serviceName(): string { return 'CustomResponse'; }
@@ -493,20 +541,45 @@ final class ServerTest extends TestCase
         self::assertSame('request-id', $response->getRequestUUID());
     }
 
+    public function testActionCanModifyInjectedResponseAndReturnBusinessData(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'InjectedResponse'; }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Result'; }
+            #[RpcAction]
+            public function execute(mixed $arg, Request $request, Response $response): array
+            {
+                $response->setMsg('custom message');
+                return ['requestUUID' => $request->getRequestUUID()];
+            }
+        });
+        $this->server->registerService($service);
+
+        $response = $this->server->handle(
+            new Request('InjectedResponse.Result.execute', requestUUID: 'request-id'),
+        );
+
+        self::assertSame('custom message', $response->getMsg());
+        self::assertSame(['requestUUID' => 'request-id'], $response->getResult());
+        self::assertSame('request-id', $response->getRequestUUID());
+    }
+
     public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void
     {
         $service = new class extends AbstractService {
             public function serviceName(): string { return 'Hook'; }
-            protected function moduleNotFound(Request $request, Response $response): Response
+            protected function moduleNotFound(Request $request, Response $response): void
             {
-                return $response->setStatus(ResponseStatus::MODULE_NOT_EXIST)->setMsg('custom module missing');
+                $response->setStatus(ResponseStatus::MODULE_NOT_EXIST)->setMsg('custom module missing');
             }
         };
         $service->addModule(new class extends AbstractServiceModule {
             public function moduleName(): string { return 'Custom'; }
-            protected function actionNotFound(Request $request, Response $response): Response
+            protected function actionNotFound(Request $request, Response $response): void
             {
-                return $response->setStatus(ResponseStatus::ACTION_NOT_EXIST)->setMsg('custom action missing');
+                $response->setStatus(ResponseStatus::ACTION_NOT_EXIST)->setMsg('custom action missing');
             }
         });
         $this->server->registerService($service);

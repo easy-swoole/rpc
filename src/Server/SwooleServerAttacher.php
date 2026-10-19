@@ -43,6 +43,7 @@ final class SwooleServerAttacher
         // 从这一刻起禁止再注册服务，保证 listener 与 AssistWorker 使用同一份节点快照。
         $this->registry->freeze();
         try {
+            $this->assertNodeTtlIntervals();
             // 已存在的端口可能由业务方配置了其他协议，不能擅自复用为 RPC listener。
             foreach ($server->ports as $port) {
                 if ((int) $port->port === $this->serverConfig->listenPort) {
@@ -160,6 +161,32 @@ final class SwooleServerAttacher
                 $this->discoveryConfig->listenAddress,
                 $this->discoveryConfig->listenPort,
                 $error,
+            ));
+        }
+    }
+
+    private function assertNodeTtlIntervals(): void
+    {
+        $ttlSeconds = $this->nodeManager->nodeTtlSeconds();
+        if ($ttlSeconds === null) {
+            return;
+        }
+        $ttlMilliseconds = $ttlSeconds > intdiv(PHP_INT_MAX, 1000)
+            ? PHP_INT_MAX
+            : $ttlSeconds * 1000;
+        if ($this->serverConfig->heartbeatIntervalMs >= $ttlMilliseconds) {
+            throw new RpcException(sprintf(
+                'Node TTL (%d ms) must be greater than the heartbeat interval (%d ms).',
+                $ttlMilliseconds,
+                $this->serverConfig->heartbeatIntervalMs,
+            ));
+        }
+        if ($this->discoveryConfig->broadcast
+            && $this->discoveryConfig->broadcastIntervalMs >= $ttlMilliseconds) {
+            throw new RpcException(sprintf(
+                'Node TTL (%d ms) must be greater than the discovery broadcast interval (%d ms).',
+                $ttlMilliseconds,
+                $this->discoveryConfig->broadcastIntervalMs,
             ));
         }
     }

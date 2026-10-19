@@ -34,6 +34,7 @@ abstract class AbstractService
         if (isset($this->modules[$moduleName])) {
             throw new RpcException(sprintf('Module "%s" is already registered.', $moduleName));
         }
+        $module->__prepareActions();
         $this->modules[$moduleName] = $module;
         return $this;
     }
@@ -45,50 +46,38 @@ abstract class AbstractService
         $this->frozen = true;
     }
 
-    public function __dispatch(Request $request, Response $response): Response
+    public function __dispatch(Request $request, Response $response): void
     {
         try {
             if (!$this->onRequest($request)) {
-                return $response
+                $response
                     ->setStatus(ResponseStatus::SERVICE_SHUTDOWN)
                     ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
+                return;
             }
             $module = $this->modules[$request->getModule()] ?? null;
             if ($module === null) {
                 // Module 不存在时直接交给 Service 处理；Action 权限属于 Module 的职责。
-                return $this->moduleNotFound($request, $response);
+                $this->moduleNotFound($request, $response);
+                return;
             }
-            return $module->__dispatch($request, $response);
+            $module->__dispatch($request, $response);
         } catch (\Throwable $throwable) {
             $this->onException($throwable, $response);
         } finally {
             $this->afterRequest($request, $response);
         }
-        return $response;
     }
 
     protected function onRequest(Request $request): bool { return true; }
     protected function afterRequest(Request $request, Response $response): void {}
-    protected function moduleNotFound(Request $request, Response $response): Response
+    protected function moduleNotFound(Request $request, Response $response): void
     {
-        return $response->setStatus(ResponseStatus::MODULE_NOT_EXIST);
+        $response->setStatus(ResponseStatus::MODULE_NOT_EXIST);
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        $response
-            ->setStatus(ResponseStatus::SERVICE_ERROR)
-            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-            ->setMsg('Server error.');
-        try {
-            trigger_error(sprintf(
-                'Unhandled %s: %s in %s:%d',
-                $throwable::class,
-                $throwable->getMessage(),
-                $throwable->getFile(),
-                $throwable->getLine(),
-            ), E_USER_WARNING);
-        } catch (\Throwable) {
-            // Error reporting must never alter the RPC response lifecycle.
-        }
+        // 默认不吞掉异常；业务只有在明确覆写此方法后才表示已经处理。
+        throw $throwable;
     }
 }

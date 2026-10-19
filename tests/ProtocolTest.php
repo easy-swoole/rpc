@@ -59,6 +59,50 @@ final class ProtocolTest extends TestCase
         new Request('Test.action');
     }
 
+    public function testRequestRejectsExplicitEmptyUuid(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('UUID cannot be empty');
+        new Request('Test.Echo.value', requestUUID: '');
+    }
+
+    public function testDecodeRequestRejectsMissingUuidInsteadOfGeneratingOne(): void
+    {
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $json = json_encode([
+            'payload' => [
+                'service' => 'Test',
+                'module' => 'Echo',
+                'action' => 'value',
+                'timestamp' => time(),
+            ],
+            'signature' => null,
+        ], JSON_THROW_ON_ERROR);
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('invalid requestUUID');
+        $codec->decodeRequest($json);
+    }
+
+    public function testDecodeRequestRejectsInvalidPathFieldType(): void
+    {
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $json = json_encode([
+            'payload' => [
+                'service' => ['Test'],
+                'module' => 'Echo',
+                'action' => 'value',
+                'requestUUID' => 'request-id',
+                'timestamp' => time(),
+            ],
+            'signature' => null,
+        ], JSON_THROW_ON_ERROR);
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('invalid service');
+        $codec->decodeRequest($json);
+    }
+
     public function testResponseJsonRoundTrip(): void
     {
         $response = (new Response('request-id'))->setStatus(ResponseStatus::SERVICE_ERROR)->setResult(['ok' => false])->setMsg('bad');

@@ -83,6 +83,7 @@ $rpc = new Rpc(config: new RpcConfig(
         advertiseIp: '127.0.0.1', // 客户端能够访问的地址，不能写 0.0.0.0
         listenAddress: '0.0.0.0', // RPC listener 实际绑定地址
         listenPort: 9601,         // RPC 对外监听端口
+        nodeId: 'user-rpc-node-1', // 可选：跨重启保持稳定的节点唯一标识
         nodeName: 'user-rpc-1',
     ),
     discovery: new DiscoveryConfig(
@@ -297,7 +298,11 @@ $rpc->server()->registerService($userService);
 
 Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
 
-Action 通常直接返回业务结果，由框架写入当前 Response。如果需要直接返回 `Response`，其中的 `requestUUID` 必须与当前 `Request::getRequestUUID()` 完全一致；否则框架会按业务服务异常处理，避免破坏客户端的请求响应关联校验。
+`addModule()` 会在装配阶段一次性反射 Module 中带有 `#[RpcAction]` 的 public 方法并缓存；请求处理阶段只查询缓存，不会为每次调用重复执行反射。Module 可以自由定义自己的构造函数，不需要调用框架父构造函数。
+
+每次请求的 `Response` 由 `ServerRequestHandler` 创建并最终返回。Service 和 Module 的 `__dispatch()` 只修改传入对象，不返回或保存它；不要把请求、响应保存为 Service/Module 属性，因为这些实例会被多个协程复用。
+
+Action 只能返回业务结果，由框架写入当前 `Response`。框架会把当前 `Response` 作为第三个参数注入 Action；需要设置消息等响应元数据时，应修改这个对象，不能自行创建或返回 `Response`。返回 `Response` 会按业务服务异常处理，避免 Action 替换框架维护的请求响应关联。
 
 推荐让 Action 只返回能够被 JSON 编码的业务数据：
 
@@ -309,18 +314,18 @@ public function detail(mixed $arg): array
 }
 ```
 
-当前版本也允许 Action 手动构造 Response，但必须复用当前请求标识：
+需要调整响应元数据时，使用框架注入的当前 `Response`：
 
 ```php
 use EasySwoole\Rpc\Protocol\Response;
-use EasySwoole\Rpc\Protocol\ResponseStatus;
 
 #[RpcAction]
-public function detail(mixed $arg, Request $request): Response
+public function detail(mixed $arg, Request $request, Response $response): array
 {
-    return (new Response($request->getRequestUUID()))
-        ->setStatus(ResponseStatus::OK)
-        ->setResult(['id' => (int) $arg['id']]);
+    // requestUUID 由框架维护；Action 只修改当前响应，不创建新的 Response。
+    $response->setMsg('读取成功');
+
+    return ['id' => (int) $arg['id']];
 }
 ```
 
@@ -366,7 +371,7 @@ $rpc->server()->registerService($service);
 
 $rpc->server()->setOnException(
     function (Throwable $throwable): void {
-        // 只记录没有被 Service 或 Module onException 处理掉的意外异常。
+        // 记录没有被 Service 或 Module 明确处理掉的异常。
         error_log($throwable->getMessage());
     },
 );
@@ -381,7 +386,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 内部抛出的业务异常由各自的 `onException()` 处理，不会重复通知全局处理器。默认实现通过受保护的 `trigger_error()` 将异常详情交给服务端日志或 error handler；即使应用的 error handler 抛出异常，也不会影响 RPC 响应。客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。业务层可以重写 `onException()` 自定义处理。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，同样不会通知全局处理器。Server 的全局 `onException` 只接收仍未被业务层处理的意外异常，回调只接收 `Throwable`，不参与 Response 构造。
+Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。客户端仍只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，应覆写对应 `onException()`，设置 Response 并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。Server 的全局 `onException` 只接收最终仍未处理的异常，回调只接收 `Throwable`，不参与 Response 构造。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -543,6 +548,7 @@ $rpc->setOnRuntimeError(
 | `listenAddress` | `0.0.0.0` | RPC TCP subPort 的本地绑定地址 |
 | `listenPort` | `9502` | RPC TCP 监听端口；若宿主 Server 已监听该端口会拒绝挂载 |
 | `advertisePort` | `null` | 客户端连接端口；为空时使用 `listenPort`，有端口映射时单独设置 |
+| `nodeId` | `null` | 可选的稳定节点唯一标识；为空时每次创建 Server 自动生成 UUID，显式配置时不能为空字符串 |
 | `nodeName` | 空字符串 | 便于日志和进程识别，不作为节点唯一身份 |
 | `heartbeatIntervalMs` | `5000` | AssistWorker 刷新本机节点的周期 |
 
@@ -665,6 +671,8 @@ $responseJson = $response->toJson();
 ```php
 $nodeManager = new SwooleTableNodeManager(nodeTtlSeconds: 30);
 ```
+
+NodeManager 如果存在确定的 TTL，应覆写 `nodeTtlSeconds(): ?int` 返回秒数。`attachServer()` 会要求 TTL 严格大于本机 `heartbeatIntervalMs`，开启 UDP 广播时还必须严格大于 `broadcastIntervalMs`，避免正常节点在下一次刷新前就过期。无法提供固定 TTL 的外部注册中心可以返回 `null`，由其实现自行保证约束。生产环境建议让 TTL 至少达到刷新周期的 2～3 倍，为调度延迟和短暂网络抖动保留余量。
 
 默认 Table 的 `service` 字段为 64 字节，完整节点 JSON 字段为 4096 字节，对应公开常量 `SERVICE_COLUMN_BYTES` 和 `NODE_COLUMN_BYTES`。写入内容超过字段容量或 JSON 编码失败时，`online()`、`heartbeat()` 返回 `false`，由调用位置通过 `onRuntimeError` 记录，不会写入可能被截断的数据。读取时发现损坏记录会将其删除并跳过，不会阻断同一服务下其他健康节点。如果传入自行创建的 `Swoole\Table`，必须使用相同的字段名称、类型和容量。
 
@@ -831,7 +839,7 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 | `NodeHealthStatus::SUSPECT` | `suspect` | 未处理的 Service/Module 异常，以及客户端传输或响应校验错误 | 进入连续失败统计，达到阈值后下线 |
 | `NodeHealthStatus::OFFLINE` | `offline` | 服务主动停止，或服务端明确要求摘除节点 | 立即下线，并在启用重试时选择其他节点 |
 
-正常响应和业务代码明确处理过的异常默认是 `HEALTHY`；Service 或 Module 未处理的异常默认是 `SUSPECT`；服务主动停止接收请求时是 `OFFLINE`。如果 Module 能确认异常只影响当前业务，可以覆写 `onException()`，明确告诉客户端节点仍然健康：
+正常响应和业务代码明确处理过的异常默认是 `HEALTHY`；Service 或 Module 未处理并冒泡到 Server 的异常会返回 `SUSPECT`；服务主动停止接收请求时是 `OFFLINE`。如果 Module 能确认异常只影响当前业务，可以覆写 `onException()`，记录异常并明确告诉客户端节点仍然健康：
 
 ```php
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
@@ -862,7 +870,6 @@ protected function onException(Throwable $throwable, Response $response): void
 | `ResponseStatus::SERVER_TIMEOUT` | `1003` | 已连接后等待服务响应明确发生超时 |
 | `ResponseStatus::TRANSPORT_ERROR` | `1004` | 拒绝连接、连接重置、对端提前关闭、发送失败等非超时传输错误 |
 | `ResponseStatus::RESPONSE_DECODE_ERROR` | `1005` | 客户端无法解析响应、签名验证失败或响应中的 request UUID 不匹配 |
-| `ResponseStatus::PACKAGE_READ_TIMEOUT` | `2001` | 服务端读取请求超时 |
 | `ResponseStatus::ILLEGAL_PACKAGE` | `2002` | 数据包、请求格式、请求签名或时间戳非法 |
 | `ResponseStatus::SERVICE_SHUTDOWN` | `3000` | 服务已停止接收请求；默认同时标记节点为 `OFFLINE` |
 | `ResponseStatus::SERVICE_NOT_EXIST` | `3001` | 服务不存在 |
@@ -897,8 +904,8 @@ protected function onException(Throwable $throwable, Response $response): void
 
 | 入口 | 适用场景 | 是否参与响应 |
 | --- | --- | --- |
-| `AbstractServiceModule::onException()` | Action 内的业务异常 | 是，可以修改当前 Response |
-| `AbstractService::onException()` | Service 路由及 Service 级业务异常 | 是，可以修改当前 Response |
+| `AbstractServiceModule::onException()` | Action 内的业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
+| `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
 | `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
 | `$rpc->setOnRuntimeError()` | AssistWorker、NodeManager、UDP、TCP 回调等后台错误 | 否，只接收简短错误消息 |
 
@@ -937,6 +944,7 @@ if ($response->isSuccess()) {
 
 - `Rpc` 不是单例。框架不会强制全局实例；调用方可以根据应用容器和进程模型自行复用。
 - 所有 Service 和 Module 必须在 `attachServer()` 前注册。注册完成后 Service 会冻结，不能继续增加 Module。
+- 需要让节点身份跨进程重启保持稳定时，应显式配置 `ServerConfig::nodeId`；不配置则每个 Server 实例生成新的 UUID。
 - `attachServer()` 只能执行一次，并且必须在 Swoole Server `start()` 前调用。挂载失败后应重建 Rpc 与 Swoole Server 实例。
 - `listenAddress` 是本机绑定地址，`advertiseIp` 是客户端连接地址。不要把 `0.0.0.0`、容器内部错误地址或客户端不可达地址注册出去。
 - 宿主 Server 主端口、RPC TCP 端口和 UDP 发现端口用途不同。RPC TCP 端口若已存在于主 Server 或其他 subPort，会直接拒绝挂载。
@@ -948,6 +956,7 @@ if ($response->isSuccess()) {
 - UDP 服务发现默认关闭。只应在可信内网中开启；跨公网或复杂网络环境优先使用 Redis、Etcd、Consul 等集中式注册中心。
 - 自定义 NodeManager 必须支持 fork、多进程并发和网络恢复。暂时性运行失败返回 `false`，配置或调用方式错误才抛异常。
 - AssistWorker 正常退出时会广播下线并删除本机节点；进程崩溃或广播丢失时，由 NodeManager 的 TTL 最终清理节点。
+- NodeManager 提供固定 TTL 时，TTL 必须大于心跳周期以及已启用的 UDP 广播周期；建议保留 2～3 倍余量。
 - `SwooleTableNodeManager` 只适合同一个 Swoole Server 派生出的本机进程共享。两个独立启动的 PHP/Swoole 实例不会共享同一张 Table，必须通过 UDP 或外部注册中心交换节点。
 
 ## 12. 常见问题

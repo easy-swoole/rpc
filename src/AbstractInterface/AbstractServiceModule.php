@@ -11,27 +11,50 @@ use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 
 abstract class AbstractServiceModule
 {
+    /** @var array<string, true> */
+    private array $allowedActions = [];
+    private bool $actionsPrepared = false;
+
     abstract public function moduleName(): string;
 
-    final public function __dispatch(Request $request, Response $response): Response
+    /** @internal Called when the module is registered with a Service. */
+    final public function __prepareActions(): void
     {
+        if ($this->actionsPrepared) {
+            return;
+        }
+        // Action 元数据在服务装配阶段只反射一次，请求阶段只进行数组查找。
+        $reflection = new \ReflectionClass($this);
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            $name = $method->getName();
+            if (!str_starts_with($name, '__') && $method->getAttributes(RpcAction::class) !== []) {
+                $this->allowedActions[$name] = true;
+            }
+        }
+        $this->actionsPrepared = true;
+    }
+
+    final public function __dispatch(Request $request, Response $response): void
+    {
+        // 正常情况下已由 addModule() 预热；保留惰性兜底以支持直接调度测试等场景。
+        $this->__prepareActions();
         try {
             if (!$this->onRequest($request)) {
-                return $response
+                $response
                     ->setStatus(ResponseStatus::SERVICE_SHUTDOWN)
                     ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
+                return;
             }
             $action = $request->getAction();
             // 只有显式标记 #[RpcAction] 的 public 方法才能作为远程入口。
             if (!$this->isActionAllowed($action)) {
-                return $this->actionNotFound($request, $response);
+                $this->actionNotFound($request, $response);
+                return;
             }
-            $result = $this->{$action}($request->getArg(), $request);
+            // Response 由框架创建并作为第三个参数传入；Action 返回值只表示业务 result。
+            $result = $this->{$action}($request->getArg(), $request, $response);
             if ($result instanceof Response) {
-                if ($result->getRequestUUID() !== $request->getRequestUUID()) {
-                    throw new RpcException('Module response request UUID must match the current request UUID.');
-                }
-                return $result;
+                throw new RpcException('RPC actions must return business data instead of a Response object.');
             }
             $response->setResult($result);
         } catch (\Throwable $throwable) {
@@ -39,40 +62,22 @@ abstract class AbstractServiceModule
         } finally {
             $this->afterRequest($request, $response);
         }
-        return $response;
     }
 
     protected function onRequest(Request $request): bool { return true; }
     protected function afterRequest(Request $request, Response $response): void {}
-    protected function actionNotFound(Request $request, Response $response): Response
+    protected function actionNotFound(Request $request, Response $response): void
     {
-        return $response->setStatus(ResponseStatus::ACTION_NOT_EXIST);
+        $response->setStatus(ResponseStatus::ACTION_NOT_EXIST);
     }
     protected function onException(\Throwable $throwable, Response $response): void
     {
-        $response
-            ->setStatus(ResponseStatus::SERVICE_ERROR)
-            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-            ->setMsg('Server error.');
-        try {
-            trigger_error(sprintf(
-                'Unhandled %s: %s in %s:%d',
-                $throwable::class,
-                $throwable->getMessage(),
-                $throwable->getFile(),
-                $throwable->getLine(),
-            ), E_USER_WARNING);
-        } catch (\Throwable) {
-            // Error reporting must never alter the RPC response lifecycle.
-        }
+        // 默认继续向 Service 和 Server 冒泡，避免开发阶段静默丢失异常。
+        throw $throwable;
     }
 
     private function isActionAllowed(string $action): bool
     {
-        if ($action === '' || str_starts_with($action, '__') || !method_exists($this, $action)) {
-            return false;
-        }
-        $method = new \ReflectionMethod($this, $action);
-        return $method->isPublic() && $method->getAttributes(RpcAction::class) !== [];
+        return isset($this->allowedActions[$action]);
     }
 }

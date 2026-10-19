@@ -10,7 +10,6 @@ enum ResponseStatus: int
     case SERVER_TIMEOUT = 1003;
     case TRANSPORT_ERROR = 1004;
     case RESPONSE_DECODE_ERROR = 1005;
-    case PACKAGE_READ_TIMEOUT = 2001;
     case ILLEGAL_PACKAGE = 2002;
     case SERVICE_SHUTDOWN = 3000;
     case SERVICE_NOT_EXIST = 3001;

@@ -40,7 +40,6 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
                 ResponseStatus::SERVER_TIMEOUT,
                 ResponseStatus::TRANSPORT_ERROR,
                 ResponseStatus::RESPONSE_DECODE_ERROR,
-                ResponseStatus::PACKAGE_READ_TIMEOUT,
             ], true);
         if (!$isFailure) {
             // 任意健康响应都能证明节点可达，因此成功一次就重置连续失败计数。

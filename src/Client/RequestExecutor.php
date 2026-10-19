@@ -26,22 +26,27 @@ final class RequestExecutor
     {
         $service = explode('.', $context->getRequestPath(), 2)[0];
         $attempt = 0;
+        $excludedNodeId = null;
+        $lastResponse = null;
         do {
             $shouldRetry = false;
-            // 重试时会清空 context 中的旧节点，再通过 NodeSelector 选择其他可用节点。
-            $node = $context->getServiceNode() ?? $this->resolveNode($service);
+            // 有多个节点时排除刚失败的节点；只有一个节点时允许继续尝试同一节点。
+            $node = $context->getServiceNode() ?? $this->resolveNode($service, $excludedNodeId);
             if ($node === null) {
-                return $this->unavailableResponse();
+                // 已经发生过真实调用时保留最后一次失败，避免被“无可用节点”覆盖根因。
+                return $lastResponse ?? $this->unavailableResponse();
             }
             $context->setServiceNode($node);
             $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
             $response = $this->validateResponse($request, $this->sendRequest($node, $request, $timeout));
+            $lastResponse = $response;
             // 失败策略只决定保留、换节点重试或下线；业务异常可以通过响应标记保持节点在线。
             $action = $this->failurePolicy->evaluate($node, $response);
             if ($action === NodeFailureAction::OFFLINE) {
                 $this->offlineNode($node);
             }
             if ($action !== NodeFailureAction::KEEP) {
+                $excludedNodeId = $node->getNodeId();
                 $context->setServiceNode(null);
                 $shouldRetry = true;
             }
@@ -50,7 +55,7 @@ final class RequestExecutor
         return $response;
     }
 
-    private function resolveNode(string $service): ?ServiceNode
+    private function resolveNode(string $service, ?string $excludedNodeId): ?ServiceNode
     {
         $queryError = null;
         try {
@@ -67,6 +72,15 @@ final class RequestExecutor
                 $queryError === null ? '' : ': ' . $queryError,
             ));
             return null;
+        }
+        if ($excludedNodeId !== null && count($nodes) > 1) {
+            $alternativeNodes = array_values(array_filter(
+                $nodes,
+                static fn (ServiceNode $node): bool => $node->getNodeId() !== $excludedNodeId,
+            ));
+            if ($alternativeNodes !== []) {
+                $nodes = $alternativeNodes;
+            }
         }
         return $this->nodeSelector->select($nodes);
     }
