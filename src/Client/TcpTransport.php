@@ -49,7 +49,9 @@ class TcpTransport
         $domain = filter_var($node->getIp(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
             ? AF_INET6
             : AF_INET;
-        $client = new \Swoole\Coroutine\Socket($domain, SOCK_STREAM, IPPROTO_TCP);
+        // Protocol 0 lets the operating system select TCP for a stream socket.
+        // IPPROTO_TCP is not exposed by every PHP/Swoole build.
+        $client = new \Swoole\Coroutine\Socket($domain, SOCK_STREAM, 0);
         try {
             if (!$client->setProtocol([
                 'open_length_check' => true,

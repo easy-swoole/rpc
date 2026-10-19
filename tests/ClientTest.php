@@ -327,6 +327,21 @@ final class ClientTest extends TestCase
         self::assertStringContainsString('maximum size', $response->getMsg());
     }
 
+    public function testTcpTransportCanCreateARealStreamSocketWithoutIpProtoTcpConstant(): void
+    {
+        $request = new Request('Test.Echo.value', requestUUID: 'request-id');
+        $node = new ServiceNode('Test', 'node-1', ip: '127.0.0.1', port: 1);
+
+        $response = null;
+        \Swoole\Coroutine\run(static function () use (&$response, $node, $request): void {
+            $response = (new TcpTransport())->send($node, $request, 0.05);
+        });
+
+        self::assertInstanceOf(Response::class, $response);
+        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
+        self::assertSame('request-id', $response->getRequestUUID());
+    }
+
     public function testRejectsMismatchedResponseUuid(): void
     {
         $manager = new SwooleTableNodeManager(16);
