@@ -11,6 +11,179 @@
 composer require easyswoole/rpc:^6.0
 ```
 
+## 快速开始：固定节点调用
+
+下面的示例不启用 UDP 服务发现，客户端直接登记一个固定节点，适合第一次验证调用链。完整示例包含 Service、Module、服务端和客户端四部分。
+
+### 1. 创建 Service 与 Module
+
+```php
+<?php
+
+namespace App\Rpc;
+
+use EasySwoole\Rpc\AbstractInterface\AbstractService;
+use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
+use EasySwoole\Rpc\Attribute\RpcAction;
+use EasySwoole\Rpc\Protocol\Request;
+
+final class UserService extends AbstractService
+{
+    public function serviceName(): string
+    {
+        return 'User';
+    }
+}
+
+final class ProfileModule extends AbstractServiceModule
+{
+    public function moduleName(): string
+    {
+        return 'Profile';
+    }
+
+    #[RpcAction]
+    public function detail(mixed $arg, Request $request): array
+    {
+        return [
+            'id' => (int) $arg['id'],
+            'name' => 'EasySwoole',
+            'requestUUID' => $request->getRequestUUID(),
+        ];
+    }
+}
+```
+
+完整调用路径由三段组成：
+
+```text
+User.Profile.detail
+  │      │      └─ 标记了 #[RpcAction] 的 public 方法
+  │      └──────── Module::moduleName()
+  └─────────────── Service::serviceName()
+```
+
+### 2. 启动服务端
+
+```php
+<?php
+
+use App\Rpc\ProfileModule;
+use App\Rpc\UserService;
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\RpcConfig;
+use EasySwoole\Rpc\Server\DiscoveryConfig;
+use EasySwoole\Rpc\Server\ServerConfig;
+use Swoole\Server;
+
+require __DIR__ . '/vendor/autoload.php';
+
+$rpc = new Rpc(config: new RpcConfig(
+    server: new ServerConfig(
+        advertiseIp: '127.0.0.1', // 客户端能够访问的地址，不能写 0.0.0.0
+        listenAddress: '0.0.0.0', // RPC listener 实际绑定地址
+        listenPort: 9601,         // RPC 对外监听端口
+        nodeName: 'user-rpc-1',
+    ),
+    discovery: new DiscoveryConfig(
+        listen: false,
+        broadcast: false,
+    ),
+));
+
+$service = new UserService();
+$service->addModule(new ProfileModule());
+$rpc->server()->registerService($service);
+
+$rpc->server()->setOnException(static function (Throwable $throwable): void {
+    // 捕获请求处理阶段未预料到的服务端异常。
+    error_log('[rpc exception] ' . $throwable->getMessage());
+});
+
+$rpc->setOnRuntimeError(static function (string $message): void {
+    // 捕获心跳、节点登记、UDP 和 TCP 回调等后台运行错误。
+    error_log('[rpc runtime] ' . $message);
+});
+
+// 9501 是宿主 Server 的主端口；RPC 会自动增加监听 9601 的 subPort。
+$server = new Server('0.0.0.0', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+
+// 主端口使用 TCP Server 时必须有自己的 receive 回调；它不负责 RPC 请求。
+$server->on('receive', static function (Server $server, int $fd): void {
+    $server->close($fd);
+});
+
+// attachServer 必须在 start 前调用，而且同一个 Rpc Server 只能调用一次。
+$rpc->server()->attachServer($server);
+$server->start();
+```
+
+运行：
+
+```bash
+php server.php
+```
+
+### 3. 客户端调用
+
+```php
+<?php
+
+use EasySwoole\Rpc\Rpc;
+use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Server\ServiceNode;
+use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
+
+require __DIR__ . '/vendor/autoload.php';
+
+$nodeManager = new SwooleTableNodeManager();
+$nodeManager->online(new ServiceNode(
+    serviceName: 'User',
+    nodeId: 'user-rpc-1', // 同一 Service 下必须稳定且唯一
+    nodeName: 'user-rpc-1',
+    nodeWeight: 10,
+    ip: '127.0.0.1',
+    port: 9601,
+));
+
+$rpc = new Rpc(dependencies: new RpcDependencies(nodeManager: $nodeManager));
+
+$batch = $rpc->client()->buildRequest();
+$batch->addCall('User.Profile.detail')
+    ->setArg(['id' => 1001])
+    ->setClientArg(['traceId' => 'trace-001']);
+
+[$response] = $batch->exec(timeout: 3.0);
+
+if (!$response->isSuccess()) {
+    throw new RuntimeException(sprintf(
+        'RPC failed: status=%d, message=%s',
+        $response->getStatus()->value,
+        (string) $response->getMsg(),
+    ));
+}
+
+var_dump($response->getResult());
+```
+
+运行：
+
+```bash
+php client.php
+```
+
+预期结果：
+
+```text
+array(3) {
+  ["id"]=> int(1001)
+  ["name"]=> string(10) "EasySwoole"
+  ["requestUUID"]=> string(32) "..."
+}
+```
+
+固定节点只适合本地验证或外部配置已经保证节点稳定的场景。生产环境通常应使用 Redis、Etcd 等集中式 NodeManager，或者在可信内网中启用 UDP 服务发现。
+
 ## 调用流程
 
 ```text
@@ -126,6 +299,33 @@ Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module�
 
 Action 通常直接返回业务结果，由框架写入当前 Response。如果需要直接返回 `Response`，其中的 `requestUUID` 必须与当前 `Request::getRequestUUID()` 完全一致；否则框架会按业务服务异常处理，避免破坏客户端的请求响应关联校验。
 
+推荐让 Action 只返回能够被 JSON 编码的业务数据：
+
+```php
+#[RpcAction]
+public function detail(mixed $arg): array
+{
+    return ['id' => (int) $arg['id']];
+}
+```
+
+当前版本也允许 Action 手动构造 Response，但必须复用当前请求标识：
+
+```php
+use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseStatus;
+
+#[RpcAction]
+public function detail(mixed $arg, Request $request): Response
+{
+    return (new Response($request->getRequestUUID()))
+        ->setStatus(ResponseStatus::OK)
+        ->setResult(['id' => (int) $arg['id']]);
+}
+```
+
+不要返回资源、闭包、递归对象等不能被 JSON 编码的值。服务端遇到无法序列化的结果时会触发 `onException`，并向客户端返回隐藏内部细节的 `SERVICE_ERROR`。
+
 ## 3. 启动 RPC 服务端
 
 ### 挂载到 Swoole Server
@@ -172,6 +372,10 @@ $rpc->server()->setOnException(
 );
 
 $server = new Server('0.0.0.0', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+// 主端口是普通 TCP 监听，需要由应用注册自己的回调；RPC 使用自动创建的 9601 subPort。
+$server->on('receive', static function (Server $server, int $fd): void {
+    $server->close($fd);
+});
 // 传主 Server 即可，RPC listener 与 AssistWorker 会自动挂载。
 $rpc->server()->attachServer($server);
 $server->start();
@@ -319,6 +523,56 @@ $rpc->setOnRuntimeError(
 消息会直接说明节点上线、心跳、下线或 UDP 监听、广播中的具体失败位置。NodeManager 返回 `false` 只表示本次操作失败：流程不会抛异常或停止，后续心跳仍会继续尝试。自定义 NodeManager 遇到注册中心暂时断网等运行失败时也应返回 `false`，不应抛异常。配置错误、端口冲突和 `attachServer()` 失败仍直接抛出 `RpcException`。
 
 自定义策略需要实现 `NodeFailurePolicyInterface`，并返回 `KEEP`、`RETRY_ANOTHER` 或 `OFFLINE`。
+
+## 配置速查
+
+### RpcConfig
+
+| 配置 | 默认值 | 用途 |
+| --- | --- | --- |
+| `server` | `new ServerConfig()` | TCP 服务地址、节点名称及本机心跳周期 |
+| `discovery` | `new DiscoveryConfig()` | UDP 无主服务发现；默认完全关闭 |
+| `security` | `new SecurityConfig()` | RPC 与 UDP 共用的签名密钥和时间戳窗口 |
+| `protocol` | `new ProtocolConfig()` | TCP 协议包最大长度 |
+
+### ServerConfig
+
+| 配置 | 默认值 | 注意事项 |
+| --- | --- | --- |
+| `advertiseIp` | `127.0.0.1` | 注册给客户端连接的地址；不能使用 `0.0.0.0` |
+| `listenAddress` | `0.0.0.0` | RPC TCP subPort 的本地绑定地址 |
+| `listenPort` | `9502` | RPC TCP 监听端口；若宿主 Server 已监听该端口会拒绝挂载 |
+| `advertisePort` | `null` | 客户端连接端口；为空时使用 `listenPort`，有端口映射时单独设置 |
+| `nodeName` | 空字符串 | 便于日志和进程识别，不作为节点唯一身份 |
+| `heartbeatIntervalMs` | `5000` | AssistWorker 刷新本机节点的周期 |
+
+### DiscoveryConfig
+
+| 配置 | 默认值 | 注意事项 |
+| --- | --- | --- |
+| `listen` | `false` | 是否接收其他实例的 UDP 节点广播 |
+| `listenAddress` | `0.0.0.0` | UDP 本地绑定地址 |
+| `listenPort` | `9600` | UDP 监听端口；attach 前会预检是否可用 |
+| `broadcast` | `false` | 是否定时广播本机节点 |
+| `broadcastAddresses` | `255.255.255.255:9600` | 目标地址列表，格式为 `host:port` |
+| `broadcastIntervalMs` | `5000` | 节点广播周期 |
+| `socketRetryIntervalMs` | `5000` | UDP Socket 创建或 bind 失败后的重试周期 |
+
+### SecurityConfig 与 ProtocolConfig
+
+| 配置 | 默认值 | 注意事项 |
+| --- | --- | --- |
+| `apiKey` | `null` | 为空时不签名；启用后所有通信方必须一致 |
+| `timestampToleranceSeconds` | `30` | 签名时间戳允许的前后偏差，要求机器时钟同步 |
+| `maxPackageSize` | `2097152` | 2 MiB；客户端和服务端使用同一个限制 |
+
+### RpcDependencies
+
+| 依赖 | 默认实现 | 可替换用途 |
+| --- | --- | --- |
+| `nodeManager` | `SwooleTableNodeManager` | Redis、Etcd、Consul 等注册中心 |
+| `nodeSelector` | `WeightedRandomNodeSelector` | 轮询、一致性哈希、机房优先等负载策略 |
+| `failurePolicy` | `ConsecutiveFailurePolicy` | 自定义节点重试及下线判定 |
 
 ## 5. 节点心跳与 UDP 服务发现
 
@@ -577,17 +831,23 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 | `NodeHealthStatus::SUSPECT` | `suspect` | 未处理的 Service/Module 异常，以及客户端传输或响应校验错误 | 进入连续失败统计，达到阈值后下线 |
 | `NodeHealthStatus::OFFLINE` | `offline` | 服务主动停止，或服务端明确要求摘除节点 | 立即下线，并在启用重试时选择其他节点 |
 
-正常响应和业务代码明确处理过的异常默认是 `HEALTHY`；Service 或 Module 未处理的异常默认是 `SUSPECT`；服务主动停止接收请求时是 `OFFLINE`。业务层捕获异常后可以明确保留节点：
+正常响应和业务代码明确处理过的异常默认是 `HEALTHY`；Service 或 Module 未处理的异常默认是 `SUSPECT`；服务主动停止接收请求时是 `OFFLINE`。如果 Module 能确认异常只影响当前业务，可以覆写 `onException()`，明确告诉客户端节点仍然健康：
 
 ```php
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
+use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 
-return $response
-    ->setStatus(ResponseStatus::SERVICE_ERROR)
-    // 明确这是业务失败，节点仍健康，不累计连续失败次数。
-    ->setNodeHealthStatus(NodeHealthStatus::HEALTHY)
-    ->setMsg('Business operation failed.');
+protected function onException(Throwable $throwable, Response $response): void
+{
+    // 明确这是当前业务失败，节点仍健康，不累计连续失败次数。
+    $response
+        ->setStatus(ResponseStatus::SERVICE_ERROR)
+        ->setNodeHealthStatus(NodeHealthStatus::HEALTHY)
+        ->setMsg('Business operation failed.');
+
+    error_log($throwable->getMessage());
+}
 ```
 
 节点健康标记包含在 Response 签名中，不能在传输过程中被修改。它只是服务端提示，最终的重试和下线行为仍由 `NodeFailurePolicyInterface` 决定。
@@ -633,7 +893,99 @@ return $response
 
 组件主动抛出的配置、协议、注册、挂载与客户端状态异常都继承 `EasySwoole\Rpc\Exception\RpcException`。TCP 连接失败、超时、发送失败、连接关闭和响应解码失败属于可预期的运行结果，`TcpTransport` 会直接返回带对应 `ResponseStatus` 和 `NodeHealthStatus::SUSPECT` 的 `Response`，不会先转换成异常。只有 Transport 内真正未预期的 `Throwable` 才由 `RequestExecutor` 兜底并通知 `onRuntimeError`。业务 Service 和 Module 抛出的异常仍按其各自 `onException()` 约定处理，不会被强制包装成组件异常。
 
-## 11. 运行测试
+### 应该使用哪个异常入口
+
+| 入口 | 适用场景 | 是否参与响应 |
+| --- | --- | --- |
+| `AbstractServiceModule::onException()` | Action 内的业务异常 | 是，可以修改当前 Response |
+| `AbstractService::onException()` | Service 路由及 Service 级业务异常 | 是，可以修改当前 Response |
+| `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
+| `$rpc->setOnRuntimeError()` | AssistWorker、NodeManager、UDP、TCP 回调等后台错误 | 否，只接收简短错误消息 |
+
+配置和生命周期错误应由调用方直接捕获 `RpcException`：
+
+```php
+use EasySwoole\Rpc\Exception\RpcException;
+
+try {
+    $rpc->server()->attachServer($server);
+} catch (RpcException $exception) {
+    // 端口冲突、配置非法或重复 attach 时应终止启动流程。
+    error_log($exception->getMessage());
+    throw $exception;
+}
+```
+
+网络失败不会从 `RequestBatch::exec()` 直接抛出，应检查 Response：
+
+```php
+$response = $batch->exec(timeout: 3.0)[0];
+
+if ($response->isSuccess()) {
+    $result = $response->getResult();
+} else {
+    error_log(sprintf(
+        'RPC failed: status=%s, health=%s, message=%s',
+        $response->getStatus()->name,
+        $response->getNodeHealthStatus()->value,
+        (string) $response->getMsg(),
+    ));
+}
+```
+
+## 11. 生产环境注意事项
+
+- `Rpc` 不是单例。框架不会强制全局实例；调用方可以根据应用容器和进程模型自行复用。
+- 所有 Service 和 Module 必须在 `attachServer()` 前注册。注册完成后 Service 会冻结，不能继续增加 Module。
+- `attachServer()` 只能执行一次，并且必须在 Swoole Server `start()` 前调用。挂载失败后应重建 Rpc 与 Swoole Server 实例。
+- `listenAddress` 是本机绑定地址，`advertiseIp` 是客户端连接地址。不要把 `0.0.0.0`、容器内部错误地址或客户端不可达地址注册出去。
+- 宿主 Server 主端口、RPC TCP 端口和 UDP 发现端口用途不同。RPC TCP 端口若已存在于主 Server 或其他 subPort，会直接拒绝挂载。
+- 客户端 `exec(timeout)` 必须传入大于 `0` 的有限秒数；`0`、负数、`INF` 和 `NAN` 都会被拒绝，避免底层出现无限等待语义。
+- 开启重试前必须确认业务幂等。框架不会对 TCP 请求自动去重，订单、支付、写入等操作应使用业务幂等键。
+- `arg`、`clientArg` 和 Action 返回值必须能够被 JSON 编码。不要传递资源、闭包或递归对象。
+- `Request::toJson()` 和 `Response::toJson()` 可能包含密码、Token 或用户数据，写日志前应由业务方脱敏。
+- 使用 `apiKey` 时，客户端、服务端及 UDP 节点必须配置同一个值，并通过 NTP 等方式保持机器时钟同步。
+- UDP 服务发现默认关闭。只应在可信内网中开启；跨公网或复杂网络环境优先使用 Redis、Etcd、Consul 等集中式注册中心。
+- 自定义 NodeManager 必须支持 fork、多进程并发和网络恢复。暂时性运行失败返回 `false`，配置或调用方式错误才抛异常。
+- AssistWorker 正常退出时会广播下线并删除本机节点；进程崩溃或广播丢失时，由 NodeManager 的 TTL 最终清理节点。
+- `SwooleTableNodeManager` 只适合同一个 Swoole Server 派生出的本机进程共享。两个独立启动的 PHP/Swoole 实例不会共享同一张 Table，必须通过 UDP 或外部注册中心交换节点。
+
+## 12. 常见问题
+
+### 客户端一直返回 NOT_AVAILABLE_NODE
+
+依次检查：
+
+1. `getNodes($serviceName)` 是否返回节点；空数组表示查询成功但当前没有可用节点，`false` 表示注册中心查询失败。
+2. `ServiceNode::serviceName` 是否与调用路径第一段完全一致，包括大小写。
+3. UDP 模式下，双方的 `listenPort`、`broadcastAddresses` 和 `apiKey` 是否对应。
+4. 节点是否已超过 NodeManager TTL。
+
+没有节点时不会创建 TCP Request，因此返回 Response 的 `requestUUID` 为空字符串。
+
+### 节点能够发现，但调用返回 TRANSPORT_ERROR
+
+检查节点广播出的 `ip` 和 `port` 是否能从客户端访问，防火墙和容器端口是否已放行，以及 `advertisePort` 是否正确映射。`listenPort` 表示本机监听端口，存在 NAT 或容器端口映射时应单独配置 `advertisePort`。
+
+### 返回 RESPONSE_DECODE_ERROR
+
+常见原因包括：
+
+- 客户端和服务端 `apiKey` 不一致；
+- 机器时钟偏差超过 `timestampToleranceSeconds`；
+- 响应被截断或不是合法 JSON；
+- 响应状态、节点健康状态或 `requestUUID` 字段类型非法；
+- 服务端没有原样回传当前请求的 `requestUUID`。
+
+### attachServer 提示端口已经注册
+
+RPC 不会复用调用方已经创建的 listener，因为无法确认该端口原有协议和回调是否准备给 RPC 使用。请修改 `ServerConfig::listenPort`，并让 `attachServer()` 自动创建 RPC subPort。
+
+### UDP 端口暂时不可用会怎样
+
+`attachServer()` 会先预检 UDP bind。启动后如果 Socket 创建或 bind 失败，AssistWorker 会通过 `onRuntimeError` 报告，并按 `socketRetryIntervalMs` 重试；本机节点心跳仍会继续执行。
+
+## 13. 运行测试
 
 ```bash
 composer install
