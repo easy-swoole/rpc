@@ -385,7 +385,7 @@ $rpc = new Rpc(config: new RpcConfig(
 $rpc->server()->attachServer($gatewayServer);
 ```
 
-`AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。本机心跳和 UDP 广播使用不同的定时器；关闭 UDP 时不会创建 Socket 或 UDP 定时器。
+`AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。它只接收节点集合、NodeManager 和只读的 `AssistWorkerConfig`；节点名、心跳周期、UDP 与安全配置由该配置对象统一约束，运行依赖不会混入配置。进程名称会拼接 `nodeName`，例如 `rpc-assist-worker.user-rpc-1`；`nodeName` 为空时保持为 `rpc-assist-worker`。本机心跳和 UDP 广播使用不同的定时器；关闭 UDP 时不会创建 Socket 或 UDP 定时器。
 
 ## 6. 服务节点生命周期
 

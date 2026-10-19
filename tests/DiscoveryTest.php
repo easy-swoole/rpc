@@ -6,6 +6,7 @@ use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
+use EasySwoole\Rpc\Server\AssistWorkerConfig;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
 use EasySwoole\Rpc\Server\DiscoveryMessage;
 use EasySwoole\Rpc\Server\ServiceNode;
@@ -49,8 +50,9 @@ final class DiscoveryTest extends TestCase
         $worker = new AssistWorker(
             ['Test' => $node],
             $manager,
-            5000,
-            new DiscoveryConfig(listen: false, broadcast: false),
+            new AssistWorkerConfig(
+                discovery: new DiscoveryConfig(listen: false, broadcast: false),
+            ),
         );
 
         (new \ReflectionMethod($worker, 'onlineServices'))->invoke($worker);
@@ -82,8 +84,9 @@ final class DiscoveryTest extends TestCase
         $process = new AssistWorker(
             ['Test' => $node],
             $manager,
-            5000,
-            new DiscoveryConfig(listen: false, broadcast: false),
+            new AssistWorkerConfig(
+                discovery: new DiscoveryConfig(listen: false, broadcast: false),
+            ),
         );
 
         (new \ReflectionMethod($process, 'onShutDown'))->invoke($process);

@@ -42,7 +42,15 @@ final class SwooleServerAttacher
                 }
             }
             $this->assertUdpAvailable();
-            $worker = new AssistWorker($this->registry->nodes(), $this->nodeManager, $this->serverConfig->heartbeatIntervalMs, $this->discoveryConfig, $this->securityConfig);
+            $worker = new AssistWorker(
+                $this->registry->nodes(),
+                $this->nodeManager,
+                AssistWorkerConfig::fromServer(
+                    $this->serverConfig,
+                    $this->discoveryConfig,
+                    $this->securityConfig,
+                ),
+            );
             $listener = $server->addListener($this->serverConfig->listenAddress, $this->serverConfig->listenPort, SWOOLE_SOCK_TCP);
             if (!$listener instanceof Port) {
                 throw new RpcException('Unable to create RPC listener.');

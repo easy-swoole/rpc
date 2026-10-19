@@ -21,12 +21,14 @@ final class AssistWorker extends AbstractProcess
     public function __construct(
         private readonly array $serviceNodes,
         private readonly AbstractNodeManager $nodeManager,
-        private readonly int $heartbeatIntervalMs,
-        private readonly DiscoveryConfig $discoveryConfig,
-        private readonly SecurityConfig $securityConfig = new SecurityConfig(),
+        private readonly AssistWorkerConfig $config = new AssistWorkerConfig(),
     ) {
         $processConfig = new ProcessConfig();
-        $processConfig->setProcessName('rpc-assist-worker');
+        $processName = 'rpc-assist-worker';
+        if (($nodeName = trim($this->config->nodeName)) !== '') {
+            $processName .= '.' . $nodeName;
+        }
+        $processConfig->setProcessName($processName);
         $processConfig->setProcessGroup('rpc');
         $processConfig->setPipeType(ProcessConfig::PIPE_TYPE_NONE);
         $processConfig->setEnableCoroutine(true);
@@ -37,7 +39,7 @@ final class AssistWorker extends AbstractProcess
     {
         $this->onlineServices();
         $this->heartbeatTimerId = $this->addTick(
-            $this->heartbeatIntervalMs,
+            $this->config->heartbeatIntervalMs,
             fn () => $this->heartbeatServices(),
         );
 
@@ -46,15 +48,15 @@ final class AssistWorker extends AbstractProcess
         }
 
         $this->startUdpDiscovery();
-        if ($this->discoveryConfig->broadcast) {
+        if ($this->config->discovery->broadcast) {
             $this->broadcast();
             $this->discoveryTimerId = $this->addTick(
-                $this->discoveryConfig->broadcastIntervalMs,
+                $this->config->discovery->broadcastIntervalMs,
                 fn () => $this->broadcast(),
             );
         }
 
-        if ($this->discoveryConfig->listen) {
+        if ($this->config->discovery->listen) {
             $this->receiveDiscoveryPackets();
         }
     }
@@ -92,15 +94,15 @@ final class AssistWorker extends AbstractProcess
 
     private function udpEnabled(): bool
     {
-        return $this->discoveryConfig->listen || $this->discoveryConfig->broadcast;
+        return $this->config->discovery->listen || $this->config->discovery->broadcast;
     }
 
     private function startUdpDiscovery(): void
     {
         $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
         $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
-        if ($this->discoveryConfig->listen
-            && !$this->socket->bind($this->discoveryConfig->listenAddress, $this->discoveryConfig->listenPort)) {
+        if ($this->config->discovery->listen
+            && !$this->socket->bind($this->config->discovery->listenAddress, $this->config->discovery->listenPort)) {
             throw new RpcException('Unable to bind RPC discovery UDP socket.');
         }
         $this->running = true;
@@ -113,7 +115,7 @@ final class AssistWorker extends AbstractProcess
             $packet = $this->socket?->recvfrom($peer);
             if (is_string($packet) && $packet !== '') {
                 try {
-                    self::handlePacket($packet, $this->nodeManager, $this->securityConfig);
+                    self::handlePacket($packet, $this->nodeManager, $this->config->security);
                 } catch (\Throwable) {
                     // Invalid or untrusted discovery datagrams are deliberately ignored.
                 }
@@ -132,12 +134,12 @@ final class AssistWorker extends AbstractProcess
 
     private function broadcast(string $action = DiscoveryMessage::HEARTBEAT): void
     {
-        if (!$this->discoveryConfig->broadcast || $this->socket === null) {
+        if (!$this->config->discovery->broadcast || $this->socket === null) {
             return;
         }
         foreach ($this->serviceNodes as $node) {
-            $packet = DiscoveryMessage::encode($action, $node, $this->securityConfig);
-            foreach ($this->discoveryConfig->broadcastAddresses as $address) {
+            $packet = DiscoveryMessage::encode($action, $node, $this->config->security);
+            foreach ($this->config->discovery->broadcastAddresses as $address) {
                 [$host, $port] = self::splitAddress($address);
                 $this->socket->sendto($host, $port, $packet);
             }

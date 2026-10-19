@@ -17,6 +17,7 @@ use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
+use EasySwoole\Rpc\Server\AssistWorkerConfig;
 use EasySwoole\Rpc\Server\ServerAttachStatus;
 use EasySwoole\Rpc\Server\ServerConfig;
 use EasySwoole\Rpc\Server\DiscoveryConfig;
@@ -97,10 +98,41 @@ final class ServerTest extends TestCase
     public function testCreatesAssistWorkerProcess(): void
     {
         $manager = new SwooleTableNodeManager(16);
-        $worker = new AssistWorker([], $manager, 5000, new DiscoveryConfig());
+        $worker = new AssistWorker([], $manager);
 
         self::assertInstanceOf(AbstractProcess::class, $worker);
         self::assertSame('rpc-assist-worker', $worker->getProcessName());
+    }
+
+    public function testAssistWorkerProcessNameContainsNodeName(): void
+    {
+        $worker = new AssistWorker(
+            [],
+            new SwooleTableNodeManager(16),
+            new AssistWorkerConfig(nodeName: 'user-rpc-1'),
+        );
+
+        self::assertSame('rpc-assist-worker.user-rpc-1', $worker->getProcessName());
+    }
+
+    public function testAssistWorkerConfigCollectsServerConstraints(): void
+    {
+        $server = new ServerConfig(nodeName: 'user-rpc-1', heartbeatIntervalMs: 3000);
+        $discovery = new DiscoveryConfig(listen: false, broadcast: false);
+        $security = new SecurityConfig(apiKey: 'secret');
+
+        $config = AssistWorkerConfig::fromServer($server, $discovery, $security);
+
+        self::assertSame('user-rpc-1', $config->nodeName);
+        self::assertSame(3000, $config->heartbeatIntervalMs);
+        self::assertSame($discovery, $config->discovery);
+        self::assertSame($security, $config->security);
+    }
+
+    public function testAssistWorkerConfigRejectsInvalidHeartbeatInterval(): void
+    {
+        $this->expectException(RpcException::class);
+        new AssistWorkerConfig(heartbeatIntervalMs: 0);
     }
 
     public function testRejectsRegisteredPortAndCreatesMissingRpcSubPort(): void
@@ -208,8 +240,9 @@ final class ServerTest extends TestCase
         $worker = new AssistWorker(
             $server->allServiceNodes(),
             $manager,
-            5000,
-            new DiscoveryConfig(listen: false, broadcast: false),
+            new AssistWorkerConfig(
+                discovery: new DiscoveryConfig(listen: false, broadcast: false),
+            ),
         );
         (new \ReflectionMethod($worker, 'onShutDown'))->invoke($worker);
 
