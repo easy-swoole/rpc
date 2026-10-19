@@ -2,8 +2,6 @@
 
 namespace EasySwoole\Rpc\Server;
 
-use EasySwoole\Rpc\Exception\RpcException;
-
 use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Component\Process\AbstractProcess;
@@ -179,15 +177,6 @@ final class AssistWorker extends AbstractProcess
         }
     }
 
-    private static function splitAddress(string $address): array
-    {
-        $position = strrpos($address, ':');
-        if ($position === false) {
-            throw new RpcException('Discovery address must use host:port format.');
-        }
-        return [substr($address, 0, $position), (int) substr($address, $position + 1)];
-    }
-
     private function broadcast(string $action = DiscoveryMessage::HEARTBEAT): void
     {
         if (!$this->config->discovery->broadcast || $this->socket === null) {
@@ -205,8 +194,7 @@ final class AssistWorker extends AbstractProcess
                 ));
                 continue;
             }
-            foreach ($this->config->discovery->broadcastAddresses as $address) {
-                [$host, $port] = self::splitAddress($address);
+            foreach ($this->config->discovery->broadcastTargets() as [$host, $port]) {
                 if (!$this->socket->sendto($host, $port, $packet)) {
                     $this->report(sprintf(
                         'RPC discovery broadcast failed for service "%s" node "%s" to %s:%d: %s',

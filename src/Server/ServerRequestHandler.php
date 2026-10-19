@@ -24,9 +24,8 @@ final class ServerRequestHandler
             $service->__dispatch($request, $response);
             return $response;
         } catch (\Throwable $throwable) {
-            $response->setStatus(ResponseStatus::SERVICE_ERROR)->setNodeHealthStatus(NodeHealthStatus::SUSPECT)->setMsg('Server error.');
             $this->report($throwable);
-            return $response;
+            return $this->markServerError($response);
         }
     }
     public function handlePacket(string $payload): string
@@ -47,13 +46,21 @@ final class ServerRequestHandler
             // 业务结果无法序列化时仍返回一个最小安全响应，不能让客户端误判为网络故障。
             $this->report($throwable);
             return $this->codec->encodeResponse(
-                (new Response($request->getRequestUUID()))
-                    ->setStatus(ResponseStatus::SERVICE_ERROR)
-                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-                    ->setMsg('Server error.'),
+                $this->markServerError(new Response($request->getRequestUUID())),
             );
         }
     }
+
+    private function markServerError(Response $response): Response
+    {
+        return $response
+            ->setStatus(ResponseStatus::SERVICE_ERROR)
+            // 异常可能发生在 Action 已写入结果之后，错误响应不能携带半完成的业务数据。
+            ->setResult(null)
+            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
+            ->setMsg('Server error.');
+    }
+
     private function report(\Throwable $throwable): void
     {
         if ($this->onException === null) { return; }

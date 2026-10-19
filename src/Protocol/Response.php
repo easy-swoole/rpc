@@ -47,6 +47,11 @@ final class Response implements \JsonSerializable, \Stringable
         if (!is_array($data)) {
             throw new RpcException('RPC response must be a JSON object.');
         }
+        return self::fromArray($data);
+    }
+
+    public static function fromArray(array $data): self
+    {
         if (!isset($data['status']) || !is_int($data['status'])
             || ResponseStatus::tryFrom($data['status']) === null) {
             throw new RpcException('RPC response contains an invalid status.');

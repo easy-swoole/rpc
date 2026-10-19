@@ -54,6 +54,19 @@ final class RpcTest extends TestCase
         new DiscoveryConfig(broadcast: true, broadcastAddresses: []);
     }
 
+    public function testDiscoveryConfigurationNormalizesBroadcastTargetsOnce(): void
+    {
+        $config = new DiscoveryConfig(
+            broadcast: true,
+            broadcastAddresses: ['255.255.255.255:9600', 'rpc-discovery.local:9700'],
+        );
+
+        self::assertSame([
+            ['255.255.255.255', 9600],
+            ['rpc-discovery.local', 9700],
+        ], $config->broadcastTargets());
+    }
+
     public function testProtocolConfigurationRejectsInvalidPackageSize(): void
     {
         $this->expectException(RpcException::class);

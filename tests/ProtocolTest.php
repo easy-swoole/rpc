@@ -113,6 +113,20 @@ final class ProtocolTest extends TestCase
         self::assertSame($response->toJson(), (string) $response);
     }
 
+    public function testResponseCanBeHydratedDirectlyFromDecodedPayload(): void
+    {
+        $response = Response::fromArray([
+            'status' => ResponseStatus::OK->value,
+            'result' => ['ok' => true],
+            'msg' => null,
+            'nodeHealthStatus' => NodeHealthStatus::HEALTHY->value,
+            'requestUUID' => 'request-id',
+        ]);
+
+        self::assertSame('request-id', $response->getRequestUUID());
+        self::assertSame(['ok' => true], $response->getResult());
+    }
+
     public function testRejectsUnknownResponseStatus(): void
     {
         $this->expectException(RpcException::class);

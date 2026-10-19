@@ -25,8 +25,7 @@ final class ProtocolCodec
 
     public function decodeResponse(string $json): Response
     {
-        $payload = $this->decode($json);
-        return Response::fromJson(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        return Response::fromArray($this->decode($json));
     }
 
     private function encode(array $payload): string

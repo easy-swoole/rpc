@@ -424,6 +424,7 @@ final class ServerTest extends TestCase
 
         self::assertSame('unexpected after-request failure', $reported);
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertNull($response->getResult());
     }
 
     public function testGlobalExceptionHandlerCannotBreakResponseLifecycle(): void

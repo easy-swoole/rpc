@@ -6,6 +6,9 @@ use EasySwoole\Rpc\Exception\RpcException;
 
 final class DiscoveryConfig
 {
+    /** @var list<array{string, int}> */
+    private array $broadcastTargets = [];
+
     /** @param list<string> $broadcastAddresses address entries in host:port form */
     public function __construct(
         public readonly bool $listen = false,
@@ -37,7 +40,18 @@ final class DiscoveryConfig
                     || (int) $matches[1] > 65535) {
                     throw new RpcException('Discovery broadcast addresses must use host:port format with a valid port.');
                 }
+                $position = strrpos($address, ':');
+                $this->broadcastTargets[] = [
+                    substr($address, 0, $position),
+                    (int) substr($address, $position + 1),
+                ];
             }
         }
+    }
+
+    /** @return list<array{string, int}> */
+    public function broadcastTargets(): array
+    {
+        return $this->broadcastTargets;
     }
 }
