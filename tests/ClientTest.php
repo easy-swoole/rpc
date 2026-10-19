@@ -11,7 +11,6 @@ use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Exception\RpcException;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
@@ -68,6 +67,39 @@ final class ClientTest extends TestCase
         $batch->exec(0);
     }
 
+    public function testClientExceptionHandlerObservesEscapingBatchException(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $reported = null;
+        $client = $this->client(
+            $manager,
+            new ConsecutiveFailurePolicy(),
+            new class extends TcpTransport {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return new Response($request->getRequestUUID());
+                }
+            },
+        );
+        $client->setOnException(function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->setOnSuccess(static function (): never {
+            throw new \RuntimeException('client callback failed');
+        });
+
+        try {
+            $batch->exec();
+            self::fail('The original client exception must still escape.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('client callback failed', $exception->getMessage());
+        }
+        self::assertInstanceOf(\RuntimeException::class, $reported);
+        self::assertSame('client callback failed', $reported->getMessage());
+    }
+
     public function testReportsNodeRegistryQueryFailure(): void
     {
         $manager = new class extends AbstractNodeManager {
@@ -77,15 +109,14 @@ final class ClientTest extends TestCase
             public function getNodes(string $serviceName): array|false { return false; }
         };
         $reported = null;
-        $reporter = new RuntimeErrorReporter();
-        $reporter->setHandler(function (string $message) use (&$reported): void {
+        $onRuntimeError = function (string $message) use (&$reported): void {
             $reported = $message;
-        });
+        };
         $client = new Client(
             $manager,
             new WeightedRandomNodeSelector(),
             new ConsecutiveFailurePolicy(),
-            runtimeErrorReporter: $reporter,
+            onRuntimeError: $onRuntimeError,
         );
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
@@ -345,10 +376,9 @@ final class ClientTest extends TestCase
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
         $reported = null;
-        $reporter = new RuntimeErrorReporter();
-        $reporter->setHandler(function (string $message) use (&$reported): void {
+        $onRuntimeError = function (string $message) use (&$reported): void {
             $reported = $message;
-        });
+        };
         $client = $this->client(
             $manager,
             new ConsecutiveFailurePolicy(),
@@ -358,7 +388,7 @@ final class ClientTest extends TestCase
                     throw new \LogicException('unexpected transport state');
                 }
             },
-            $reporter,
+            $onRuntimeError,
         );
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
@@ -532,11 +562,11 @@ final class ClientTest extends TestCase
         SwooleTableNodeManager $manager,
         ConsecutiveFailurePolicy $failurePolicy,
         TcpTransport $transport,
-        RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
+        ?callable $onRuntimeError = null,
     ): Client {
         $selector = new WeightedRandomNodeSelector();
         $client = new Client($manager, $selector, $failurePolicy);
-        $executor = new RequestExecutor($manager, $selector, $failurePolicy, $transport, $runtimeErrorReporter);
+        $executor = new RequestExecutor($manager, $selector, $failurePolicy, $transport, $onRuntimeError);
         (new \ReflectionProperty($client, 'executor'))->setValue($client, $executor);
         return $client;
     }

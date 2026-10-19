@@ -3,7 +3,6 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\SecurityConfig;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
@@ -105,15 +104,14 @@ final class DiscoveryTest extends TestCase
             public function getNodes(string $serviceName): array { return []; }
         };
         $reported = null;
-        $reporter = new RuntimeErrorReporter();
-        $reporter->setHandler(function (string $message) use (&$reported): void {
+        $onRuntimeError = function (string $message) use (&$reported): void {
             $reported = $message;
-        });
+        };
         $worker = new AssistWorker(
             ['Test' => $node],
             $manager,
             new AssistWorkerConfig(),
-            $reporter,
+            $onRuntimeError,
         );
 
         (new \ReflectionMethod($worker, 'onlineServices'))->invoke($worker);
@@ -133,11 +131,10 @@ final class DiscoveryTest extends TestCase
             public function getNodes(string $serviceName): array|false { return []; }
         };
         $reported = null;
-        $reporter = new RuntimeErrorReporter();
-        $reporter->setHandler(function (string $message) use (&$reported): void {
+        $onRuntimeError = function (string $message) use (&$reported): void {
             $reported = $message;
-        });
-        $worker = new AssistWorker([], $manager, new AssistWorkerConfig(), $reporter);
+        };
+        $worker = new AssistWorker([], $manager, new AssistWorkerConfig(), $onRuntimeError);
 
         (new \ReflectionMethod($worker, 'handleDiscoveredNode'))
             ->invoke($worker, DiscoveryMessage::HEARTBEAT, $node);
@@ -155,15 +152,14 @@ final class DiscoveryTest extends TestCase
             public function online(ServiceNode $node): bool { throw new \RuntimeException('storage unavailable'); }
             public function getNodes(string $serviceName): array { return []; }
         };
-        $reporter = new RuntimeErrorReporter();
-        $reporter->setHandler(static function (): never {
+        $onRuntimeError = static function (): never {
             throw new \RuntimeException('reporter unavailable');
-        });
+        };
         $worker = new AssistWorker(
             ['Test' => $node],
             $manager,
             new AssistWorkerConfig(),
-            $reporter,
+            $onRuntimeError,
         );
 
         (new \ReflectionMethod($worker, 'onlineServices'))->invoke($worker);

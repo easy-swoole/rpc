@@ -12,7 +12,10 @@ final class RequestBatch
     private array $calls = [];
     private bool $executing = false;
 
-    public function __construct(private readonly RequestExecutor $executor) {}
+    public function __construct(
+        private readonly RequestExecutor $executor,
+        private readonly mixed $onException = null,
+    ) {}
 
     public function addCall(string $path): RequestContext
     {
@@ -68,7 +71,15 @@ final class RequestBatch
             if ($errors !== []) {
                 // 等待全部协程收尾后再抛出，避免其中一个异常导致其他调用被遗留。
                 ksort($errors);
-                throw reset($errors);
+                $throwable = reset($errors);
+                if (is_callable($this->onException)) {
+                    try {
+                        ($this->onException)($throwable);
+                    } catch (\Throwable) {
+                        // 异常观察回调不能覆盖即将抛给调用方的原始异常。
+                    }
+                }
+                throw $throwable;
             }
             ksort($responses);
             return array_values($responses);

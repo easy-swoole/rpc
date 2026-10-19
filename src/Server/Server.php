@@ -10,7 +10,6 @@ use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\SecurityConfig;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 
 final class Server
 {
@@ -24,7 +23,7 @@ final class Server
         DiscoveryConfig $discoveryConfig = new DiscoveryConfig(),
         SecurityConfig $securityConfig = new SecurityConfig(),
         ProtocolConfig $protocolConfig = new ProtocolConfig(),
-        RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
+        ?callable $onRuntimeError = null,
     ) {
         // 显式 nodeId 可在实例重启后覆盖旧记录；未配置时为当前 Server 自动生成 UUID。
         $this->registry = new ServiceRegistry($nodeManager, $config, $config->nodeId ?? self::uuid());
@@ -40,7 +39,7 @@ final class Server
             $nodeManager,
             $this->registry,
             $this->handler,
-            $runtimeErrorReporter,
+            $onRuntimeError,
         );
     }
 
@@ -63,7 +62,7 @@ final class Server
     }
 
     /** @internal Configure background-process error reporting through Rpc. */
-    public function setOnRuntimeError(?callable $callback): static
+    public function setOnRuntimeError(callable $callback): static
     {
         $this->attacher->setOnRuntimeError($callback);
         return $this;

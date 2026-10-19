@@ -10,21 +10,26 @@ class Rpc
 {
     // Rpc 只负责组装配置与依赖，不持有请求状态，因此调用方可自行决定其生命周期。
     private Server $server;
-    private RuntimeErrorReporter $runtimeErrorReporter;
+    private Client $client;
 
     public function __construct(
         private readonly RpcConfig $config = new RpcConfig(),
         private readonly RpcDependencies $dependencies = new RpcDependencies(),
     )
     {
-        $this->runtimeErrorReporter = new RuntimeErrorReporter();
         $this->server = new Server(
             $this->dependencies->getNodeManager(),
             $this->config->getServer(),
             $this->config->getDiscovery(),
             $this->config->getSecurity(),
             $this->config->getProtocol(),
-            $this->runtimeErrorReporter,
+        );
+        $this->client = new Client(
+            $this->dependencies->getNodeManager(),
+            $this->dependencies->getNodeSelector(),
+            $this->dependencies->getFailurePolicy(),
+            $this->config->getSecurity(),
+            $this->config->getProtocol(),
         );
     }
 
@@ -40,21 +45,8 @@ class Rpc
 
     public function client(): Client
     {
-        // Client 不保存调用批次；每次 buildRequest() 都会创建独立的 RequestBatch。
-        return new Client(
-            $this->getNodeManager(),
-            $this->dependencies->getNodeSelector(),
-            $this->dependencies->getFailurePolicy(),
-            $this->config->getSecurity(),
-            $this->config->getProtocol(),
-            $this->runtimeErrorReporter,
-        );
-    }
-
-    public function setOnRuntimeError(?callable $callback): static
-    {
-        $this->server->setOnRuntimeError($callback);
-        return $this;
+        // Client 本身不保存调用批次；并发隔离由每次 buildRequest() 创建的 RequestBatch 提供。
+        return $this->client;
     }
 
 }

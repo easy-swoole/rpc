@@ -108,17 +108,19 @@ final class RpcTest extends TestCase
         new DiscoveryConfig(listen: true, socketRetryIntervalMs: 0);
     }
 
-    public function testConfiguresGlobalRuntimeErrorHandler(): void
+    public function testConfiguresClientAndServerRuntimeErrorHandlersIndependently(): void
     {
         $rpc = new Rpc();
-        $handler = static function (string $message): void {};
+        $serverHandler = static function (string $message): void {};
+        $clientHandler = static function (string $message): void {};
 
-        self::assertSame($rpc, $rpc->setOnRuntimeError($handler));
-
-        $reporter = (new \ReflectionProperty($rpc, 'runtimeErrorReporter'))->getValue($rpc);
-        self::assertSame($handler, (new \ReflectionProperty($reporter, 'callback'))->getValue($reporter));
+        self::assertSame($rpc->server(), $rpc->server()->setOnRuntimeError($serverHandler));
         $client = $rpc->client();
+        self::assertSame($client, $client->setOnRuntimeError($clientHandler));
+        $attacher = (new \ReflectionProperty($rpc->server(), 'attacher'))->getValue($rpc->server());
         $executor = (new \ReflectionProperty($client, 'executor'))->getValue($client);
-        self::assertSame($reporter, (new \ReflectionProperty($executor, 'runtimeErrorReporter'))->getValue($executor));
+        self::assertSame($serverHandler, (new \ReflectionProperty($attacher, 'onRuntimeError'))->getValue($attacher));
+        self::assertSame($clientHandler, (new \ReflectionProperty($executor, 'onRuntimeError'))->getValue($executor));
+        self::assertSame($client, $rpc->client());
     }
 }

@@ -7,12 +7,13 @@ use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\SecurityConfig;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 use Swoole\Server\Port;
 
 final class SwooleServerAttacher
 {
     private ServerAttachStatus $status = ServerAttachStatus::PENDING;
+    private mixed $onRuntimeError;
+
     public function __construct(
         private readonly ServerConfig $serverConfig,
         private readonly DiscoveryConfig $discoveryConfig,
@@ -21,17 +22,19 @@ final class SwooleServerAttacher
         private readonly AbstractNodeManager $nodeManager,
         private readonly ServiceRegistry $registry,
         private readonly ServerRequestHandler $handler,
-        private readonly RuntimeErrorReporter $runtimeErrorReporter,
-    ) {}
+        ?callable $onRuntimeError = null,
+    ) {
+        $this->onRuntimeError = $onRuntimeError;
+    }
 
     public function status(): ServerAttachStatus { return $this->status; }
 
-    public function setOnRuntimeError(?callable $callback): void
+    public function setOnRuntimeError(callable $callback): void
     {
         if ($this->status !== ServerAttachStatus::PENDING) {
             throw new RpcException('Runtime error handler must be configured before RPC Server attachment.');
         }
-        $this->runtimeErrorReporter->setHandler($callback);
+        $this->onRuntimeError = $callback;
     }
 
     public function attach(\Swoole\Server $server): void
@@ -63,7 +66,7 @@ final class SwooleServerAttacher
                     $this->discoveryConfig,
                     $this->securityConfig,
                 ),
-                $this->runtimeErrorReporter,
+                $this->onRuntimeError,
             );
             $listener = $server->addListener($this->serverConfig->listenAddress, $this->serverConfig->listenPort, SWOOLE_SOCK_TCP);
             if (!$listener instanceof Port) {
@@ -95,13 +98,13 @@ final class SwooleServerAttacher
         try {
             $responsePacket = $this->buildResponsePacket($packet);
             if (!$server->send($fd, $responsePacket)) {
-                $this->runtimeErrorReporter->report(sprintf(
+                $this->report(sprintf(
                     'RPC TCP response send failed for connection %d.',
                     $fd,
                 ));
             }
         } catch (\Throwable $throwable) {
-            $this->runtimeErrorReporter->report(sprintf(
+            $this->report(sprintf(
                 'RPC TCP receive callback failed for connection %d: %s',
                 $fd,
                 $throwable->getMessage(),
@@ -111,7 +114,7 @@ final class SwooleServerAttacher
             try {
                 $server->close($fd);
             } catch (\Throwable $throwable) {
-                $this->runtimeErrorReporter->report(sprintf(
+                $this->report(sprintf(
                     'RPC TCP connection %d close failed: %s',
                     $fd,
                     $throwable->getMessage(),
@@ -188,6 +191,18 @@ final class SwooleServerAttacher
                 $ttlMilliseconds,
                 $this->discoveryConfig->broadcastIntervalMs,
             ));
+        }
+    }
+
+    private function report(string $message): void
+    {
+        if (!is_callable($this->onRuntimeError)) {
+            return;
+        }
+        try {
+            ($this->onRuntimeError)($message);
+        } catch (\Throwable) {
+            // 日志回调异常不能破坏 TCP 响应和连接清理。
         }
     }
 }

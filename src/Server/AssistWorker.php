@@ -3,7 +3,6 @@
 namespace EasySwoole\Rpc\Server;
 
 use EasySwoole\Rpc\SecurityConfig;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
@@ -11,6 +10,7 @@ use Swoole\Coroutine\Socket;
 
 final class AssistWorker extends AbstractProcess
 {
+    private mixed $onRuntimeError;
     private ?Socket $socket = null;
     private ?int $heartbeatTimerId = null;
     private ?int $discoveryTimerId = null;
@@ -23,8 +23,9 @@ final class AssistWorker extends AbstractProcess
         private readonly array $serviceNodes,
         private readonly AbstractNodeManager $nodeManager,
         private readonly AssistWorkerConfig $config = new AssistWorkerConfig(),
-        private readonly RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
+        ?callable $onRuntimeError = null,
     ) {
+        $this->onRuntimeError = $onRuntimeError;
         $processConfig = new ProcessConfig();
         $processName = 'rpc-assist-worker';
         if (($nodeName = trim($this->config->nodeName)) !== '') {
@@ -266,7 +267,14 @@ final class AssistWorker extends AbstractProcess
 
     private function report(string $message): void
     {
-        $this->runtimeErrorReporter->report($message);
+        if (!is_callable($this->onRuntimeError)) {
+            return;
+        }
+        try {
+            ($this->onRuntimeError)($message);
+        } catch (\Throwable) {
+            // 日志回调异常不能终止节点心跳或 UDP 服务发现。
+        }
     }
 
     private function cancelDiscoveryRetry(): void

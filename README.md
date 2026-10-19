@@ -101,9 +101,9 @@ $rpc->server()->setOnException(static function (Throwable $throwable): void {
     error_log('[rpc exception] ' . $throwable->getMessage());
 });
 
-$rpc->setOnRuntimeError(static function (string $message): void {
-    // 捕获心跳、节点登记、UDP 和 TCP 回调等后台运行错误。
-    error_log('[rpc runtime] ' . $message);
+$rpc->server()->setOnRuntimeError(static function (string $message): void {
+    // 捕获服务端心跳、节点登记、UDP 和 TCP 回调等后台运行错误。
+    error_log('[rpc server runtime] ' . $message);
 });
 
 // 9501 是宿主 Server 的主端口；RPC 会自动增加监听 9601 的 subPort。
@@ -514,13 +514,18 @@ $rpc = new Rpc(
 );
 ```
 
-RPC 还提供全局的后台运行错误回调。它负责接收 assist-worker 中无法同步抛回调用方的节点上线、心跳、下线以及 UDP 监听和广播错误。回调必须在 `attachServer()` 前设置；回调自身抛出的异常会被隔离，不会终止 assist-worker。
+Server 和 Client 分别提供运行错误回调。Server 回调负责 assist-worker 中无法同步抛回调用方的节点上线、心跳、下线以及 UDP 监听和广播错误，必须在 `attachServer()` 前设置；Client 回调负责节点查询、节点下线和未预期 Transport 错误。两类回调互不影响，回调自身抛出的异常也会被隔离。
 
 ```php
-$rpc->setOnRuntimeError(
+$rpc->server()->setOnRuntimeError(
     function (string $message): void {
         // Closure 会随 Swoole fork 进入 assist-worker；其中使用的资源需由调用方保证支持 fork。
-        logger()->error($message);
+        logger()->error('[server] ' . $message);
+    }
+);
+$rpc->client()->setOnRuntimeError(
+    function (string $message): void {
+        logger()->error('[client] ' . $message);
     }
 );
 ```
@@ -700,7 +705,7 @@ $rpc = new Rpc(config: new RpcConfig(
 $rpc->server()->attachServer($gatewayServer);
 ```
 
-`AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。节点名、心跳周期、UDP 与安全设置由只读的 `AssistWorkerConfig` 统一约束；NodeManager 和 RuntimeErrorReporter 作为运行依赖单独传入，不会混入配置。进程名称会拼接 `nodeName`，例如 `rpc-assist-worker.user-rpc-1`；`nodeName` 为空时保持为 `rpc-assist-worker`。本机心跳和 UDP 广播使用不同的定时器；关闭 UDP 时不会创建 Socket 或 UDP 定时器。
+`AssistWorker` 继承自 `EasySwoole\Component\Process\AbstractProcess`。节点名、心跳周期、UDP 与安全设置由只读的 `AssistWorkerConfig` 统一约束；NodeManager 作为运行依赖单独传入。服务端 `onRuntimeError` 在 attach 时传入 AssistWorker，不会与客户端错误回调混用。进程名称会拼接 `nodeName`，例如 `rpc-assist-worker.user-rpc-1`；`nodeName` 为空时保持为 `rpc-assist-worker`。本机心跳和 UDP 广播使用不同的定时器；关闭 UDP 时不会创建 Socket 或 UDP 定时器。
 
 没有节点广播时，UDP `recvfrom()` 会以协程方式正常等待，不会被视为错误。外部链路或网卡短暂中断通常同样不会破坏已经绑定的 UDP Socket。只有首次创建或 bind 失败时，AssistWorker 才会记录 `onRuntimeError`，并按照 `socketRetryIntervalMs`（默认 5000 毫秒）低频尝试创建 Socket；本地节点心跳不受影响。`recvfrom()` 明确返回 `false` 通常意味着进程或 Socket 正在关闭，接收循环会直接结束，不做无意义的重建；正常关停时也不会记录错误。
 
@@ -907,7 +912,9 @@ protected function onException(Throwable $throwable, Response $response): void
 | `AbstractServiceModule::onException()` | Action 内的业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
 | `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
 | `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
-| `$rpc->setOnRuntimeError()` | AssistWorker、NodeManager、UDP、TCP 回调等后台错误 | 否，只接收简短错误消息 |
+| `$rpc->server()->setOnRuntimeError()` | AssistWorker、服务端 NodeManager、UDP、TCP receive 等运行错误 | 否，只接收简短错误消息 |
+| `$rpc->client()->setOnException()` | 最终仍会抛给调用方的客户端执行或回调异常 | 否，只观察原始 Throwable，不会吞掉异常 |
+| `$rpc->client()->setOnRuntimeError()` | 客户端 NodeManager 查询/下线失败、未预期 Transport 错误 | 否，只接收简短错误消息 |
 
 配置和生命周期错误应由调用方直接捕获 `RpcException`：
 

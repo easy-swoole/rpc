@@ -9,18 +9,26 @@ use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
-use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class RequestExecutor
 {
+    private mixed $onRuntimeError;
+
     public function __construct(
         private readonly AbstractNodeManager $nodeManager,
         private readonly NodeSelectorInterface $nodeSelector,
         private readonly NodeFailurePolicyInterface $failurePolicy,
         private readonly TcpTransport $transport,
-        private readonly RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
-    ) {}
+        ?callable $onRuntimeError = null,
+    ) {
+        $this->onRuntimeError = $onRuntimeError;
+    }
+
+    public function setOnRuntimeError(callable $callback): void
+    {
+        $this->onRuntimeError = $callback;
+    }
 
     public function execute(RequestContext $context, float $timeout): Response
     {
@@ -66,7 +74,7 @@ final class RequestExecutor
         }
         if ($nodes === false) {
             // false 表示注册中心查询失败；空数组则表示查询成功但当前没有节点。
-            $this->runtimeErrorReporter->report(sprintf(
+            $this->report(sprintf(
                 'RPC node query failed for service "%s"%s.',
                 $service,
                 $queryError === null ? '' : ': ' . $queryError,
@@ -90,7 +98,7 @@ final class RequestExecutor
         try {
             return $this->transport->send($node, $request, $timeout);
         } catch (\Throwable $throwable) {
-            $this->runtimeErrorReporter->report(sprintf(
+            $this->report(sprintf(
                 'Unexpected RPC transport failure for service "%s", node "%s": %s',
                 $node->getServiceName(),
                 $node->getNodeId(),
@@ -125,7 +133,7 @@ final class RequestExecutor
         } catch (\Throwable $throwable) {
             $message = ': ' . $throwable->getMessage();
         }
-        $this->runtimeErrorReporter->report(sprintf(
+        $this->report(sprintf(
             'RPC node offline failed for service "%s", node "%s"%s.',
             $node->getServiceName(),
             $node->getNodeId(),
@@ -138,5 +146,17 @@ final class RequestExecutor
         // 尚未生成或发出 TCP 请求，因此这里不能伪造一个随机 requestUUID。
         return (new Response(''))
             ->setStatus(ResponseStatus::NOT_AVAILABLE_NODE);
+    }
+
+    private function report(string $message): void
+    {
+        if (!is_callable($this->onRuntimeError)) {
+            return;
+        }
+        try {
+            ($this->onRuntimeError)($message);
+        } catch (\Throwable) {
+            // 运行日志回调不能反向破坏客户端请求生命周期。
+        }
     }
 }
