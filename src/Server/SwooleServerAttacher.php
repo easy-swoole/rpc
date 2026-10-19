@@ -12,7 +12,7 @@ use Swoole\Server\Port;
 final class SwooleServerAttacher
 {
     private ServerAttachStatus $status = ServerAttachStatus::PENDING;
-    private ?AssistWorker $worker = null;
+
     public function __construct(
         private readonly ServerConfig $serverConfig,
         private readonly DiscoveryConfig $discoveryConfig,
@@ -63,7 +63,6 @@ final class SwooleServerAttacher
             if ($server->addProcess($worker->getProcess()) === false) {
                 throw new RpcException('Unable to attach the RPC assist worker process.');
             }
-            $this->worker = $worker;
             $this->status = ServerAttachStatus::ATTACHED;
         } catch (\Throwable $throwable) {
             $this->status = ServerAttachStatus::FAILED;

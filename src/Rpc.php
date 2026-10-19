@@ -40,11 +40,12 @@ class Rpc
     public function client(): Client
     {
         $codec = new ProtocolCodec(new PayloadSigner($this->config->getSecurity()));
-        return (new Client(
+        return new Client(
             $this->getNodeManager(),
             $this->dependencies->getNodeSelector(),
             $this->dependencies->getFailurePolicy(),
-        ))->setTransport($this->dependencies->getTransport() ?? new TcpTransport($codec, $this->config->getProtocol()));
+            new TcpTransport($codec, $this->config->getProtocol()),
+        );
     }
 
 }

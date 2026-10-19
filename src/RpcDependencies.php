@@ -5,8 +5,6 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
-use EasySwoole\Rpc\AbstractInterface\TransportInterface;
-use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Utility\WeightedRandomNodeSelector;
 use EasySwoole\Rpc\Utility\ConsecutiveFailurePolicy;
@@ -17,7 +15,6 @@ final class RpcDependencies
         private readonly AbstractNodeManager $nodeManager = new SwooleTableNodeManager(),
         private readonly NodeSelectorInterface $nodeSelector = new WeightedRandomNodeSelector(),
         private readonly NodeFailurePolicyInterface $failurePolicy = new ConsecutiveFailurePolicy(),
-        private readonly ?TransportInterface $transport = null,
     ) {}
 
     public function getNodeManager(): AbstractNodeManager
@@ -35,8 +32,4 @@ final class RpcDependencies
         return $this->failurePolicy;
     }
 
-    public function getTransport(): ?TransportInterface
-    {
-        return $this->transport;
-    }
 }

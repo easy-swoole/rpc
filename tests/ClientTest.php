@@ -4,7 +4,7 @@ namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\Client\Client;
 use EasySwoole\Rpc\Client\TransportException;
-use EasySwoole\Rpc\AbstractInterface\TransportInterface;
+use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
@@ -18,16 +18,16 @@ use PHPUnit\Framework\TestCase;
 
 final class ClientTest extends TestCase
 {
-    public function testExecutesRequestAndCallbackThroughInjectedTransport(): void
+    public function testExecutesRequestAndCallbackThroughTcpTransport(): void
     {
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
-        $transport = new class implements TransportInterface {
+        $transport = new class extends TcpTransport {
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             { return (new Response($request->getRequestUUID()))->setResult($request->getArg()); }
         };
         $called = false;
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))->setTransport($transport);
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), $transport);
         $client->addRequest('Test.Echo.value')->setArg('value')->setOnSuccess(function (Response $response) use (&$called): void {
             $called = $response->getResult() === 'value';
         });
@@ -38,8 +38,7 @@ final class ClientTest extends TestCase
 
     public function testReportsMissingNodeWithoutCallingTransport(): void
     {
-        $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
-        $client->setTransport(new class implements TransportInterface {
+        $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new class extends TcpTransport {
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             { throw new \LogicException('must not be called'); }
         });
@@ -53,7 +52,7 @@ final class ClientTest extends TestCase
         $failed = new ServiceNode('Test', nodeId: 'failed');
         $healthy = new ServiceNode('Test', nodeId: 'healthy');
         $manager->online($failed); $manager->online($healthy);
-        $transport = new class implements TransportInterface {
+        $transport = new class extends TcpTransport {
             public array $visited = [];
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
@@ -62,7 +61,7 @@ final class ClientTest extends TestCase
                 return (new Response($request->getRequestUUID()))->setResult('ok');
             }
         };
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(1)))->setTransport($transport);
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(1), $transport);
         $client->addRequest('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
         self::assertTrue($client->exec()[0]->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
@@ -73,7 +72,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new class extends TcpTransport {
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
                 \Swoole\Coroutine::sleep(0.05);
@@ -90,7 +89,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
-        $transport = new class implements TransportInterface {
+        $transport = new class extends TcpTransport {
             public int $calls = 0;
 
             public function send(ServiceNode $node, Request $request, float $timeout): Response
@@ -101,8 +100,7 @@ final class ClientTest extends TestCase
                     ->setMsg('business failed');
             }
         };
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
-            ->setTransport($transport);
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), $transport);
         $client->addRequest('Test.Echo.value')->enableRetry(3);
         $response = $client->exec()[0];
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
@@ -115,8 +113,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(3)))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(3), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     throw new \RuntimeException('network down');
@@ -135,8 +132,7 @@ final class ClientTest extends TestCase
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node');
         $manager->online($node);
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     throw new TransportException(ResponseStatus::SERVER_TIMEOUT, 'response timeout');
@@ -154,8 +150,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     return new Response('another-request');
@@ -171,8 +166,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy()))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     return new Response($request->getRequestUUID());
@@ -193,7 +187,7 @@ final class ClientTest extends TestCase
 
     public function testAddRequestRejectsInvalidPathImmediately(): void
     {
-        $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
+        $client = new Client(new SwooleTableNodeManager(16), new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(), new TcpTransport());
 
         $this->expectException(RpcException::class);
         $client->addRequest('Test.action');
@@ -204,8 +198,7 @@ final class ClientTest extends TestCase
         $manager = new SwooleTableNodeManager(16);
         $node = new ServiceNode('Test', nodeId: 'node');
         $manager->online($node);
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(99)))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(99), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     return (new Response($request->getRequestUUID()))
@@ -225,8 +218,7 @@ final class ClientTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
-        $client = (new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(2)))
-            ->setTransport(new class implements TransportInterface {
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy(2), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
                     return (new Response($request->getRequestUUID()))

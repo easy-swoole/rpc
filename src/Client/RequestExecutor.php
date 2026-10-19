@@ -5,7 +5,6 @@ namespace EasySwoole\Rpc\Client;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
-use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
@@ -17,7 +16,7 @@ final class RequestExecutor
         private readonly AbstractNodeManager $nodeManager,
         private readonly NodeSelectorInterface $nodeSelector,
         private readonly NodeFailurePolicyInterface $failurePolicy,
-        private readonly TransportInterface $transport,
+        private readonly TcpTransport $transport,
     ) {}
 
     public function execute(RequestContext $context, float $timeout): Response

@@ -2,18 +2,26 @@
 
 namespace EasySwoole\Rpc\Client;
 
-use EasySwoole\Rpc\AbstractInterface\TransportInterface;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\Server\ServiceNode;
 
-final class TcpTransport implements TransportInterface
+class TcpTransport
 {
-    public function __construct(private readonly ProtocolCodec $codec, private readonly ProtocolConfig $config = new ProtocolConfig()) {}
+    private readonly ProtocolCodec $codec;
+
+    public function __construct(
+        ?ProtocolCodec $codec = null,
+        private readonly ProtocolConfig $config = new ProtocolConfig(),
+    ) {
+        $this->codec = $codec ?? new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+    }
 
     public function send(ServiceNode $node, Request $request, float $timeout): Response
     {
