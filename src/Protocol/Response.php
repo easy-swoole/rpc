@@ -47,18 +47,20 @@ final class Response implements \JsonSerializable, \Stringable
         if (!is_array($data)) {
             throw new RpcException('RPC response must be a JSON object.');
         }
-        $status = isset($data['status']) && is_int($data['status'])
-            ? ResponseStatus::tryFrom($data['status'])
-            : null;
-        $nodeHealthStatus = !array_key_exists('nodeHealthStatus', $data)
-            ? NodeHealthStatus::HEALTHY
-            : (is_string($data['nodeHealthStatus']) ? NodeHealthStatus::tryFrom($data['nodeHealthStatus']) : null);
-        if ($nodeHealthStatus === null) {
+        if (!isset($data['status']) || !is_int($data['status'])
+            || ResponseStatus::tryFrom($data['status']) === null) {
+            throw new RpcException('RPC response contains an invalid status.');
+        }
+        if (!isset($data['nodeHealthStatus']) || !is_string($data['nodeHealthStatus'])
+            || NodeHealthStatus::tryFrom($data['nodeHealthStatus']) === null) {
             throw new RpcException('RPC response contains an invalid node health status.');
         }
-        return (new self((string) ($data['requestUUID'] ?? '')))
-            ->setStatus($status ?? ResponseStatus::ILLEGAL_PACKAGE)
-            ->setNodeHealthStatus($nodeHealthStatus)
+        if (!array_key_exists('requestUUID', $data) || !is_string($data['requestUUID'])) {
+            throw new RpcException('RPC response contains an invalid request UUID.');
+        }
+        return (new self($data['requestUUID']))
+            ->setStatus(ResponseStatus::from($data['status']))
+            ->setNodeHealthStatus(NodeHealthStatus::from($data['nodeHealthStatus']))
             ->setResult($data['result'] ?? null)->setMsg($data['msg'] ?? null);
     }
 

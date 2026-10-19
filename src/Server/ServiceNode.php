@@ -49,13 +49,22 @@ final class ServiceNode implements \JsonSerializable
 
     public static function fromArray(array $data): self
     {
+        if (!isset($data['serviceName'], $data['nodeId'], $data['nodeName'], $data['nodeWeight'], $data['ip'], $data['port'])
+            || !is_string($data['serviceName'])
+            || !is_string($data['nodeId'])
+            || !is_string($data['nodeName'])
+            || !is_int($data['nodeWeight'])
+            || !is_string($data['ip'])
+            || !is_int($data['port'])) {
+            throw new RpcException('Service node contains invalid or missing fields.');
+        }
         return new self(
-            serviceName: (string) ($data['serviceName'] ?? ''),
-            nodeId: (string) ($data['nodeId'] ?? ''),
-            nodeName: (string) ($data['nodeName'] ?? ''),
-            nodeWeight: (int) ($data['nodeWeight'] ?? 10),
-            ip: (string) ($data['ip'] ?? ''),
-            port: (int) ($data['port'] ?? 9502),
+            serviceName: $data['serviceName'],
+            nodeId: $data['nodeId'],
+            nodeName: $data['nodeName'],
+            nodeWeight: $data['nodeWeight'],
+            ip: $data['ip'],
+            port: $data['port'],
         );
     }
 }

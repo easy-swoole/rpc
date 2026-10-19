@@ -25,6 +25,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         }
         $this->table = $table ?? new \Swoole\Table($size);
         if ($table === null) {
+            // Table 在 fork 前创建，业务 Worker 与 AssistWorker 才能共享同一份节点数据。
             $this->table->column('service', \Swoole\Table::TYPE_STRING, self::SERVICE_COLUMN_BYTES);
             $this->table->column('node', \Swoole\Table::TYPE_STRING, self::NODE_COLUMN_BYTES);
             $this->table->column('heartbeat', \Swoole\Table::TYPE_INT, 8);
@@ -68,6 +69,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         $nodes = [];
         $deadline = time() - $this->nodeTtlSeconds;
         foreach ($this->table as $key => $row) {
+            // 可用性过滤属于 NodeManager 职责，调用方只会拿到 TTL 内的节点。
             if ($row['heartbeat'] < $deadline) {
                 $this->table->del((string) $key);
                 continue;
@@ -83,6 +85,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
                 }
                 $nodes[] = ServiceNode::fromArray($node);
             } catch (\JsonException | RpcException) {
+                // 单条损坏记录直接清理，不能阻断同一服务下其他健康节点。
                 $this->table->del((string) $key);
             }
         }
@@ -91,7 +94,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
 
     private function key(ServiceNode $node): string
     {
-        // Swoole Table keys are limited to 63 bytes; SHA-1's 40-byte hex form fits.
+        // Swoole Table key 最长 63 字节，SHA-1 的 40 字节十六进制结果可以稳定容纳。
         return sha1($node->getServiceName() . "\0" . $node->getNodeId());
     }
 }

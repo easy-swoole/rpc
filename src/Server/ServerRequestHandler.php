@@ -15,6 +15,7 @@ final class ServerRequestHandler
     public function setOnException(?callable $callback): void { $this->onException = $callback; }
     public function handle(Request $request): Response
     {
+        // 响应始终回显请求标识，客户端依靠它校验响应是否属于当前请求。
         $response = new Response($request->getRequestUUID());
         $service = $this->registry->find($request->getService());
         if ($service === null) { return $response->setStatus(ResponseStatus::SERVICE_NOT_EXIST); }
@@ -27,13 +28,33 @@ final class ServerRequestHandler
     }
     public function handlePacket(string $payload): string
     {
-        try { $response = $this->handle($this->codec->decodeRequest($payload)); }
-        catch (\Throwable) { $response = (new Response(''))->setStatus(ResponseStatus::ILLEGAL_PACKAGE)->setMsg('Illegal RPC request.'); }
-        return $this->codec->encodeResponse($response);
+        try {
+            $request = $this->codec->decodeRequest($payload);
+        } catch (\Throwable) {
+            // 非法数据属于可预期的客户端输入，不应触发服务端全局异常回调。
+            return $this->codec->encodeResponse(
+                (new Response(''))->setStatus(ResponseStatus::ILLEGAL_PACKAGE)->setMsg('Illegal RPC request.'),
+            );
+        }
+
+        $response = $this->handle($request);
+        try {
+            return $this->codec->encodeResponse($response);
+        } catch (\Throwable $throwable) {
+            // 业务结果无法序列化时仍返回一个最小安全响应，不能让客户端误判为网络故障。
+            $this->report($throwable);
+            return $this->codec->encodeResponse(
+                (new Response($request->getRequestUUID()))
+                    ->setStatus(ResponseStatus::SERVICE_ERROR)
+                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
+                    ->setMsg('Server error.'),
+            );
+        }
     }
     private function report(\Throwable $throwable): void
     {
         if ($this->onException === null) { return; }
+        // 日志回调自身失败不能反向破坏 RPC 响应流程。
         try { ($this->onException)($throwable); } catch (\Throwable) {}
     }
 }

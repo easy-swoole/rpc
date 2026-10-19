@@ -40,8 +40,10 @@ final class SwooleServerAttacher
             throw new RpcException('RPC Server attachment can only be attempted once.');
         }
         $this->status = ServerAttachStatus::ATTACHING;
+        // 从这一刻起禁止再注册服务，保证 listener 与 AssistWorker 使用同一份节点快照。
         $this->registry->freeze();
         try {
+            // 已存在的端口可能由业务方配置了其他协议，不能擅自复用为 RPC listener。
             foreach ($server->ports as $port) {
                 if ((int) $port->port === $this->serverConfig->listenPort) {
                     throw new RpcException(sprintf(
@@ -50,6 +52,7 @@ final class SwooleServerAttacher
                     ));
                 }
             }
+            // 在创建 listener 和挂载进程之前完成所有可预检项目，减少半挂载状态。
             $this->assertUdpAvailable();
             $worker = new AssistWorker(
                 $this->registry->nodes(),
@@ -66,6 +69,7 @@ final class SwooleServerAttacher
                 throw new RpcException('Unable to create RPC listener.');
             }
             $listener->set([
+                // 与客户端 Protocol::pack() 保持一致：4 字节长度头 + JSON 载荷。
                 'open_length_check' => true,
                 'package_length_type' => 'N',
                 'package_length_offset' => 0,
@@ -102,6 +106,7 @@ final class SwooleServerAttacher
                 $throwable->getMessage(),
             ));
         } finally {
+            // 当前协议采用 TCP 短连接，一个请求响应完成后立即关闭连接。
             try {
                 $server->close($fd);
             } catch (\Throwable $throwable) {
@@ -119,7 +124,7 @@ final class SwooleServerAttacher
         try {
             $payload = Protocol::unpack($packet);
         } catch (\Throwable) {
-            // Invalid framing is expected client input and must not reach a global error callback.
+            // 非法帧属于客户端输入问题，只返回 ILLEGAL_PACKAGE，不进入全局异常回调。
             $payload = '';
         }
         return Protocol::pack($this->handler->handlePacket($payload));
@@ -131,6 +136,7 @@ final class SwooleServerAttacher
             return;
         }
         $error = null;
+        // attach 阶段临时 bind 探测端口，避免 AssistWorker fork 后才因端口冲突反复退出。
         $probe = function () use (&$error): void {
             $socket = new \Swoole\Coroutine\Socket(AF_INET, SOCK_DGRAM, 0);
             try {

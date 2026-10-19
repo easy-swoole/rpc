@@ -41,6 +41,7 @@ final class AssistWorker extends AbstractProcess
 
     protected function run($arg): void
     {
+        // AssistWorker 启动即登记本机服务，并持续刷新本机 NodeManager 中的心跳。
         $this->onlineServices();
         $this->heartbeatTimerId = $this->addTick(
             $this->config->heartbeatIntervalMs,
@@ -57,6 +58,7 @@ final class AssistWorker extends AbstractProcess
     protected function onShutDown(): void
     {
         $this->shuttingDown = true;
+        // 先通知其他实例下线，再删除本机记录；收不到广播时仍由 NodeManager TTL 兜底。
         $this->broadcast(DiscoveryMessage::OFFLINE);
         $this->offlineServices();
         if ($this->heartbeatTimerId !== null) {
@@ -113,6 +115,7 @@ final class AssistWorker extends AbstractProcess
             $this->socket = null;
             return false;
         }
+        // 同一个 UDP Socket 同时承担监听与广播，减少进程内无意义的资源拆分。
         $this->running = true;
         return true;
     }
@@ -123,6 +126,7 @@ final class AssistWorker extends AbstractProcess
             return;
         }
         if (!$this->startUdpDiscovery()) {
+            // 创建或 bind 失败才重试；已绑定 Socket 不会因外部网络暂时中断而重建。
             $this->scheduleUdpRetry();
             return;
         }
@@ -156,6 +160,7 @@ final class AssistWorker extends AbstractProcess
             $peer = null;
             $packet = $this->socket?->recvfrom($peer);
             if ($packet === false) {
+                // recvfrom() 返回 false 通常表示 Socket 或进程正在关闭，继续重建没有意义。
                 if (!$this->shuttingDown) {
                     $this->report($this->socket?->errMsg ?: 'RPC discovery receive loop stopped unexpectedly.');
                 }
@@ -166,7 +171,7 @@ final class AssistWorker extends AbstractProcess
                 try {
                     [$action, $node] = DiscoveryMessage::decode($packet, $this->config->security);
                 } catch (\Throwable) {
-                    // Invalid or untrusted discovery datagrams are deliberately ignored.
+                    // 非法或签名不可信的 UDP 数据直接忽略，避免外部垃圾包污染运行错误日志。
                     continue;
                 }
                 $this->handleDiscoveredNode($action, $node);
@@ -251,6 +256,7 @@ final class AssistWorker extends AbstractProcess
 
     private function updateNode(ServiceNode $node, string $operationName, callable $operation): void
     {
+        // NodeManager 的 false 是可恢复的运行失败，只上报日志，不终止后续心跳。
         try {
             if (!$operation()) {
                 $this->report($this->nodeErrorMessage($node, $operationName));

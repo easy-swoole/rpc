@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Client;
 
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\ProtocolConfig;
@@ -26,7 +27,11 @@ class TcpTransport
 
     public function send(ServiceNode $node, Request $request, float $timeout): Response
     {
+        if (!is_finite($timeout) || $timeout <= 0) {
+            throw new RpcException('RPC timeout must be greater than zero.');
+        }
         try {
+            // 签名和时间戳只在真正发送时由 Codec 写入，Request 对象本身保持纯业务数据。
             $packet = Protocol::pack($this->codec->encodeRequest($request));
         } catch (\Throwable $throwable) {
             return $this->failure(
@@ -49,10 +54,10 @@ class TcpTransport
         $domain = filter_var($node->getIp(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
             ? AF_INET6
             : AF_INET;
-        // Protocol 0 lets the operating system select TCP for a stream socket.
-        // IPPROTO_TCP is not exposed by every PHP/Swoole build.
+        // 部分 PHP/Swoole 构建没有 IPPROTO_TCP；传 0 由系统为 SOCK_STREAM 自动选择 TCP。
         $client = new \Swoole\Coroutine\Socket($domain, SOCK_STREAM, 0);
         try {
+            // 客户端与服务端统一使用 4 字节网络序长度头，recvPacket() 会读取完整响应帧。
             if (!$client->setProtocol([
                 'open_length_check' => true,
                 'package_length_type' => 'N',
@@ -77,6 +82,7 @@ class TcpTransport
                 );
             }
             $sentBytes = $client->sendAll($packet, $timeout);
+            // TCP send() 可能只写入部分数据，sendAll() 才能保证完整报文被发送。
             if ($sentBytes === false || $sentBytes !== strlen($packet)) {
                 return $this->failure(
                     $request,
@@ -119,6 +125,7 @@ class TcpTransport
 
     private static function classifySocketFailure(int $errorCode, ResponseStatus $timeoutStatus): ResponseStatus
     {
+        // 只有明确的超时错误才映射为超时，其余网络失败统一保留为 TRANSPORT_ERROR。
         $timeoutErrors = [];
         foreach (['SOCKET_ETIMEDOUT', 'SOCKET_EAGAIN', 'SOCKET_EWOULDBLOCK', 'SWOOLE_ERROR_SOCKET_POLL_TIMEOUT'] as $constant) {
             if (defined($constant)) {

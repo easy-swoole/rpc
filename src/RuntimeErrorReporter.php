@@ -19,7 +19,7 @@ final class RuntimeErrorReporter
         try {
             ($this->callback)($message);
         } catch (\Throwable) {
-            // Runtime error reporting must never alter the RPC lifecycle.
+            // 运行日志回调必须与 RPC 生命周期隔离，回调异常不能终止心跳或请求。
         }
     }
 }

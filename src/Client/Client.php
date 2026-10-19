@@ -22,6 +22,7 @@ final class Client
         ProtocolConfig $protocolConfig = new ProtocolConfig(),
         RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
     ) {
+        // TCP 协议与服务端 attachServer() 固定配套，不对外暴露可替换 Transport。
         $transport = new TcpTransport(
             new ProtocolCodec(new PayloadSigner($securityConfig)),
             $protocolConfig,
@@ -30,6 +31,7 @@ final class Client
     }
     public function buildRequest(): RequestBatch
     {
+        // 批次彼此隔离，同一个 Client 可以在不同协程中并发创建多个批次。
         return new RequestBatch($this->executor);
     }
 }

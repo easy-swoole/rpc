@@ -439,6 +439,60 @@ final class ServerTest extends TestCase
         self::assertSame('request-id', $response->getRequestUUID());
     }
 
+    public function testUnserializableActionResultReturnsServiceErrorWithRequestUuid(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'Serialization'; }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Result'; }
+            #[RpcAction]
+            public function invalid(): mixed { return fopen('php://memory', 'r'); }
+        });
+        $this->server->registerService($service);
+        $reported = null;
+        $this->server->setOnException(function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $handler = (new \ReflectionProperty($this->server, 'handler'))->getValue($this->server);
+
+        $response = $codec->decodeResponse($handler->handlePacket(
+            $codec->encodeRequest(new Request('Serialization.Result.invalid', requestUUID: 'request-id')),
+        ));
+
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame(NodeHealthStatus::SUSPECT, $response->getNodeHealthStatus());
+        self::assertSame('request-id', $response->getRequestUUID());
+        self::assertSame('Server error.', $response->getMsg());
+        self::assertInstanceOf(RpcException::class, $reported);
+    }
+
+    public function testModuleCannotReplaceTheCurrentRequestUuid(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'CustomResponse'; }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Result'; }
+            #[RpcAction]
+            public function invalid(): Response { return new Response('another-request'); }
+        });
+        $this->server->registerService($service);
+
+        set_error_handler(static fn (int $severity): bool => $severity === E_USER_WARNING);
+        try {
+            $response = $this->server->handle(
+                new Request('CustomResponse.Result.invalid', requestUUID: 'request-id'),
+            );
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame('request-id', $response->getRequestUUID());
+    }
+
     public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void
     {
         $service = new class extends AbstractService {

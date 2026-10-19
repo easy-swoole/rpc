@@ -5,29 +5,23 @@ namespace EasySwoole\Rpc\AbstractInterface;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 /**
- * Node manager implementations must be safe to use after Swoole forks.
+ * NodeManager 必须支持在 Swoole fork 后安全使用。
  *
- * The same instance is created in the parent process and inherited by server
- * workers and RPC custom processes. Shared-memory resources may be initialized
- * before the fork, but process-bound resources such as Redis/Etcd clients,
- * sockets and coroutine clients must be connected lazily in the child process
- * and recreated whenever the current PID differs from their owner PID.
+ * 同一个实例会在父进程中创建，再由业务 Worker 和 RPC 自定义进程继承。共享内存资源可以在
+ * fork 前初始化；Redis/Etcd 客户端、Socket、协程客户端等进程绑定资源必须在子进程中延迟连接，
+ * 并在当前 PID 与资源所属 PID 不一致时重新创建。
  */
 abstract class AbstractNodeManager
 {
     /**
-     * Runtime failures such as a temporarily unavailable registry must return
-     * false instead of throwing. Callers will report the failure and keep the
-     * normal heartbeat/retry lifecycle running so the node can recover later.
+     * 注册中心暂时不可用等运行失败应返回 false，而不是抛出异常。调用方会记录失败并继续正常的
+     * 心跳或重试周期，使节点能够在网络恢复后自动恢复。
      */
     abstract public function heartbeat(ServiceNode $node): bool;
     abstract public function offline(ServiceNode $node): bool;
     abstract public function online(ServiceNode $node): bool;
 
-    /**
-     * @return list<ServiceNode>|false An empty list means that the query
-     * succeeded with no available nodes; false means the registry query failed.
-     */
+    /** @return list<ServiceNode>|false 空数组表示查询成功但没有节点；false 表示注册中心查询失败。 */
     abstract public function getNodes(string $serviceName): array|false;
 
 }

@@ -54,6 +54,20 @@ final class ClientTest extends TestCase
         self::assertSame('', $response->getRequestUUID());
     }
 
+    public function testRejectsNonPositiveTimeoutBeforeExecutingCalls(): void
+    {
+        $batch = (new Client(
+            new SwooleTableNodeManager(16),
+            new WeightedRandomNodeSelector(),
+            new ConsecutiveFailurePolicy(),
+        ))->buildRequest();
+        $batch->addCall('Test.Echo.value');
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('greater than zero');
+        $batch->exec(0);
+    }
+
     public function testReportsNodeRegistryQueryFailure(): void
     {
         $manager = new class extends AbstractNodeManager {

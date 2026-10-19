@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\AbstractInterface;
 
 use EasySwoole\Rpc\Attribute\RpcAction;
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
@@ -21,11 +22,15 @@ abstract class AbstractServiceModule
                     ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
             }
             $action = $request->getAction();
+            // 只有显式标记 #[RpcAction] 的 public 方法才能作为远程入口。
             if (!$this->isActionAllowed($action)) {
                 return $this->actionNotFound($request, $response);
             }
             $result = $this->{$action}($request->getArg(), $request);
             if ($result instanceof Response) {
+                if ($result->getRequestUUID() !== $request->getRequestUUID()) {
+                    throw new RpcException('Module response request UUID must match the current request UUID.');
+                }
                 return $result;
             }
             $response->setResult($result);

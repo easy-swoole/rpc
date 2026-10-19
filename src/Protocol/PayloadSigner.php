@@ -34,6 +34,7 @@ final class PayloadSigner
     private function canonicalJson(array $payload): string
     {
         try {
+            // 对象键顺序不应影响签名；列表顺序仍属于业务数据，不能排序。
             $normalized = json_decode(json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
             return json_encode(self::sortRecursively($normalized), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {

@@ -8,6 +8,7 @@ use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 
 class Rpc
 {
+    // Rpc 只负责组装配置与依赖，不持有请求状态，因此调用方可自行决定其生命周期。
     private Server $server;
     private RuntimeErrorReporter $runtimeErrorReporter;
 
@@ -39,6 +40,7 @@ class Rpc
 
     public function client(): Client
     {
+        // Client 不保存调用批次；每次 buildRequest() 都会创建独立的 RequestBatch。
         return new Client(
             $this->getNodeManager(),
             $this->dependencies->getNodeSelector(),

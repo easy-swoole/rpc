@@ -41,6 +41,7 @@ abstract class AbstractService
     /** @internal Called by ServiceRegistry after successful registration. */
     final public function freeze(): void
     {
+        // ServiceRegistry 注册完成后冻结，避免 fork 后服务定义在不同进程中发生分叉。
         $this->frozen = true;
     }
 
@@ -54,6 +55,7 @@ abstract class AbstractService
             }
             $module = $this->modules[$request->getModule()] ?? null;
             if ($module === null) {
+                // Module 不存在时直接交给 Service 处理；Action 权限属于 Module 的职责。
                 return $this->moduleNotFound($request, $response);
             }
             return $module->__dispatch($request, $response);

@@ -31,4 +31,18 @@ final class ServiceNodeTest extends TestCase
         $this->expectException(RpcException::class);
         new ServiceNode('User', nodeId: 'node', port: 0);
     }
+
+    public function testRejectsInvalidSerializedFieldTypes(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('invalid or missing fields');
+        ServiceNode::fromArray([
+            'serviceName' => ['User'],
+            'nodeId' => 'node',
+            'nodeName' => 'node-one',
+            'nodeWeight' => 10,
+            'ip' => '127.0.0.1',
+            'port' => 9601,
+        ]);
+    }
 }

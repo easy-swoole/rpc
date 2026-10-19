@@ -69,11 +69,18 @@ final class ProtocolTest extends TestCase
         self::assertSame($response->toJson(), (string) $response);
     }
 
-    public function testUnknownResponseStatusIsTreatedAsIllegalPackage(): void
+    public function testRejectsUnknownResponseStatus(): void
     {
-        $response = Response::fromJson('{"status":9999,"requestUUID":"id"}');
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('invalid status');
+        Response::fromJson('{"status":9999,"nodeHealthStatus":"healthy","requestUUID":"id"}');
+    }
 
-        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+    public function testRejectsInvalidResponseRequestUuidType(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('invalid request UUID');
+        Response::fromJson('{"status":0,"nodeHealthStatus":"healthy","requestUUID":[]}');
     }
 
     public function testSignedRequestRoundTripAndTamperDetection(): void

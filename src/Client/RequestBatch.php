@@ -26,6 +26,9 @@ final class RequestBatch
     /** @return list<Response> */
     public function exec(float $timeout = 3.0): array
     {
+        if (!is_finite($timeout) || $timeout <= 0) {
+            throw new RpcException('RPC timeout must be greater than zero.');
+        }
         if ($this->executing) {
             throw new RpcException('The same RPC request batch cannot be executed concurrently.');
         }
@@ -33,11 +36,13 @@ final class RequestBatch
         $this->executing = true;
         $responses = [];
         $errors = [];
+        // 执行前先取走队列，即使回调抛出异常，旧调用也不会在下次 exec() 中重复执行。
         $calls = $this->calls;
         $this->calls = [];
         $execute = function () use (&$responses, &$errors, $calls, $timeout): void {
             $waitGroup = new \Swoole\Coroutine\WaitGroup();
             foreach ($calls as $index => $context) {
+                // 每个调用独占一个协程；最终按原始下标恢复调用方添加时的顺序。
                 $waitGroup->add();
                 \Swoole\Coroutine::create(function () use (&$responses, &$errors, $index, $context, $timeout, $waitGroup): void {
                     try {
@@ -61,6 +66,7 @@ final class RequestBatch
                 \Swoole\Coroutine\run($execute);
             }
             if ($errors !== []) {
+                // 等待全部协程收尾后再抛出，避免其中一个异常导致其他调用被遗留。
                 ksort($errors);
                 throw reset($errors);
             }

@@ -124,6 +124,8 @@ $rpc->server()->registerService($userService);
 
 Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
 
+Action 通常直接返回业务结果，由框架写入当前 Response。如果需要直接返回 `Response`，其中的 `requestUUID` 必须与当前 `Request::getRequestUUID()` 完全一致；否则框架会按业务服务异常处理，避免破坏客户端的请求响应关联校验。
+
 ## 3. 启动 RPC 服务端
 
 ### 挂载到 Swoole Server
@@ -249,7 +251,7 @@ $context
         var_dump($response->getStatus(), $response->getMsg());
     });
 
-$responses = $request->exec(timeout: 3.0); // 同一批次中的调用会并发执行
+$responses = $request->exec(timeout: 3.0); // timeout 必须大于 0；同一批次中的调用会并发执行
 $response = $responses[0];
 ```
 
@@ -544,7 +546,7 @@ final class RedisNodeManager extends AbstractNodeManager
         return true;
     }
 
-    public function getNodes(string $serviceName): array
+    public function getNodes(string $serviceName): array|false
     {
         // 返回 list<ServiceNode>
         return [];
@@ -562,6 +564,8 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 ## 9. 响应状态
 
 `Response::getStatus()` 返回 `ResponseStatus` 枚举；`Response::isSuccess()` 仅在状态为 `ResponseStatus::OK` 时返回 `true`。JSON 协议中仍使用对应的整数值。
+
+服务端会对 Response 进行最终序列化。如果 Action 返回资源、递归对象等无法编码为 JSON 的结果，服务端会触发全局 `onException`，丢弃非法结果，并向客户端返回保留原 `requestUUID` 的 `SERVICE_ERROR`，不会把业务结果编码错误伪装成 TCP 网络失败。客户端会严格校验响应状态、节点健康状态和 `requestUUID` 的字段类型；格式不合法时统一作为 `RESPONSE_DECODE_ERROR` 处理。
 
 ### NodeHealthStatus
 

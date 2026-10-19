@@ -29,11 +29,13 @@ final class ServiceRegistry
             ip: $this->config->advertiseIp,
             port: $this->config->resolvedAdvertisePort(),
         );
+        // 注册完成后同时冻结 Service，确保广播出去的服务定义不会在运行中继续变化。
         $service->freeze();
         $this->services[$name] = $service;
         $this->nodes[$name] = $node;
     }
 
+    // attachServer() 一开始即冻结 Registry，防止 fork 后各进程持有不同服务列表。
     public function freeze(): void { $this->frozen = true; }
     public function find(string $name): ?AbstractService { return $this->services[$name] ?? null; }
     public function node(string $name): ?ServiceNode { return $this->nodes[$name] ?? null; }

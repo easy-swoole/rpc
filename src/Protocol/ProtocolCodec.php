@@ -26,6 +26,7 @@ final class ProtocolCodec
 
     private function encode(array $payload): string
     {
+        // 时间戳参与签名但不进入 Request/Response 对象，避免对象创建时间影响实际发送时间。
         $payload['timestamp'] = time();
         try {
             return json_encode(['payload' => $payload, 'signature' => $this->signer->sign($payload)], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
@@ -43,6 +44,7 @@ final class ProtocolCodec
         }
         if (!is_array($envelope) || !is_array($envelope['payload'] ?? null)) { throw new RpcException('Invalid RPC envelope.'); }
         $payload = $envelope['payload'];
+        // 必须先验证包含 timestamp 的完整载荷，验证通过后再交给业务对象。
         $this->signer->verify($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null);
         unset($payload['timestamp']);
         return $payload;

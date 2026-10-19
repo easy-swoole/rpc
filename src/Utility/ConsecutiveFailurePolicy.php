@@ -29,6 +29,7 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
 
         if ($response->getNodeHealthStatus() === NodeHealthStatus::OFFLINE
             || $response->getStatus() === ResponseStatus::SERVICE_SHUTDOWN) {
+            // 服务端明确声明不可用时无需累计，立即从注册中心移除该节点。
             unset($this->failures[$key]);
             return NodeFailureAction::OFFLINE;
         }
@@ -42,13 +43,14 @@ final class ConsecutiveFailurePolicy implements NodeFailurePolicyInterface
                 ResponseStatus::PACKAGE_READ_TIMEOUT,
             ], true);
         if (!$isFailure) {
-            // A response from the service proves that the node is reachable.
+            // 任意健康响应都能证明节点可达，因此成功一次就重置连续失败计数。
             unset($this->failures[$key]);
             return NodeFailureAction::KEEP;
         }
 
         $this->failures[$key] = ($this->failures[$key] ?? 0) + 1;
         if ($this->failures[$key] >= $this->threshold) {
+            // 只有连续失败达到阈值才下线，偶发网络抖动仅换节点重试。
             unset($this->failures[$key]);
             return NodeFailureAction::OFFLINE;
         }

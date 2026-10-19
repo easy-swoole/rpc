@@ -28,6 +28,7 @@ final class RequestExecutor
         $attempt = 0;
         do {
             $shouldRetry = false;
+            // 重试时会清空 context 中的旧节点，再通过 NodeSelector 选择其他可用节点。
             $node = $context->getServiceNode() ?? $this->resolveNode($service);
             if ($node === null) {
                 return $this->unavailableResponse();
@@ -35,6 +36,7 @@ final class RequestExecutor
             $context->setServiceNode($node);
             $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
             $response = $this->validateResponse($request, $this->sendRequest($node, $request, $timeout));
+            // 失败策略只决定保留、换节点重试或下线；业务异常可以通过响应标记保持节点在线。
             $action = $this->failurePolicy->evaluate($node, $response);
             if ($action === NodeFailureAction::OFFLINE) {
                 $this->offlineNode($node);
@@ -58,6 +60,7 @@ final class RequestExecutor
             $queryError = $throwable->getMessage();
         }
         if ($nodes === false) {
+            // false 表示注册中心查询失败；空数组则表示查询成功但当前没有节点。
             $this->runtimeErrorReporter->report(sprintf(
                 'RPC node query failed for service "%s"%s.',
                 $service,
@@ -88,6 +91,7 @@ final class RequestExecutor
 
     private function validateResponse(Request $request, Response $response): Response
     {
+        // 服务端必须原样回传 requestUUID，防止并发场景下错误响应被当前请求接收。
         if ($response->getRequestUUID() === $request->getRequestUUID()) {
             return $response;
         }
@@ -117,6 +121,7 @@ final class RequestExecutor
 
     private function unavailableResponse(): Response
     {
+        // 尚未生成或发出 TCP 请求，因此这里不能伪造一个随机 requestUUID。
         return (new Response(''))
             ->setStatus(ResponseStatus::NOT_AVAILABLE_NODE);
     }

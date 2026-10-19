@@ -8,6 +8,7 @@ final class Protocol
 {
     public static function pack(string $payload): string
     {
+        // 固定使用 4 字节网络序无符号整数描述后续 JSON 载荷长度。
         return pack('N', strlen($payload)) . $payload;
     }
 
