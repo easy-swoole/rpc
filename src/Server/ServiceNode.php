@@ -13,7 +13,6 @@ final class ServiceNode implements \JsonSerializable
         private readonly int $nodeWeight = 10,
         private readonly string $ip = '',
         private readonly int $port = 9502,
-        private readonly string $listenAddress = '0.0.0.0',
     ) {
         if ($serviceName === '') {
             throw new RpcException('Service name cannot be empty.');
@@ -35,7 +34,6 @@ final class ServiceNode implements \JsonSerializable
     public function getNodeWeight(): int { return $this->nodeWeight; }
     public function getIp(): string { return $this->ip; }
     public function getPort(): int { return $this->port; }
-    public function getListenAddress(): string { return $this->listenAddress; }
 
     public function jsonSerialize(): array
     {
@@ -46,7 +44,6 @@ final class ServiceNode implements \JsonSerializable
             'nodeWeight' => $this->nodeWeight,
             'ip' => $this->ip,
             'port' => $this->port,
-            'listenAddress' => $this->listenAddress,
         ];
     }
 
@@ -59,7 +56,6 @@ final class ServiceNode implements \JsonSerializable
             nodeWeight: (int) ($data['nodeWeight'] ?? 10),
             ip: (string) ($data['ip'] ?? ''),
             port: (int) ($data['port'] ?? 9502),
-            listenAddress: (string) ($data['listenAddress'] ?? '0.0.0.0'),
         );
     }
 }

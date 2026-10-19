@@ -9,6 +9,9 @@ use EasySwoole\Rpc\Server\ServiceNode;
 
 final class SwooleTableNodeManager extends AbstractNodeManager
 {
+    public const SERVICE_COLUMN_BYTES = 64;
+    public const NODE_COLUMN_BYTES = 4096;
+
     private \Swoole\Table $table;
 
     public function __construct(
@@ -22,8 +25,8 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         }
         $this->table = $table ?? new \Swoole\Table($size);
         if ($table === null) {
-            $this->table->column('service', \Swoole\Table::TYPE_STRING, 128);
-            $this->table->column('node', \Swoole\Table::TYPE_STRING, 2048);
+            $this->table->column('service', \Swoole\Table::TYPE_STRING, self::SERVICE_COLUMN_BYTES);
+            $this->table->column('node', \Swoole\Table::TYPE_STRING, self::NODE_COLUMN_BYTES);
             $this->table->column('heartbeat', \Swoole\Table::TYPE_INT, 8);
             $this->table->create();
         }
@@ -36,10 +39,16 @@ final class SwooleTableNodeManager extends AbstractNodeManager
 
     public function online(ServiceNode $node): bool
     {
+        if (strlen($node->getServiceName()) > self::SERVICE_COLUMN_BYTES) {
+            return false;
+        }
         try {
             $encodedNode = json_encode($node, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        } catch (\JsonException $exception) {
-            throw new RpcException('Unable to encode service node.', previous: $exception);
+        } catch (\JsonException) {
+            return false;
+        }
+        if (strlen($encodedNode) > self::NODE_COLUMN_BYTES) {
+            return false;
         }
         return $this->table->set($this->key($node), [
             'service' => $node->getServiceName(),
@@ -54,7 +63,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         return true;
     }
 
-    public function getNodes(string $serviceName): array
+    public function getNodes(string $serviceName): array|false
     {
         $nodes = [];
         $deadline = time() - $this->nodeTtlSeconds;
@@ -68,10 +77,14 @@ final class SwooleTableNodeManager extends AbstractNodeManager
             }
             try {
                 $node = json_decode($row['node'], true, 512, JSON_THROW_ON_ERROR);
-            } catch (\JsonException $exception) {
-                throw new RpcException('Unable to decode service node.', previous: $exception);
+                if (!is_array($node)) {
+                    $this->table->del((string) $key);
+                    continue;
+                }
+                $nodes[] = ServiceNode::fromArray($node);
+            } catch (\JsonException | RpcException) {
+                $this->table->del((string) $key);
             }
-            $nodes[] = ServiceNode::fromArray($node);
         }
         return $nodes;
     }

@@ -7,12 +7,12 @@ use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\RuntimeErrorReporter;
 use Swoole\Server\Port;
 
 final class SwooleServerAttacher
 {
     private ServerAttachStatus $status = ServerAttachStatus::PENDING;
-
     public function __construct(
         private readonly ServerConfig $serverConfig,
         private readonly DiscoveryConfig $discoveryConfig,
@@ -21,9 +21,18 @@ final class SwooleServerAttacher
         private readonly AbstractNodeManager $nodeManager,
         private readonly ServiceRegistry $registry,
         private readonly ServerRequestHandler $handler,
+        private readonly RuntimeErrorReporter $runtimeErrorReporter,
     ) {}
 
     public function status(): ServerAttachStatus { return $this->status; }
+
+    public function setOnRuntimeError(?callable $callback): void
+    {
+        if ($this->status !== ServerAttachStatus::PENDING) {
+            throw new RpcException('Runtime error handler must be configured before RPC Server attachment.');
+        }
+        $this->runtimeErrorReporter->setHandler($callback);
+    }
 
     public function attach(\Swoole\Server $server): void
     {
@@ -50,6 +59,7 @@ final class SwooleServerAttacher
                     $this->discoveryConfig,
                     $this->securityConfig,
                 ),
+                $this->runtimeErrorReporter,
             );
             $listener = $server->addListener($this->serverConfig->listenAddress, $this->serverConfig->listenPort, SWOOLE_SOCK_TCP);
             if (!$listener instanceof Port) {
@@ -63,20 +73,58 @@ final class SwooleServerAttacher
                 'package_max_length' => $this->protocolConfig->maxPackageSize,
             ]);
             if (!$listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
-                $server->send($fd, Protocol::pack($this->handler->handlePacket(Protocol::unpack($packet))));
-                $server->close($fd);
+                $this->handleReceive($server, $fd, $packet);
             })) {
                 throw new RpcException('Unable to register the RPC receive callback.');
             }
-            if ($server->addProcess($worker->getProcess()) === false) {
-                throw new RpcException('Unable to attach the RPC assist worker process.');
-            }
+            $server->addProcess($worker->getProcess());
             $this->status = ServerAttachStatus::ATTACHED;
         } catch (\Throwable $throwable) {
             $this->status = ServerAttachStatus::FAILED;
             throw $throwable;
         }
     }
+
+    private function handleReceive(\Swoole\Server $server, int $fd, string $packet): void
+    {
+        try {
+            $responsePacket = $this->buildResponsePacket($packet);
+            if (!$server->send($fd, $responsePacket)) {
+                $this->runtimeErrorReporter->report(sprintf(
+                    'RPC TCP response send failed for connection %d.',
+                    $fd,
+                ));
+            }
+        } catch (\Throwable $throwable) {
+            $this->runtimeErrorReporter->report(sprintf(
+                'RPC TCP receive callback failed for connection %d: %s',
+                $fd,
+                $throwable->getMessage(),
+            ));
+        } finally {
+            try {
+                $server->close($fd);
+            } catch (\Throwable $throwable) {
+                $this->runtimeErrorReporter->report(sprintf(
+                    'RPC TCP connection %d close failed: %s',
+                    $fd,
+                    $throwable->getMessage(),
+                ));
+            }
+        }
+    }
+
+    private function buildResponsePacket(string $packet): string
+    {
+        try {
+            $payload = Protocol::unpack($packet);
+        } catch (\Throwable) {
+            // Invalid framing is expected client input and must not reach a global error callback.
+            $payload = '';
+        }
+        return Protocol::pack($this->handler->handlePacket($payload));
+    }
+
     private function assertUdpAvailable(): void
     {
         if (!$this->discoveryConfig->listen) {

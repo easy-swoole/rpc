@@ -16,6 +16,7 @@ final class ServiceNodeTest extends TestCase
         self::assertNotSame($node, $copy);
         self::assertSame('generated', $copy->getNodeId());
         self::assertSame($node->jsonSerialize(), $copy->jsonSerialize());
+        self::assertArrayNotHasKey('listenAddress', $copy->jsonSerialize());
     }
 
     public function testRejectsEmptyNodeId(): void

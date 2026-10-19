@@ -8,12 +8,13 @@ final class DiscoveryConfig
 {
     /** @param list<string> $broadcastAddresses address entries in host:port form */
     public function __construct(
-        public readonly bool $listen = true,
+        public readonly bool $listen = false,
         public readonly string $listenAddress = '0.0.0.0',
         public readonly int $listenPort = 9600,
-        public readonly bool $broadcast = true,
+        public readonly bool $broadcast = false,
         public readonly array $broadcastAddresses = ['255.255.255.255:9600'],
         public readonly int $broadcastIntervalMs = 5000,
+        public readonly int $socketRetryIntervalMs = 5000,
     ) {
         if ($this->listen && trim($this->listenAddress) === '') {
             throw new RpcException('Discovery listen address cannot be empty when UDP listening is enabled.');
@@ -23,6 +24,9 @@ final class DiscoveryConfig
         }
         if ($this->broadcast && $this->broadcastIntervalMs < 1) {
             throw new RpcException('Discovery broadcast interval must be at least 1 millisecond.');
+        }
+        if (($this->listen || $this->broadcast) && $this->socketRetryIntervalMs < 1) {
+            throw new RpcException('Discovery socket retry interval must be at least 1 millisecond.');
         }
         if ($this->broadcast && $this->broadcastAddresses === []) {
             throw new RpcException('At least one discovery broadcast address is required when broadcasting is enabled.');

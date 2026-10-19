@@ -29,8 +29,8 @@ final class SwooleTableNodeManagerTest extends TestCase
     public function testGetNodesFiltersAndRemovesExpiredNodes(): void
     {
         $table = new \Swoole\Table(16);
-        $table->column('service', \Swoole\Table::TYPE_STRING, 128);
-        $table->column('node', \Swoole\Table::TYPE_STRING, 2048);
+        $table->column('service', \Swoole\Table::TYPE_STRING, SwooleTableNodeManager::SERVICE_COLUMN_BYTES);
+        $table->column('node', \Swoole\Table::TYPE_STRING, SwooleTableNodeManager::NODE_COLUMN_BYTES);
         $table->column('heartbeat', \Swoole\Table::TYPE_INT, 8);
         $table->create();
 
@@ -42,6 +42,39 @@ final class SwooleTableNodeManagerTest extends TestCase
 
         self::assertSame([], $manager->getNodes('Orders'));
         self::assertFalse($table->exist($key));
+    }
+
+    public function testRejectsRowsThatWouldBeTruncated(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+
+        self::assertFalse($manager->online(new ServiceNode(str_repeat('s', 65), nodeId: 'node')));
+        self::assertFalse($manager->online(new ServiceNode('Orders', nodeId: 'node', nodeName: str_repeat('n', 4096))));
+        self::assertSame([], $manager->getNodes('Orders'));
+    }
+
+    public function testGetNodesDeletesDamagedRowsAndKeepsHealthyNodes(): void
+    {
+        $table = new \Swoole\Table(16);
+        $table->column('service', \Swoole\Table::TYPE_STRING, SwooleTableNodeManager::SERVICE_COLUMN_BYTES);
+        $table->column('node', \Swoole\Table::TYPE_STRING, SwooleTableNodeManager::NODE_COLUMN_BYTES);
+        $table->column('heartbeat', \Swoole\Table::TYPE_INT, 8);
+        $table->create();
+        $manager = new SwooleTableNodeManager(table: $table);
+        $healthy = new ServiceNode('Orders', nodeId: 'healthy');
+        self::assertTrue($manager->online($healthy));
+        $damagedKey = sha1("Orders\0damaged");
+        self::assertTrue($table->set($damagedKey, [
+            'service' => 'Orders',
+            'node' => '{invalid json',
+            'heartbeat' => time(),
+        ]));
+
+        $nodes = $manager->getNodes('Orders');
+
+        self::assertCount(1, $nodes);
+        self::assertSame('healthy', $nodes[0]->getNodeId());
+        self::assertFalse($table->exist($damagedKey));
     }
 
     public function testRejectsInvalidNodeTtl(): void

@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
@@ -70,9 +71,9 @@ final class DiscoveryTest extends TestCase
         $selector = new WeightedRandomNodeSelector();
         $node = new ServiceNode('Test', nodeId: 'node-one', ip: '127.0.0.1');
         $security = new SecurityConfig(apiKey: 'secret');
-        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, $security), $manager, $security);
+        self::assertTrue(AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, $security), $manager, $security));
         self::assertSame('node-one', $selector->select($manager->getNodes('Test'))?->getNodeId());
-        AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::OFFLINE, $node, $security), $manager, $security);
+        self::assertTrue(AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::OFFLINE, $node, $security), $manager, $security));
         self::assertNull($selector->select($manager->getNodes('Test')));
     }
 
@@ -92,6 +93,81 @@ final class DiscoveryTest extends TestCase
         (new \ReflectionMethod($process, 'onShutDown'))->invoke($process);
 
         self::assertSame([], $manager->getNodes('Test'));
+    }
+
+    public function testAssistWorkerReportsNodeManagerRuntimeFailure(): void
+    {
+        $node = new ServiceNode('Test', nodeId: 'failed-node', nodeName: 'node-a');
+        $manager = new class extends AbstractNodeManager {
+            public function heartbeat(ServiceNode $node): bool { return true; }
+            public function offline(ServiceNode $node): bool { return true; }
+            public function online(ServiceNode $node): bool { return false; }
+            public function getNodes(string $serviceName): array { return []; }
+        };
+        $reported = null;
+        $reporter = new RuntimeErrorReporter();
+        $reporter->setHandler(function (string $message) use (&$reported): void {
+            $reported = $message;
+        });
+        $worker = new AssistWorker(
+            ['Test' => $node],
+            $manager,
+            new AssistWorkerConfig(),
+            $reporter,
+        );
+
+        (new \ReflectionMethod($worker, 'onlineServices'))->invoke($worker);
+
+        self::assertStringContainsString('node online failed', $reported);
+        self::assertStringContainsString('service "Test"', $reported);
+        self::assertStringContainsString('node "failed-node"', $reported);
+    }
+
+    public function testUdpDiscoveryReportsNodeManagerFailureSeparatelyFromInvalidPackets(): void
+    {
+        $node = new ServiceNode('Test', nodeId: 'remote-node');
+        $manager = new class extends AbstractNodeManager {
+            public function heartbeat(ServiceNode $node): bool { return false; }
+            public function offline(ServiceNode $node): bool { return true; }
+            public function online(ServiceNode $node): bool { return true; }
+            public function getNodes(string $serviceName): array|false { return []; }
+        };
+        $reported = null;
+        $reporter = new RuntimeErrorReporter();
+        $reporter->setHandler(function (string $message) use (&$reported): void {
+            $reported = $message;
+        });
+        $worker = new AssistWorker([], $manager, new AssistWorkerConfig(), $reporter);
+
+        (new \ReflectionMethod($worker, 'handleDiscoveredNode'))
+            ->invoke($worker, DiscoveryMessage::HEARTBEAT, $node);
+
+        self::assertStringContainsString('node heartbeat failed', $reported);
+        self::assertStringContainsString('remote-node', $reported);
+    }
+
+    public function testRuntimeErrorHandlerCannotBreakAssistWorkerLifecycle(): void
+    {
+        $node = new ServiceNode('Test', nodeId: 'failed-node');
+        $manager = new class extends AbstractNodeManager {
+            public function heartbeat(ServiceNode $node): bool { return true; }
+            public function offline(ServiceNode $node): bool { return true; }
+            public function online(ServiceNode $node): bool { throw new \RuntimeException('storage unavailable'); }
+            public function getNodes(string $serviceName): array { return []; }
+        };
+        $reporter = new RuntimeErrorReporter();
+        $reporter->setHandler(static function (): never {
+            throw new \RuntimeException('reporter unavailable');
+        });
+        $worker = new AssistWorker(
+            ['Test' => $node],
+            $manager,
+            new AssistWorkerConfig(),
+            $reporter,
+        );
+
+        (new \ReflectionMethod($worker, 'onlineServices'))->invoke($worker);
+        self::assertTrue(true);
     }
 
     public function testRejectsDatagramWithWrongSecret(): void

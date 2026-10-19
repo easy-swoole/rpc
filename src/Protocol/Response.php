@@ -11,12 +11,12 @@ final class Response implements \JsonSerializable, \Stringable
     private mixed $msg = null;
     private NodeHealthStatus $nodeHealthStatus = NodeHealthStatus::HEALTHY;
 
-    public function __construct(private readonly string $responseUUID) {}
+    public function __construct(private readonly string $requestUUID) {}
     public function getStatus(): ResponseStatus { return $this->status; }
     public function getResult(): mixed { return $this->result; }
     public function getMsg(): mixed { return $this->msg; }
     public function getNodeHealthStatus(): NodeHealthStatus { return $this->nodeHealthStatus; }
-    public function getResponseUUID(): string { return $this->responseUUID; }
+    public function getRequestUUID(): string { return $this->requestUUID; }
     public function setStatus(ResponseStatus $status): self { $this->status = $status; return $this; }
     public function setResult(mixed $result): self { $this->result = $result; return $this; }
     public function setMsg(mixed $msg): self { $this->msg = $msg; return $this; }
@@ -27,7 +27,7 @@ final class Response implements \JsonSerializable, \Stringable
     }
     public function isSuccess(): bool { return $this->status === ResponseStatus::OK; }
     public function jsonSerialize(): array { return $this->payload(); }
-    public function __toString(): string
+    public function toJson(): string
     {
         try {
             return json_encode($this, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
@@ -35,6 +35,7 @@ final class Response implements \JsonSerializable, \Stringable
             throw new RpcException('Unable to encode RPC response.', previous: $exception);
         }
     }
+    public function __toString(): string { return $this->toJson(); }
 
     public static function fromJson(string $json): self
     {
@@ -55,7 +56,7 @@ final class Response implements \JsonSerializable, \Stringable
         if ($nodeHealthStatus === null) {
             throw new RpcException('RPC response contains an invalid node health status.');
         }
-        return (new self((string) ($data['responseUUID'] ?? '')))
+        return (new self((string) ($data['requestUUID'] ?? '')))
             ->setStatus($status ?? ResponseStatus::ILLEGAL_PACKAGE)
             ->setNodeHealthStatus($nodeHealthStatus)
             ->setResult($data['result'] ?? null)->setMsg($data['msg'] ?? null);
@@ -68,7 +69,7 @@ final class Response implements \JsonSerializable, \Stringable
             'result' => $this->result,
             'msg' => $this->msg,
             'nodeHealthStatus' => $this->nodeHealthStatus->value,
-            'responseUUID' => $this->responseUUID,
+            'requestUUID' => $this->requestUUID,
         ];
     }
 }

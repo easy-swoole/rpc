@@ -45,7 +45,7 @@ final class ServerTest extends TestCase
         $response = $this->server->handle(new Request('Test.Echo.value', ['a' => 1], requestUUID: 'id'));
         self::assertTrue($response->isSuccess());
         self::assertSame(['a' => 1], $response->getResult());
-        self::assertSame('id', $response->getResponseUUID());
+        self::assertSame('id', $response->getRequestUUID());
     }
 
     public function testRegisteredServiceOwnsCompleteServiceNode(): void
@@ -406,6 +406,22 @@ final class ServerTest extends TestCase
         self::assertFalse($reported);
     }
 
+    public function testInvalidTcpFrameReturnsIllegalPackageWithoutRuntimeError(): void
+    {
+        $reported = false;
+        $this->server->setOnRuntimeError(function (string $message) use (&$reported): void {
+            $reported = true;
+        });
+        $attacher = (new \ReflectionProperty($this->server, 'attacher'))->getValue($this->server);
+        $packet = (new \ReflectionMethod($attacher, 'buildResponsePacket'))->invoke($attacher, 'invalid frame');
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $response = $codec->decodeResponse(Protocol::unpack($packet));
+
+        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+        self::assertSame('Illegal RPC request.', $response->getMsg());
+        self::assertFalse($reported);
+    }
+
     public function testNetworkResponseUsesTheSharedApiKeySignature(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
@@ -420,7 +436,7 @@ final class ServerTest extends TestCase
         $response = $codec->decodeResponse($handler->handlePacket($codec->encodeRequest($request)));
 
         self::assertInstanceOf(Response::class, $response);
-        self::assertSame('request-id', $response->getResponseUUID());
+        self::assertSame('request-id', $response->getRequestUUID());
     }
 
     public function testMissingModuleAndActionAreHandledByTheirOwningLayer(): void

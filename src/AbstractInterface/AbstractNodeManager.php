@@ -15,11 +15,19 @@ use EasySwoole\Rpc\Server\ServiceNode;
  */
 abstract class AbstractNodeManager
 {
+    /**
+     * Runtime failures such as a temporarily unavailable registry must return
+     * false instead of throwing. Callers will report the failure and keep the
+     * normal heartbeat/retry lifecycle running so the node can recover later.
+     */
     abstract public function heartbeat(ServiceNode $node): bool;
     abstract public function offline(ServiceNode $node): bool;
     abstract public function online(ServiceNode $node): bool;
 
-    /** @return list<ServiceNode> */
-    abstract public function getNodes(string $serviceName): array;
+    /**
+     * @return list<ServiceNode>|false An empty list means that the query
+     * succeeded with no available nodes; false means the registry query failed.
+     */
+    abstract public function getNodes(string $serviceName): array|false;
 
 }

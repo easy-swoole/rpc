@@ -21,7 +21,14 @@ final class ServiceRegistry
         if (isset($this->services[$name])) { throw new RpcException(sprintf('Service "%s" is already registered.', $name)); }
         $weight = $service->serviceWeight();
         if ($weight < 0) { throw new RpcException(sprintf('Service "%s" weight cannot be negative.', $name)); }
-        $node = new ServiceNode($name, $this->nodeId, $this->config->nodeName, $weight, $this->config->advertiseIp, $this->config->resolvedAdvertisePort(), $this->config->listenAddress);
+        $node = new ServiceNode(
+            serviceName: $name,
+            nodeId: $this->nodeId,
+            nodeName: $this->config->nodeName,
+            nodeWeight: $weight,
+            ip: $this->config->advertiseIp,
+            port: $this->config->resolvedAdvertisePort(),
+        );
         $service->freeze();
         $this->services[$name] = $service;
         $this->nodes[$name] = $node;

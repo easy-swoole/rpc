@@ -58,6 +58,15 @@ final class Request implements \JsonSerializable
         ];
     }
 
+    public function toJson(): string
+    {
+        try {
+            return json_encode($this, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
+            throw new RpcException('Unable to encode RPC request.', previous: $exception);
+        }
+    }
+
     private static function uuid(): string
     {
         return bin2hex(random_bytes(16));

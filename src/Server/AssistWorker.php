@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc\Server;
 use EasySwoole\Rpc\Exception\RpcException;
 
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\RuntimeErrorReporter;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
@@ -15,13 +16,16 @@ final class AssistWorker extends AbstractProcess
     private ?Socket $socket = null;
     private ?int $heartbeatTimerId = null;
     private ?int $discoveryTimerId = null;
+    private ?int $udpRetryTimerId = null;
     private bool $running = false;
+    private bool $shuttingDown = false;
 
     /** @param array<string, ServiceNode> $serviceNodes */
     public function __construct(
         private readonly array $serviceNodes,
         private readonly AbstractNodeManager $nodeManager,
         private readonly AssistWorkerConfig $config = new AssistWorkerConfig(),
+        private readonly RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
     ) {
         $processConfig = new ProcessConfig();
         $processName = 'rpc-assist-worker';
@@ -47,49 +51,33 @@ final class AssistWorker extends AbstractProcess
             return;
         }
 
-        $this->startUdpDiscovery();
-        if ($this->config->discovery->broadcast) {
-            $this->broadcast();
-            $this->discoveryTimerId = $this->addTick(
-                $this->config->discovery->broadcastIntervalMs,
-                fn () => $this->broadcast(),
-            );
-        }
-
-        if ($this->config->discovery->listen) {
-            $this->receiveDiscoveryPackets();
-        }
+        $this->startDiscoveryLifecycle();
     }
 
     protected function onShutDown(): void
     {
-        $this->running = false;
+        $this->shuttingDown = true;
         $this->broadcast(DiscoveryMessage::OFFLINE);
         $this->offlineServices();
         if ($this->heartbeatTimerId !== null) {
             $this->clearTick($this->heartbeatTimerId);
             $this->heartbeatTimerId = null;
         }
-        if ($this->discoveryTimerId !== null) {
-            $this->clearTick($this->discoveryTimerId);
-            $this->discoveryTimerId = null;
-        }
-        $this->socket?->close();
-        $this->socket = null;
+        $this->cancelDiscoveryRetry();
+        $this->stopDiscovery();
     }
 
     public static function handlePacket(
         string $packet,
         AbstractNodeManager $manager,
         SecurityConfig $securityConfig = new SecurityConfig(),
-    ): void
+    ): bool
     {
         [$action, $node] = DiscoveryMessage::decode($packet, $securityConfig);
         if ($action === DiscoveryMessage::OFFLINE) {
-            $manager->offline($node);
-            return;
+            return $manager->offline($node);
         }
-        $manager->heartbeat($node);
+        return $manager->heartbeat($node);
     }
 
     private function udpEnabled(): bool
@@ -97,15 +85,69 @@ final class AssistWorker extends AbstractProcess
         return $this->config->discovery->listen || $this->config->discovery->broadcast;
     }
 
-    private function startUdpDiscovery(): void
+    private function startUdpDiscovery(): bool
     {
-        $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
-        $this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true);
+        try {
+            $this->socket = new Socket(AF_INET, SOCK_DGRAM, 0);
+        } catch (\Throwable $throwable) {
+            $this->report('Unable to create RPC discovery UDP socket: ' . $throwable->getMessage());
+            $this->socket = null;
+            return false;
+        }
+        if ($this->config->discovery->broadcast
+            && !$this->socket->setOption(SOL_SOCKET, SO_BROADCAST, true)) {
+            $this->report($this->socket->errMsg ?: 'Unable to enable RPC UDP broadcast.');
+            $this->socket->close();
+            $this->socket = null;
+            return false;
+        }
         if ($this->config->discovery->listen
             && !$this->socket->bind($this->config->discovery->listenAddress, $this->config->discovery->listenPort)) {
-            throw new RpcException('Unable to bind RPC discovery UDP socket.');
+            $this->report(sprintf(
+                'RPC discovery UDP listen failed on %s:%d: %s',
+                $this->config->discovery->listenAddress,
+                $this->config->discovery->listenPort,
+                $this->socket->errMsg ?: 'unknown socket error',
+            ));
+            $this->socket->close();
+            $this->socket = null;
+            return false;
         }
         $this->running = true;
+        return true;
+    }
+
+    private function startDiscoveryLifecycle(): void
+    {
+        if ($this->shuttingDown) {
+            return;
+        }
+        if (!$this->startUdpDiscovery()) {
+            $this->scheduleUdpRetry();
+            return;
+        }
+        $this->cancelDiscoveryRetry();
+        if ($this->config->discovery->broadcast) {
+            $this->broadcast();
+            $this->discoveryTimerId = $this->addTick(
+                $this->config->discovery->broadcastIntervalMs,
+                fn () => $this->broadcast(),
+            );
+        }
+        if ($this->config->discovery->listen) {
+            \Swoole\Coroutine::create(fn () => $this->receiveDiscoveryPackets());
+        }
+    }
+
+    private function scheduleUdpRetry(): void
+    {
+        if ($this->shuttingDown || $this->udpRetryTimerId !== null) {
+            return;
+        }
+        $this->udpRetryTimerId = $this->addTick(
+            $this->config->discovery->socketRetryIntervalMs,
+            fn () => $this->startDiscoveryLifecycle(),
+        );
     }
 
     private function receiveDiscoveryPackets(): void
@@ -113,12 +155,21 @@ final class AssistWorker extends AbstractProcess
         while ($this->running) {
             $peer = null;
             $packet = $this->socket?->recvfrom($peer);
+            if ($packet === false) {
+                if (!$this->shuttingDown) {
+                    $this->report($this->socket?->errMsg ?: 'RPC discovery receive loop stopped unexpectedly.');
+                }
+                $this->stopDiscovery();
+                return;
+            }
             if (is_string($packet) && $packet !== '') {
                 try {
-                    self::handlePacket($packet, $this->nodeManager, $this->config->security);
+                    [$action, $node] = DiscoveryMessage::decode($packet, $this->config->security);
                 } catch (\Throwable) {
                     // Invalid or untrusted discovery datagrams are deliberately ignored.
+                    continue;
                 }
+                $this->handleDiscoveredNode($action, $node);
             }
         }
     }
@@ -138,10 +189,29 @@ final class AssistWorker extends AbstractProcess
             return;
         }
         foreach ($this->serviceNodes as $node) {
-            $packet = DiscoveryMessage::encode($action, $node, $this->config->security);
+            try {
+                $packet = DiscoveryMessage::encode($action, $node, $this->config->security);
+            } catch (\Throwable $throwable) {
+                $this->report(sprintf(
+                    'RPC discovery packet encoding failed for service "%s", node "%s": %s',
+                    $node->getServiceName(),
+                    $node->getNodeId(),
+                    $throwable->getMessage(),
+                ));
+                continue;
+            }
             foreach ($this->config->discovery->broadcastAddresses as $address) {
                 [$host, $port] = self::splitAddress($address);
-                $this->socket->sendto($host, $port, $packet);
+                if (!$this->socket->sendto($host, $port, $packet)) {
+                    $this->report(sprintf(
+                        'RPC discovery broadcast failed for service "%s" node "%s" to %s:%d: %s',
+                        $node->getServiceName(),
+                        $node->getNodeId(),
+                        $host,
+                        $port,
+                        $this->socket->errMsg ?: 'unknown socket error',
+                    ));
+                }
             }
         }
     }
@@ -149,21 +219,79 @@ final class AssistWorker extends AbstractProcess
     private function onlineServices(): void
     {
         foreach ($this->serviceNodes as $node) {
-            $this->nodeManager->online($node);
+            $this->updateNode($node, 'online', fn (): bool => $this->nodeManager->online($node));
         }
+    }
+
+    private function handleDiscoveredNode(string $action, ServiceNode $node): void
+    {
+        $operationName = $action === DiscoveryMessage::OFFLINE ? 'offline' : 'heartbeat';
+        $this->updateNode(
+            $node,
+            $operationName,
+            fn (): bool => $action === DiscoveryMessage::OFFLINE
+                ? $this->nodeManager->offline($node)
+                : $this->nodeManager->heartbeat($node),
+        );
     }
 
     private function heartbeatServices(): void
     {
         foreach ($this->serviceNodes as $node) {
-            $this->nodeManager->heartbeat($node);
+            $this->updateNode($node, 'heartbeat', fn (): bool => $this->nodeManager->heartbeat($node));
         }
     }
 
     private function offlineServices(): void
     {
         foreach ($this->serviceNodes as $node) {
-            $this->nodeManager->offline($node);
+            $this->updateNode($node, 'offline', fn (): bool => $this->nodeManager->offline($node));
         }
+    }
+
+    private function updateNode(ServiceNode $node, string $operationName, callable $operation): void
+    {
+        try {
+            if (!$operation()) {
+                $this->report($this->nodeErrorMessage($node, $operationName));
+            }
+        } catch (\Throwable $throwable) {
+            $this->report($this->nodeErrorMessage($node, $operationName) . ': ' . $throwable->getMessage());
+        }
+    }
+
+    private function nodeErrorMessage(ServiceNode $node, string $operationName): string
+    {
+        return sprintf(
+            'RPC node %s failed for service "%s", node "%s".',
+            $operationName,
+            $node->getServiceName(),
+            $node->getNodeId(),
+        );
+    }
+
+    private function report(string $message): void
+    {
+        $this->runtimeErrorReporter->report($message);
+    }
+
+    private function cancelDiscoveryRetry(): void
+    {
+        if ($this->udpRetryTimerId === null) {
+            return;
+        }
+        $this->clearTick($this->udpRetryTimerId);
+        $this->udpRetryTimerId = null;
+    }
+
+    private function stopDiscovery(): void
+    {
+        $this->running = false;
+        if ($this->discoveryTimerId !== null) {
+            $this->clearTick($this->discoveryTimerId);
+            $this->discoveryTimerId = null;
+        }
+        $this->socket?->close();
+        $this->socket = null;
     }
 }

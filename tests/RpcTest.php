@@ -80,4 +80,32 @@ final class RpcTest extends TestCase
         $this->expectException(\Error::class);
         $config->listen = true;
     }
+
+    public function testUdpDiscoveryIsDisabledByDefault(): void
+    {
+        $config = new DiscoveryConfig();
+
+        self::assertFalse($config->listen);
+        self::assertFalse($config->broadcast);
+    }
+
+    public function testDiscoveryConfigRejectsInvalidSocketRetryIntervalWhenEnabled(): void
+    {
+        $this->expectException(RpcException::class);
+        new DiscoveryConfig(listen: true, socketRetryIntervalMs: 0);
+    }
+
+    public function testConfiguresGlobalRuntimeErrorHandler(): void
+    {
+        $rpc = new Rpc();
+        $handler = static function (string $message): void {};
+
+        self::assertSame($rpc, $rpc->setOnRuntimeError($handler));
+
+        $reporter = (new \ReflectionProperty($rpc, 'runtimeErrorReporter'))->getValue($rpc);
+        self::assertSame($handler, (new \ReflectionProperty($reporter, 'callback'))->getValue($reporter));
+        $client = $rpc->client();
+        $executor = (new \ReflectionProperty($client, 'executor'))->getValue($client);
+        self::assertSame($reporter, (new \ReflectionProperty($executor, 'runtimeErrorReporter'))->getValue($executor));
+    }
 }

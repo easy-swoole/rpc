@@ -10,6 +10,7 @@ use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\RuntimeErrorReporter;
 
 final class Server
 {
@@ -23,6 +24,7 @@ final class Server
         DiscoveryConfig $discoveryConfig = new DiscoveryConfig(),
         SecurityConfig $securityConfig = new SecurityConfig(),
         ProtocolConfig $protocolConfig = new ProtocolConfig(),
+        RuntimeErrorReporter $runtimeErrorReporter = new RuntimeErrorReporter(),
     ) {
         $this->registry = new ServiceRegistry($nodeManager, $config, self::uuid());
         $this->handler = new ServerRequestHandler(
@@ -37,6 +39,7 @@ final class Server
             $nodeManager,
             $this->registry,
             $this->handler,
+            $runtimeErrorReporter,
         );
     }
 
@@ -55,6 +58,13 @@ final class Server
     public function setOnException(?callable $callback): static
     {
         $this->handler->setOnException($callback);
+        return $this;
+    }
+
+    /** @internal Configure background-process error reporting through Rpc. */
+    public function setOnRuntimeError(?callable $callback): static
+    {
+        $this->attacher->setOnRuntimeError($callback);
         return $this;
     }
 

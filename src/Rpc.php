@@ -5,25 +5,25 @@ namespace EasySwoole\Rpc;
 use EasySwoole\Rpc\Client\Client;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
-use EasySwoole\Rpc\Client\TcpTransport;
-use EasySwoole\Rpc\Protocol\PayloadSigner;
-use EasySwoole\Rpc\Protocol\ProtocolCodec;
 
 class Rpc
 {
     private Server $server;
+    private RuntimeErrorReporter $runtimeErrorReporter;
 
     public function __construct(
         private readonly RpcConfig $config = new RpcConfig(),
         private readonly RpcDependencies $dependencies = new RpcDependencies(),
     )
     {
+        $this->runtimeErrorReporter = new RuntimeErrorReporter();
         $this->server = new Server(
             $this->dependencies->getNodeManager(),
             $this->config->getServer(),
             $this->config->getDiscovery(),
             $this->config->getSecurity(),
             $this->config->getProtocol(),
+            $this->runtimeErrorReporter,
         );
     }
 
@@ -39,13 +39,20 @@ class Rpc
 
     public function client(): Client
     {
-        $codec = new ProtocolCodec(new PayloadSigner($this->config->getSecurity()));
         return new Client(
             $this->getNodeManager(),
             $this->dependencies->getNodeSelector(),
             $this->dependencies->getFailurePolicy(),
-            new TcpTransport($codec, $this->config->getProtocol()),
+            $this->config->getSecurity(),
+            $this->config->getProtocol(),
+            $this->runtimeErrorReporter,
         );
+    }
+
+    public function setOnRuntimeError(?callable $callback): static
+    {
+        $this->server->setOnRuntimeError($callback);
+        return $this;
     }
 
 }

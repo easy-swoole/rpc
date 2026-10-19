@@ -41,6 +41,18 @@ final class ProtocolTest extends TestCase
         self::assertSame('request-id', $copy->getRequestUUID());
     }
 
+    public function testRequestCanBeRenderedAsBusinessJson(): void
+    {
+        $request = new Request('User.Profile.detail', ['id' => 1001], ['traceId' => '链路-1'], 'request-id');
+
+        self::assertSame(
+            '{"service":"User","module":"Profile","action":"detail","arg":{"id":1001},"clientArg":{"traceId":"链路-1"},"requestUUID":"request-id"}',
+            $request->toJson(),
+        );
+        self::assertArrayNotHasKey('timestamp', json_decode($request->toJson(), true, 512, JSON_THROW_ON_ERROR));
+        self::assertArrayNotHasKey('signature', json_decode($request->toJson(), true, 512, JSON_THROW_ON_ERROR));
+    }
+
     public function testRequestRequiresServiceModuleActionPath(): void
     {
         $this->expectException(RpcException::class);
@@ -49,16 +61,17 @@ final class ProtocolTest extends TestCase
 
     public function testResponseJsonRoundTrip(): void
     {
-        $response = (new Response('response-id'))->setStatus(ResponseStatus::SERVICE_ERROR)->setResult(['ok' => false])->setMsg('bad');
-        $copy = Response::fromJson((string) $response);
+        $response = (new Response('request-id'))->setStatus(ResponseStatus::SERVICE_ERROR)->setResult(['ok' => false])->setMsg('bad');
+        $copy = Response::fromJson($response->toJson());
         self::assertSame($response->jsonSerialize(), $copy->jsonSerialize());
         self::assertSame(ResponseStatus::SERVICE_ERROR, $copy->getStatus());
         self::assertSame(ResponseStatus::SERVICE_ERROR->value, $copy->jsonSerialize()['status']);
+        self::assertSame($response->toJson(), (string) $response);
     }
 
     public function testUnknownResponseStatusIsTreatedAsIllegalPackage(): void
     {
-        $response = Response::fromJson('{"status":9999,"responseUUID":"id"}');
+        $response = Response::fromJson('{"status":9999,"requestUUID":"id"}');
 
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
     }
@@ -124,10 +137,10 @@ final class ProtocolTest extends TestCase
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
         $codec = new ProtocolCodec(new PayloadSigner($security));
-        $response = (new Response('response-id'))->setResult(['b' => 2, 'a' => 1]);
+        $response = (new Response('request-id'))->setResult(['b' => 2, 'a' => 1]);
         $json = $codec->encodeResponse($response);
         $copy = $codec->decodeResponse($json);
-        self::assertSame('response-id', $copy->getResponseUUID());
+        self::assertSame('request-id', $copy->getRequestUUID());
 
         $tampered = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         $tampered['payload']['nodeHealthStatus'] = NodeHealthStatus::OFFLINE->value;
