@@ -97,18 +97,20 @@ final class SwooleServerAttacher
     {
         try {
             $responsePacket = $this->buildResponsePacket($packet);
-            if (!$server->send($fd, $responsePacket)) {
+            try {
+                if (!$server->send($fd, $responsePacket)) {
+                    $this->report(sprintf(
+                        'RPC TCP response send failed for connection %d.',
+                        $fd,
+                    ));
+                }
+            } catch (\Throwable $throwable) {
                 $this->report(sprintf(
-                    'RPC TCP response send failed for connection %d.',
+                    'RPC TCP response send failed for connection %d: %s',
                     $fd,
+                    $throwable->getMessage(),
                 ));
             }
-        } catch (\Throwable $throwable) {
-            $this->report(sprintf(
-                'RPC TCP receive callback failed for connection %d: %s',
-                $fd,
-                $throwable->getMessage(),
-            ));
         } finally {
             // 当前协议采用 TCP 短连接，一个请求响应完成后立即关闭连接。
             try {

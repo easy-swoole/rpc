@@ -49,10 +49,7 @@ final class Client
             // 未配置客户端异常处理器时，不允许内部转发闭包静默吞掉异常。
             throw $throwable;
         }
-        try {
-            ($this->onException)($throwable);
-        } catch (\Throwable) {
-            // 客户端异常观察回调不能覆盖原始异常。
-        }
+        // onException 属于异常接管入口；回调自身异常同样必须直接暴露。
+        ($this->onException)($throwable);
     }
 }

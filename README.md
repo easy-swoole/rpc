@@ -483,9 +483,9 @@ $request->addCall('User.Profile.detail')->setArg(['id' => 1001]);
 [$userResponse, $profileResponse] = $request->exec(timeout: 3.0);
 ```
 
-`Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。同一个批次不能被并发执行；Batch 一旦开始执行便永久封闭，此后即使执行已经结束，也不能继续 `addCall()`，需要追加调用时应创建新的 Batch。
+`Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。RequestBatch 是一次性对象：不能并发执行，执行完成后也不能再次 `exec()` 或继续 `addCall()`；需要发起后续调用时应创建新的 Batch。
 
-`exec()` 必须在 Swoole 协程环境中调用。它开始时会立即取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出，让进程管理与运维体系及时发现。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
+`exec()` 必须在 Swoole 协程环境中调用，否则会立即抛出明确的 `RpcException`。它开始时会取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出。`onException` 回调自身抛出的异常也不会被框架吞掉。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
 
 需要显式指定节点时可以调用 `RequestContext::setServiceNode()`，但节点的 `serviceName` 必须与调用路径第一段完全一致。例如 `User.Profile.detail` 只能指定属于 `User` 服务的节点；不匹配会立即抛出 `RpcException`，不会把请求发送到错误服务。
 

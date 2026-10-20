@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\Client\Client;
+use EasySwoole\Rpc\Client\RequestBatch;
 use EasySwoole\Rpc\Client\TcpTransport;
 use EasySwoole\Rpc\Client\RequestExecutor;
 use EasySwoole\Rpc\Protocol\Request;
@@ -34,7 +35,7 @@ final class ClientTest extends TestCase
         $batch->addCall('Test.Echo.value')->setArg('value')->setOnSuccess(function (Response $response) use (&$called): void {
             $called = $response->getResult() === 'value';
         });
-        $responses = $batch->exec();
+        $responses = $this->execBatch($batch);
         self::assertTrue($called);
         self::assertSame('value', $responses[0]->getResult());
     }
@@ -48,7 +49,7 @@ final class ClientTest extends TestCase
         );
         $batch = $client->buildRequest();
         $batch->addCall('Missing.Module.action');
-        $response = $batch->exec()[0];
+        $response = $this->execBatch($batch)[0];
         self::assertSame(ResponseStatus::NOT_AVAILABLE_NODE, $response->getStatus());
         self::assertSame('', $response->getRequestUUID());
     }
@@ -78,10 +79,10 @@ final class ClientTest extends TestCase
 
         $this->expectException(RpcException::class);
         $this->expectExceptionMessage('greater than zero');
-        $batch->exec(0);
+        $this->execBatch($batch, 0);
     }
 
-    public function testClientExceptionHandlerObservesEscapingBatchException(): void
+    public function testClientExceptionHandlerConsumesActionCallbackException(): void
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
@@ -104,12 +105,7 @@ final class ClientTest extends TestCase
             throw new \RuntimeException('client callback failed');
         });
 
-        try {
-            $batch->exec();
-            self::fail('The original client exception must still escape.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('client callback failed', $exception->getMessage());
-        }
+        self::assertCount(1, $this->execBatch($batch));
         self::assertInstanceOf(\RuntimeException::class, $reported);
         self::assertSame('client callback failed', $reported->getMessage());
     }
@@ -139,15 +135,23 @@ final class ClientTest extends TestCase
             });
         }
 
-        try {
-            $batch->exec();
-            self::fail('The first callback exception must escape after all calls finish.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('first callback failed', $exception->getMessage());
-        }
+        self::assertCount(2, $this->execBatch($batch));
 
         sort($reported);
         self::assertSame(['first callback failed', 'second callback failed'], $reported);
+    }
+
+    public function testRequestBatchRequiresCoroutineEnvironment(): void
+    {
+        $batch = (new Client(
+            new SwooleTableNodeManager(16),
+            new WeightedRandomNodeSelector(),
+            new ConsecutiveFailurePolicy(),
+        ))->buildRequest();
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('inside a Swoole coroutine');
+        $batch->exec();
     }
 
     public function testNodeRegistryQueryFailureReturnsUnavailableResponse(): void
@@ -226,7 +230,7 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(1), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
-        self::assertTrue($batch->exec()[0]->isSuccess());
+        self::assertTrue($this->execBatch($batch)[0]->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
         self::assertSame(['healthy'], array_map(static fn (ServiceNode $node): string => $node->getNodeId(), $manager->getNodes('Test')));
     }
@@ -255,7 +259,7 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
 
-        self::assertTrue($batch->exec()[0]->isSuccess());
+        self::assertTrue($this->execBatch($batch)[0]->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
         self::assertCount(2, $manager->getNodes('Test'));
     }
@@ -279,7 +283,7 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(1);
 
-        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $batch->exec()[0]->getStatus());
+        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)[0]->getStatus());
         self::assertSame(['only', 'only'], $transport->visited);
     }
 
@@ -299,7 +303,7 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(1);
 
-        $response = $batch->exec()[0];
+        $response = $this->execBatch($batch)[0];
         self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
         self::assertNotSame('', $response->getRequestUUID());
     }
@@ -318,7 +322,7 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value'); $batch->addCall('Test.Echo.value');
         $start = microtime(true);
-        self::assertCount(2, $batch->exec());
+        self::assertCount(2, $this->execBatch($batch));
         self::assertLessThan(0.09, microtime(true) - $start);
     }
 
@@ -367,13 +371,17 @@ final class ClientTest extends TestCase
             }
         });
         $batch = $client->buildRequest();
+        $reported = null;
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
         $batch->addCall('Test.Echo.value')->setOnSuccess(function () use ($batch): void {
             $batch->addCall('Test.Echo.value');
         });
 
-        $this->expectException(RpcException::class);
-        $this->expectExceptionMessage('cannot be added');
-        $batch->exec();
+        self::assertCount(1, $this->execBatch($batch));
+        self::assertInstanceOf(RpcException::class, $reported);
+        self::assertStringContainsString('cannot be added', $reported->getMessage());
     }
 
     public function testRequestBatchRejectsCallsAfterExecutionCompletes(): void
@@ -388,7 +396,7 @@ final class ClientTest extends TestCase
         });
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $batch->exec();
+        $this->execBatch($batch);
 
         $this->expectException(RpcException::class);
         $this->expectExceptionMessage('cannot be added');
@@ -413,7 +421,7 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(3);
-        $response = $batch->exec()[0];
+        $response = $this->execBatch($batch)[0];
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
         self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
         self::assertSame(1, $transport->calls);
@@ -437,7 +445,7 @@ final class ClientTest extends TestCase
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $batch = $client->buildRequest();
             $batch->addCall('Test.Echo.value');
-            self::assertSame(ResponseStatus::TRANSPORT_ERROR, $batch->exec()[0]->getStatus());
+            self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)[0]->getStatus());
             self::assertCount($attempt < 3 ? 1 : 0, $manager->getNodes('Test'));
         }
     }
@@ -459,7 +467,7 @@ final class ClientTest extends TestCase
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $response = $batch->exec()[0];
+        $response = $this->execBatch($batch)[0];
 
         self::assertSame(ResponseStatus::SERVER_TIMEOUT, $response->getStatus());
         self::assertSame('response timeout', $response->getMsg());
@@ -569,10 +577,10 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
 
-        self::assertSame(ResponseStatus::RESPONSE_DECODE_ERROR, $batch->exec()[0]->getStatus());
+        self::assertSame(ResponseStatus::RESPONSE_DECODE_ERROR, $this->execBatch($batch)[0]->getStatus());
     }
 
-    public function testCoroutineExceptionIsRethrownAndRequestQueueIsCleared(): void
+    public function testRequestBatchCanOnlyBeExecutedOnceAfterHandledCallbackException(): void
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
@@ -582,22 +590,17 @@ final class ClientTest extends TestCase
                     return new Response($request->getRequestUUID());
                 }
             });
+        $client->setOnException(static function (\Throwable $throwable): void {});
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->setOnSuccess(static function (): never {
             throw new \RuntimeException('callback failed');
         });
 
-        try {
-            $batch->exec();
-            self::fail('Callback exceptions must be rethrown after all coroutines finish.');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('callback failed', $exception->getMessage());
-        }
-        self::assertSame([], $batch->exec());
+        self::assertCount(1, $this->execBatch($batch));
 
         $this->expectException(RpcException::class);
-        $this->expectExceptionMessage('cannot be added');
-        $batch->addCall('Test.Echo.value');
+        $this->expectExceptionMessage('only be executed once');
+        $this->execBatch($batch);
     }
 
     public function testAddRequestRejectsInvalidPathImmediately(): void
@@ -628,7 +631,7 @@ final class ClientTest extends TestCase
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $response = $batch->exec()[0];
+        $response = $this->execBatch($batch)[0];
 
         self::assertSame(NodeHealthStatus::OFFLINE, $response->getNodeHealthStatus());
         self::assertSame([], $manager->getNodes('Test'));
@@ -649,12 +652,12 @@ final class ClientTest extends TestCase
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $batch->exec();
+        $this->execBatch($batch);
         self::assertCount(1, $manager->getNodes('Test'));
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $batch->exec();
+        $this->execBatch($batch);
         self::assertSame([], $manager->getNodes('Test'));
     }
 
@@ -668,5 +671,23 @@ final class ClientTest extends TestCase
         $executor = new RequestExecutor($manager, $selector, $failurePolicy, $transport);
         (new \ReflectionProperty($client, 'executor'))->setValue($client, $executor);
         return $client;
+    }
+
+    /** @return list<Response> */
+    private function execBatch(RequestBatch $batch, float $timeout = 3.0): array
+    {
+        $responses = [];
+        $error = null;
+        \Swoole\Coroutine\run(static function () use ($batch, $timeout, &$responses, &$error): void {
+            try {
+                $responses = $batch->exec($timeout);
+            } catch (\Throwable $throwable) {
+                $error = $throwable;
+            }
+        });
+        if ($error !== null) {
+            throw $error;
+        }
+        return $responses;
     }
 }

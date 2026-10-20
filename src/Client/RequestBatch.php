@@ -35,8 +35,14 @@ final class RequestBatch
         if (!is_finite($timeout) || $timeout <= 0) {
             throw new RpcException('RPC timeout must be greater than zero.');
         }
+        if (Coroutine::getCid() < 0) {
+            throw new RpcException('RPC request batch must be executed inside a Swoole coroutine.');
+        }
         if ($this->executing) {
             throw new RpcException('The same RPC request batch cannot be executed concurrently.');
+        }
+        if ($this->executed) {
+            throw new RpcException('The same RPC request batch can only be executed once.');
         }
 
         $this->executing = true;
@@ -67,8 +73,11 @@ final class RequestBatch
                 }
             });
         }
-        $waitGroup->wait();
-        $this->executing = false;
+        try {
+            $waitGroup->wait();
+        } finally {
+            $this->executing = false;
+        }
         ksort($responses);
         return array_values($responses);
     }

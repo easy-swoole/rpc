@@ -29,6 +29,7 @@ final class SwooleTableNodeManagerTest extends TestCase
         self::assertSame(9600, $copy?->getPort());
         self::assertTrue($manager->offline($node));
         self::assertNull($selector->select($manager->getNodes('Orders')));
+        self::assertFalse($manager->offline($node));
     }
 
     public function testGetNodesFiltersAndRemovesExpiredNodes(): void
