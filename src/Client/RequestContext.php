@@ -12,8 +12,8 @@ final class RequestContext
     private mixed $clientArg = null;
     private ?ServiceNode $serviceNode = null;
     private int $retryTimes = 0;
-    private $onSuccess = null;
-    private $onFail = null;
+    private mixed $onSuccess = null;
+    private mixed $onFail = null;
 
     public function __construct(private readonly string $requestPath) {}
     public function getRequestPath(): string { return $this->requestPath; }
