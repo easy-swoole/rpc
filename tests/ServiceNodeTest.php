@@ -11,7 +11,7 @@ final class ServiceNodeTest extends TestCase
 {
     public function testNodeIdentitySurvivesSerialization(): void
     {
-        $node = new ServiceNode('User', nodeId: 'generated', ip: '127.0.0.1', port: 9601, nodeWeight: 20);
+        $node = new ServiceNode('User', nodeId: 'generated', host: '127.0.0.1', port: 9601, nodeWeight: 20);
         $copy = ServiceNode::fromArray($node->jsonSerialize());
         self::assertNotSame($node, $copy);
         self::assertSame('generated', $copy->getNodeId());
@@ -32,6 +32,19 @@ final class ServiceNodeTest extends TestCase
         new ServiceNode('User', nodeId: 'node', port: 0);
     }
 
+    public function testRejectsEmptyHost(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('host cannot be empty');
+
+        new ServiceNode('User', nodeId: 'node', host: '   ');
+    }
+
+    public function testUsesLoopbackHostByDefault(): void
+    {
+        self::assertSame('127.0.0.1', (new ServiceNode('User', nodeId: 'node'))->getHost());
+    }
+
     public function testRejectsWeightBelowOne(): void
     {
         $this->expectException(RpcException::class);
@@ -49,7 +62,7 @@ final class ServiceNodeTest extends TestCase
             'nodeId' => 'node',
             'nodeName' => 'node-one',
             'nodeWeight' => 10,
-            'ip' => '127.0.0.1',
+            'host' => '127.0.0.1',
             'port' => 9601,
         ]);
     }

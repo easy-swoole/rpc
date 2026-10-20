@@ -18,7 +18,7 @@ final class DiscoveryTest extends TestCase
 {
     public function testAssistWorkerMaintainsLocalNodeLifecycleWithoutUdpDiscovery(): void
     {
-        $node = new ServiceNode('Test', nodeId: 'local-node', ip: '127.0.0.1');
+        $node = new ServiceNode('Test', nodeId: 'local-node', host: '127.0.0.1');
         $manager = new class extends AbstractNodeManager {
             public int $onlineCalls = 0;
             public int $heartbeatCalls = 0;
@@ -68,7 +68,7 @@ final class DiscoveryTest extends TestCase
     {
         $manager = new SwooleTableNodeManager(16);
         $selector = new WeightedRandomNodeSelector();
-        $node = new ServiceNode('Test', nodeId: 'node-one', ip: '127.0.0.1');
+        $node = new ServiceNode('Test', nodeId: 'node-one', host: '127.0.0.1');
         $security = new SecurityConfig(apiKey: 'secret');
         self::assertTrue(AssistWorker::handlePacket(DiscoveryMessage::encode(DiscoveryMessage::HEARTBEAT, $node, $security), $manager, $security));
         self::assertSame('node-one', $selector->select($manager->getNodes('Test'))?->getNodeId());
@@ -79,7 +79,7 @@ final class DiscoveryTest extends TestCase
     public function testAssistWorkerShutdownOfflinesLocalNode(): void
     {
         $manager = new SwooleTableNodeManager(16);
-        $node = new ServiceNode('Test', nodeId: 'local-node', ip: '127.0.0.1');
+        $node = new ServiceNode('Test', nodeId: 'local-node', host: '127.0.0.1');
         $manager->online($node);
         $process = new AssistWorker(
             ['Test' => $node],

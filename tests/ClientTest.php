@@ -507,7 +507,7 @@ final class ClientTest extends TestCase
     public function testRequestEncodingFailureUsesClientExceptionHandler(): void
     {
         $manager = new SwooleTableNodeManager(16);
-        $manager->online(new ServiceNode('Test', nodeId: 'node', ip: '127.0.0.1'));
+        $manager->online(new ServiceNode('Test', nodeId: 'node', host: '127.0.0.1'));
         $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
         $reported = null;
         $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
@@ -592,7 +592,7 @@ final class ClientTest extends TestCase
         $transport = new TcpTransport(config: new ProtocolConfig(maxPackageSize: 64));
         $request = new Request('Test.Echo.value', str_repeat('x', 128));
 
-        $response = $transport->send(new ServiceNode('Test', nodeId: 'node', ip: '127.0.0.1'), $request, 1.0);
+        $response = $transport->send(new ServiceNode('Test', nodeId: 'node', host: '127.0.0.1'), $request, 1.0);
 
         self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
         self::assertSame(NodeHealthStatus::SUSPECT, $response->getNodeHealthStatus());
@@ -602,7 +602,7 @@ final class ClientTest extends TestCase
     public function testTcpTransportCanCreateARealStreamSocketWithoutIpProtoTcpConstant(): void
     {
         $request = new Request('Test.Echo.value', requestUUID: 'request-id');
-        $node = new ServiceNode('Test', 'node-1', ip: '127.0.0.1', port: 1);
+        $node = new ServiceNode('Test', 'node-1', host: '127.0.0.1', port: 1);
 
         $response = null;
         \Swoole\Coroutine\run(static function () use (&$response, $node, $request): void {

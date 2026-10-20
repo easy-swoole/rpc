@@ -44,7 +44,7 @@ class TcpTransport
             );
         }
 
-        $domain = filter_var($node->getIp(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+        $domain = filter_var($node->getHost(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
             ? AF_INET6
             : AF_INET;
         // 部分 PHP/Swoole 构建没有 IPPROTO_TCP；传 0 由系统为 SOCK_STREAM 自动选择 TCP。
@@ -68,7 +68,7 @@ class TcpTransport
             if ($remaining === null) {
                 return $this->deadlineExceeded($request);
             }
-            if (!$client->connect($node->getIp(), $node->getPort(), $remaining)) {
+            if (!$client->connect($node->getHost(), $node->getPort(), $remaining)) {
                 $status = self::classifySocketFailure($client->errCode, ResponseStatus::CONNECT_TIMEOUT);
                 return $this->failure(
                     $request,

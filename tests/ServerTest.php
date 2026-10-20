@@ -35,7 +35,7 @@ final class ServerTest extends TestCase
     {
         $this->server = new Server(
             new SwooleTableNodeManager(16),
-            new ServerConfig(advertiseIp: '10.0.0.8', listenPort: 9600, nodeName: 'rpc-server'),
+            new ServerConfig(advertiseHost: '10.0.0.8', listenPort: 9600, nodeName: 'rpc-server'),
         );
         $this->server->registerService((new TestService())->addModule(new EchoModule()));
     }
@@ -54,7 +54,7 @@ final class ServerTest extends TestCase
         self::assertNotNull($node);
         self::assertSame('Test', $node->getServiceName());
         self::assertNotSame('', $node->getNodeId());
-        self::assertSame('10.0.0.8', $node->getIp());
+        self::assertSame('10.0.0.8', $node->getHost());
         self::assertSame(9600, $node->getPort());
         self::assertSame('rpc-server', $node->getNodeName());
         self::assertSame($node, $this->server->allServiceNodes()['Test']);

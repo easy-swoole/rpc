@@ -33,7 +33,7 @@ final class RpcTest extends TestCase
 
     public function testPassesServerConfigToServer(): void
     {
-        $config = new ServerConfig(advertiseIp: '10.0.0.2', listenPort: 9700);
+        $config = new ServerConfig(advertiseHost: '10.0.0.2', listenPort: 9700);
         $rpc = new Rpc(config: new RpcConfig(server: $config));
         self::assertSame($config, $rpc->server()->getConfig());
     }

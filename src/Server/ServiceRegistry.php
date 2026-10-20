@@ -26,7 +26,7 @@ final class ServiceRegistry
             nodeId: $this->nodeId,
             nodeName: $this->config->nodeName,
             nodeWeight: $weight,
-            ip: $this->config->advertiseIp,
+            host: $this->config->advertiseHost,
             port: $this->config->resolvedAdvertisePort(),
         );
         // 注册完成后同时冻结 Service，确保广播出去的服务定义不会在运行中继续变化。

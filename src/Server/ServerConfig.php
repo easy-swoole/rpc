@@ -7,7 +7,7 @@ use EasySwoole\Rpc\Exception\RpcException;
 final class ServerConfig
 {
     public function __construct(
-        public readonly string $advertiseIp = '127.0.0.1',
+        public readonly string $advertiseHost = '127.0.0.1',
         public readonly int $listenPort = 9502,
         public readonly string $listenAddress = '0.0.0.0',
         public readonly ?int $advertisePort = null,
@@ -19,8 +19,8 @@ final class ServerConfig
         if ($advertisePort !== null) {
             self::validatePort($advertisePort, 'Advertise');
         }
-        if ($advertiseIp === '') {
-            throw new RpcException('Advertise IP cannot be empty.');
+        if (trim($advertiseHost) === '') {
+            throw new RpcException('Advertise host cannot be empty.');
         }
         if ($nodeId === '') {
             throw new RpcException('Server node ID cannot be empty when configured.');

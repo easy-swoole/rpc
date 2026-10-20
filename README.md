@@ -80,7 +80,7 @@ require __DIR__ . '/vendor/autoload.php';
 
 $rpc = new Rpc(config: new RpcConfig(
     server: new ServerConfig(
-        advertiseIp: '127.0.0.1', // 客户端能够访问的地址，不能写 0.0.0.0
+        advertiseHost: '127.0.0.1', // 客户端能够访问的主机名或 IP，不能写 0.0.0.0
         listenAddress: '0.0.0.0', // RPC listener 实际绑定地址
         listenPort: 9601,         // RPC 对外监听端口
         nodeId: 'user-rpc-node-1', // 可选：跨重启保持稳定的节点唯一标识
@@ -143,7 +143,7 @@ $nodeManager->online(new ServiceNode(
     nodeId: 'user-rpc-1', // 同一 Service 下必须稳定且唯一
     nodeName: 'user-rpc-1',
     nodeWeight: 10,
-    ip: '127.0.0.1',
+    host: '127.0.0.1',
     port: 9601,
 ));
 
@@ -348,7 +348,7 @@ require __DIR__ . '/vendor/autoload.php';
 $rpc = new Rpc(
     config: new RpcConfig(
         server: new ServerConfig(
-            advertiseIp: '127.0.0.1', // 客户端实际连接的地址，不能填写 0.0.0.0
+            advertiseHost: '127.0.0.1', // 客户端实际连接的主机名或 IP，不能填写 0.0.0.0
             listenAddress: '0.0.0.0', // RPC TCP listener 的绑定地址
             listenPort: 9601,         // attachServer 会创建并监听这个 subPort
             nodeName: 'user-rpc-1',   // 便于日志和运维识别
@@ -437,7 +437,7 @@ $nodeManager->online(new ServiceNode(
     nodeId: 'user-rpc-1',
     nodeName: 'user-rpc-1',
     nodeWeight: 20,
-    ip: '127.0.0.1',
+    host: '127.0.0.1',
     port: 9601,
 ));
 
@@ -543,7 +543,7 @@ $rpc->server()->setOnRuntimeError(
 
 | 配置 | 默认值 | 注意事项 |
 | --- | --- | --- |
-| `advertiseIp` | `127.0.0.1` | 注册给客户端连接的地址；不能使用 `0.0.0.0` |
+| `advertiseHost` | `127.0.0.1` | 注册给客户端连接的主机名或 IP；不能使用 `0.0.0.0` |
 | `listenAddress` | `0.0.0.0` | RPC TCP subPort 的本地绑定地址 |
 | `listenPort` | `9502` | RPC TCP 监听端口；若宿主 Server 已监听该端口会拒绝挂载 |
 | `advertisePort` | `null` | 客户端连接端口；为空时使用 `listenPort`，有端口映射时单独设置 |
@@ -748,6 +748,8 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 
 `serviceWeight()` 必须返回大于等于 `1` 的整数。`0` 和负数会在服务注册或节点反序列化时被拒绝；需要停用节点时，请使用节点下线机制，不要使用权重 `0` 表示禁用。
 
+`ServiceNode` 的 `host` 不允许为空或只包含空白，可以填写 IP、域名、Docker 服务名或 Kubernetes Service DNS；手工构造节点时省略 `host` 默认使用 `127.0.0.1`。服务端自动注册的节点使用 `ServerConfig::advertiseHost`。
+
 ## 8. 自定义节点管理器
 
 需要使用 Redis、Consul 或其他注册中心时，继承 `AbstractNodeManager`：
@@ -949,7 +951,7 @@ if ($response->isSuccess()) {
 - 所有 Service 和 Module 必须在 `attachServer()` 前注册。注册完成后 Service 会冻结，不能继续增加 Module。
 - 需要让节点身份跨进程重启保持稳定时，应显式配置 `ServerConfig::nodeId`；不配置则每个 Server 实例生成新的 UUID。
 - `attachServer()` 只能执行一次，并且必须在 Swoole Server `start()` 前调用。挂载失败后应重建 Rpc 与 Swoole Server 实例。
-- `listenAddress` 是本机绑定地址，`advertiseIp` 是客户端连接地址。不要把 `0.0.0.0`、容器内部错误地址或客户端不可达地址注册出去。
+- `listenAddress` 是本机绑定地址，`advertiseHost` 是客户端连接的主机名或 IP。不要把 `0.0.0.0`、容器内部错误地址或客户端不可达地址注册出去。
 - 宿主 Server 主端口、RPC TCP 端口和 UDP 发现端口用途不同。RPC TCP 端口若已存在于主 Server 或其他 subPort，会直接拒绝挂载。
 - 客户端 `exec(timeout)` 必须传入大于 `0` 的有限秒数；`0`、负数、`INF` 和 `NAN` 都会被拒绝。该值约束单个 Action 包含重试在内的总耗时，而不是每个 Socket 阶段各自重新计时。
 - 开启重试前必须确认业务幂等。框架不会对 TCP 请求自动去重，订单、支付、写入等操作应使用业务幂等键。
