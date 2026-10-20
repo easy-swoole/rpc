@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
 use EasySwoole\Rpc\Protocol\Request;
@@ -32,7 +33,7 @@ final class ServerRequestHandler
     {
         try {
             $request = $this->codec->decodeRequest($payload);
-        } catch (\Throwable) {
+        } catch (RpcException) {
             // 非法数据属于可预期的客户端输入，不应触发服务端全局异常回调。
             return $this->codec->encodeResponse(
                 (new Response(''))->setStatus(ResponseStatus::ILLEGAL_PACKAGE)->setMsg('Illegal RPC request.'),

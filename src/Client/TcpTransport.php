@@ -30,16 +30,9 @@ class TcpTransport
         if (!is_finite($timeout) || $timeout <= 0) {
             throw new RpcException('RPC timeout must be greater than zero.');
         }
-        try {
-            // 签名和时间戳只在真正发送时由 Codec 写入，Request 对象本身保持纯业务数据。
-            $packet = Protocol::pack($this->codec->encodeRequest($request));
-        } catch (\Throwable $throwable) {
-            return $this->failure(
-                $request,
-                ResponseStatus::TRANSPORT_ERROR,
-                'Unable to encode RPC request: ' . $throwable->getMessage(),
-            );
-        }
+        $deadline = microtime(true) + $timeout;
+        // 编码失败属于调用或程序异常，不应伪装成网络传输失败。
+        $packet = Protocol::pack($this->codec->encodeRequest($request));
         if (strlen($packet) > $this->config->maxPackageSize) {
             return $this->failure(
                 $request,
@@ -71,7 +64,11 @@ class TcpTransport
                     $client->errMsg ?: 'Unable to configure the RPC socket protocol.',
                 );
             }
-            if (!$client->connect($node->getIp(), $node->getPort(), $timeout)) {
+            $remaining = self::remainingTimeout($deadline);
+            if ($remaining === null) {
+                return $this->deadlineExceeded($request);
+            }
+            if (!$client->connect($node->getIp(), $node->getPort(), $remaining)) {
                 $status = self::classifySocketFailure($client->errCode, ResponseStatus::CONNECT_TIMEOUT);
                 return $this->failure(
                     $request,
@@ -81,7 +78,11 @@ class TcpTransport
                         : 'Unable to connect to RPC node.'),
                 );
             }
-            $sentBytes = $client->sendAll($packet, $timeout);
+            $remaining = self::remainingTimeout($deadline);
+            if ($remaining === null) {
+                return $this->deadlineExceeded($request);
+            }
+            $sentBytes = $client->sendAll($packet, $remaining);
             // TCP send() 可能只写入部分数据，sendAll() 才能保证完整报文被发送。
             if ($sentBytes === false || $sentBytes !== strlen($packet)) {
                 return $this->failure(
@@ -90,7 +91,11 @@ class TcpTransport
                     $client->errMsg ?: 'Unable to send the complete RPC request.',
                 );
             }
-            $responsePacket = $client->recvPacket($timeout);
+            $remaining = self::remainingTimeout($deadline);
+            if ($remaining === null) {
+                return $this->deadlineExceeded($request);
+            }
+            $responsePacket = $client->recvPacket($remaining);
             if (!is_string($responsePacket) || $responsePacket === '') {
                 $status = self::classifySocketFailure($client->errCode, ResponseStatus::SERVER_TIMEOUT);
                 return $this->failure(
@@ -121,6 +126,17 @@ class TcpTransport
             ->setStatus($status)
             ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
             ->setMsg($message);
+    }
+
+    private function deadlineExceeded(Request $request): Response
+    {
+        return $this->failure($request, ResponseStatus::SERVER_TIMEOUT, 'RPC request deadline exceeded.');
+    }
+
+    private static function remainingTimeout(float $deadline): ?float
+    {
+        $remaining = $deadline - microtime(true);
+        return $remaining > 0 ? $remaining : null;
     }
 
     private static function classifySocketFailure(int $errorCode, ResponseStatus $timeoutStatus): ResponseStatus

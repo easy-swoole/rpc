@@ -129,7 +129,7 @@ final class SwooleServerAttacher
     {
         try {
             $payload = Protocol::unpack($packet);
-        } catch (\Throwable) {
+        } catch (RpcException) {
             // 非法帧属于客户端输入问题，只返回 ILLEGAL_PACKAGE，不进入全局异常回调。
             $payload = '';
         }

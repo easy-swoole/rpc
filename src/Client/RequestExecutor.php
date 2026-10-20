@@ -22,6 +22,7 @@ final class RequestExecutor
 
     public function execute(RequestContext $context, float $timeout): Response
     {
+        $deadline = microtime(true) + $timeout;
         $service = explode('.', $context->getRequestPath(), 2)[0];
         $attempt = 0;
         $excludedNodeId = null;
@@ -36,7 +37,11 @@ final class RequestExecutor
             }
             $context->setServiceNode($node);
             $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
-            $response = $this->validateResponse($request, $this->sendRequest($node, $request, $timeout));
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0) {
+                return $lastResponse ?? $this->deadlineExceededResponse($request);
+            }
+            $response = $this->validateResponse($request, $this->sendRequest($node, $request, $remaining));
             $lastResponse = $response;
             // 失败策略只决定保留、换节点重试或下线；业务异常可以通过响应标记保持节点在线。
             $action = $this->failurePolicy->evaluate($node, $response);
@@ -101,6 +106,14 @@ final class RequestExecutor
         // 尚未生成或发出 TCP 请求，因此这里不能伪造一个随机 requestUUID。
         return (new Response(''))
             ->setStatus(ResponseStatus::NOT_AVAILABLE_NODE);
+    }
+
+    private function deadlineExceededResponse(Request $request): Response
+    {
+        return (new Response($request->getRequestUUID()))
+            ->setStatus(ResponseStatus::SERVER_TIMEOUT)
+            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
+            ->setMsg('RPC request deadline exceeded.');
     }
 
 }

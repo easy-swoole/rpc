@@ -485,7 +485,7 @@ $request->addCall('User.Profile.detail')->setArg(['id' => 1001]);
 
 `Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。RequestBatch 是一次性对象：不能并发执行，执行完成后也不能再次 `exec()` 或继续 `addCall()`；需要发起后续调用时应创建新的 Batch。
 
-`exec()` 必须在 Swoole 协程环境中调用，否则会立即抛出明确的 `RpcException`。它开始时会取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出。`onException` 回调自身抛出的异常也不会被框架吞掉。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
+`exec()` 必须在 Swoole 协程环境中调用，否则会立即抛出明确的 `RpcException`。`timeout` 是单个 Action 的总 deadline，连接、发送、接收和重试共同消耗这段时间，各阶段只使用剩余时间，不会按阶段重复累计。Batch 开始时会取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出。`onException` 回调自身抛出的异常也不会被框架吞掉。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
 
 需要显式指定节点时可以调用 `RequestContext::setServiceNode()`，但节点的 `serviceName` 必须与调用路径第一段完全一致。例如 `User.Profile.detail` 只能指定属于 `User` 服务的节点；不匹配会立即抛出 `RpcException`，不会把请求发送到错误服务。
 
@@ -951,7 +951,7 @@ if ($response->isSuccess()) {
 - `attachServer()` 只能执行一次，并且必须在 Swoole Server `start()` 前调用。挂载失败后应重建 Rpc 与 Swoole Server 实例。
 - `listenAddress` 是本机绑定地址，`advertiseIp` 是客户端连接地址。不要把 `0.0.0.0`、容器内部错误地址或客户端不可达地址注册出去。
 - 宿主 Server 主端口、RPC TCP 端口和 UDP 发现端口用途不同。RPC TCP 端口若已存在于主 Server 或其他 subPort，会直接拒绝挂载。
-- 客户端 `exec(timeout)` 必须传入大于 `0` 的有限秒数；`0`、负数、`INF` 和 `NAN` 都会被拒绝，避免底层出现无限等待语义。
+- 客户端 `exec(timeout)` 必须传入大于 `0` 的有限秒数；`0`、负数、`INF` 和 `NAN` 都会被拒绝。该值约束单个 Action 包含重试在内的总耗时，而不是每个 Socket 阶段各自重新计时。
 - 开启重试前必须确认业务幂等。框架不会对 TCP 请求自动去重，订单、支付、写入等操作应使用业务幂等键。
 - `arg`、`clientArg` 和 Action 返回值必须能够被 JSON 编码。不要传递资源、闭包或递归对象。
 - `Request::toJson()` 和 `Response::toJson()` 可能包含密码、Token 或用户数据，写日志前应由业务方脱敏。

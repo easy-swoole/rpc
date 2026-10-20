@@ -504,6 +504,57 @@ final class ClientTest extends TestCase
         self::assertSame('unexpected transport state', $reported->getMessage());
     }
 
+    public function testRequestEncodingFailureUsesClientExceptionHandler(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node', ip: '127.0.0.1'));
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
+        $reported = null;
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
+        $batch = $client->buildRequest();
+        $resource = fopen('php://memory', 'r');
+        $batch->addCall('Test.Echo.value')->setArg($resource);
+
+        try {
+            self::assertSame([], $this->execBatch($batch));
+        } finally {
+            fclose($resource);
+        }
+
+        self::assertInstanceOf(RpcException::class, $reported);
+        self::assertStringContainsString('encode RPC envelope', $reported->getMessage());
+    }
+
+    public function testRetriesShareOneActionDeadline(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $transport = new class extends TcpTransport {
+            public array $timeouts = [];
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                $this->timeouts[] = $timeout;
+                if (count($this->timeouts) === 1) {
+                    \Swoole\Coroutine::sleep(0.02);
+                }
+                return (new Response($request->getRequestUUID()))
+                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
+                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+            }
+        };
+        $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->enableRetry(1);
+
+        $this->execBatch($batch, 0.05);
+
+        self::assertCount(2, $transport->timeouts);
+        self::assertLessThan($transport->timeouts[0], $transport->timeouts[1]);
+        self::assertLessThan(0.04, $transport->timeouts[1]);
+    }
+
     public function testTcpTransportClassifiesOnlySocketTimeoutsAsConnectTimeout(): void
     {
         $classify = new \ReflectionMethod(TcpTransport::class, 'classifySocketFailure');
