@@ -108,19 +108,14 @@ final class RpcTest extends TestCase
         new DiscoveryConfig(listen: true, socketRetryIntervalMs: 0);
     }
 
-    public function testConfiguresClientAndServerRuntimeErrorHandlersIndependently(): void
+    public function testConfiguresServerRuntimeErrorHandler(): void
     {
         $rpc = new Rpc();
         $serverHandler = static function (string $message): void {};
-        $clientHandler = static function (string $message): void {};
 
         self::assertSame($rpc->server(), $rpc->server()->setOnRuntimeError($serverHandler));
-        $client = $rpc->client();
-        self::assertSame($client, $client->setOnRuntimeError($clientHandler));
         $attacher = (new \ReflectionProperty($rpc->server(), 'attacher'))->getValue($rpc->server());
-        $executor = (new \ReflectionProperty($client, 'executor'))->getValue($client);
         self::assertSame($serverHandler, (new \ReflectionProperty($attacher, 'onRuntimeError'))->getValue($attacher));
-        self::assertSame($clientHandler, (new \ReflectionProperty($executor, 'onRuntimeError'))->getValue($executor));
-        self::assertSame($client, $rpc->client());
+        self::assertSame($rpc->client(), $rpc->client());
     }
 }

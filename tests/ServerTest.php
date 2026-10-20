@@ -79,6 +79,27 @@ final class ServerTest extends TestCase
         self::assertSame(25, $server->getServiceNode('Weighted')?->getNodeWeight());
     }
 
+    public function testRegistrationRejectsServiceWeightBelowOne(): void
+    {
+        $server = new Server(new SwooleTableNodeManager(16));
+        $service = new class extends AbstractService {
+            public function serviceName(): string
+            {
+                return 'ZeroWeight';
+            }
+
+            public function serviceWeight(): int
+            {
+                return 0;
+            }
+        };
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('at least 1');
+
+        $server->registerService($service);
+    }
+
     public function testRegistrationRejectsDuplicateService(): void
     {
         $this->expectException(RpcException::class);
@@ -360,6 +381,14 @@ final class ServerTest extends TestCase
         self::assertSame('module failed', $reported->getMessage());
     }
 
+    public function testUnhandledServerExceptionIsRethrownWhenGlobalHandlerIsMissing(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('module failed');
+
+        $this->server->handle(new Request('Test.Echo.fail'));
+    }
+
     public function testHandledBusinessExceptionIsNotReportedToGlobalServerHandler(): void
     {
         $service = new class extends AbstractService {
@@ -517,29 +546,78 @@ final class ServerTest extends TestCase
         self::assertInstanceOf(RpcException::class, $reported);
     }
 
-    public function testActionCannotReturnAResponseObject(): void
+    public function testRejectsActionDeclaredToReturnResponseDuringModuleRegistration(): void
     {
         $service = new class extends AbstractService {
             public function serviceName(): string { return 'CustomResponse'; }
         };
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('cannot declare Response as a return type');
         $service->addModule(new class extends AbstractServiceModule {
             public function moduleName(): string { return 'Result'; }
             #[RpcAction]
             public function invalid(): Response { return new Response('another-request'); }
         });
-        $this->server->registerService($service);
+    }
 
-        set_error_handler(static fn (int $severity): bool => $severity === E_USER_WARNING);
-        try {
-            $response = $this->server->handle(
-                new Request('CustomResponse.Result.invalid', requestUUID: 'request-id'),
-            );
-        } finally {
-            restore_error_handler();
-        }
+    public function testActionCannotReturnResponseDynamically(): void
+    {
+        $service = new class extends AbstractService {
+            public function serviceName(): string { return 'DynamicResponse'; }
+        };
+        $service->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Result'; }
+            #[RpcAction]
+            public function invalid(): mixed { return new Response('another-request'); }
+        });
+        $this->server->registerService($service);
+        $this->server->setOnException(static function (): void {});
+
+        $response = $this->server->handle(
+            new Request('DynamicResponse.Result.invalid', requestUUID: 'request-id'),
+        );
 
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
         self::assertSame('request-id', $response->getRequestUUID());
+    }
+
+    public function testRejectsInvalidRpcActionDefinitionsDuringModuleRegistration(): void
+    {
+        $cases = [
+            'must be public' => new class extends AbstractServiceModule {
+                public function moduleName(): string { return 'ProtectedAction'; }
+                #[RpcAction]
+                protected function invalid(): void {}
+            },
+            'cannot be static' => new class extends AbstractServiceModule {
+                public function moduleName(): string { return 'StaticAction'; }
+                #[RpcAction]
+                public static function invalid(): void {}
+            },
+            'cannot use a reserved name' => new class extends AbstractServiceModule {
+                public function moduleName(): string { return 'ReservedAction'; }
+                #[RpcAction]
+                public function __invalid(): void {}
+            },
+            'cannot require more than 3 parameters' => new class extends AbstractServiceModule {
+                public function moduleName(): string { return 'TooManyParameters'; }
+                #[RpcAction]
+                public function invalid(mixed $arg, Request $request, Response $response, mixed $extra): void {}
+            },
+        ];
+
+        foreach ($cases as $message => $module) {
+            $service = new class extends AbstractService {
+                public function serviceName(): string { return 'InvalidAction'; }
+            };
+            try {
+                $service->addModule($module);
+                self::fail(sprintf('Expected invalid RpcAction error containing "%s".', $message));
+            } catch (RpcException $exception) {
+                self::assertStringContainsString($message, $exception->getMessage());
+            }
+        }
     }
 
     public function testActionCanModifyInjectedResponseAndReturnBusinessData(): void

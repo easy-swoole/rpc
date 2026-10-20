@@ -191,7 +191,7 @@ array(3) {
 Client.buildRequest().addCall()
     → NodeManager.getNodes(serviceName)
     → NodeSelector.select(nodes)
-    → TcpTransport.send()
+    → 发送 TCP 请求
     → Swoole TCP listener
     → Server.handle()
     → Service 定位 Module
@@ -202,14 +202,11 @@ Client.buildRequest().addCall()
 默认组合：
 
 - `SwooleTableNodeManager`：在本机多个 Swoole Worker 间共享节点；
-- `WeightedRandomNodeSelector`：根据 Service 声明的权重选择节点；
-- `TcpTransport`：使用带 4 字节长度头的 TCP 短连接传输 JSON。
+- `WeightedRandomNodeSelector`：根据 Service 声明的权重选择节点。
 
 `Rpc` 构造函数只接收两个聚合对象：`RpcConfig` 保存不可变的运行配置，`RpcDependencies` 保存可替换的 NodeManager、NodeSelector 和 NodeFailurePolicy。两者都能省略并自动创建默认对象，只通过 getter 暴露内部实例。
 
-客户端与服务端内部职责已分开：`Client` 只管理调用批次，`RequestExecutor` 负责单次调用、重试与节点策略，`TcpTransport` 负责协议序列化和网络传输；服务端的 `Server` 只是对外门面，服务登记与冻结由 `ServiceRegistry` 管理，请求分发由 `ServerRequestHandler` 管理，Swoole listener 和 assist-worker 的挂载由 `SwooleServerAttacher` 管理。上述内部协作对象不会通过 `Server` 暴露。
-
-客户端 Transport 不是扩展点。`Client` 根据安全配置和协议配置在内部固定创建与 `attachServer()` 完全对应的 `TcpTransport`，统一使用 TCP 短连接、4 字节长度头、`ProtocolCodec` 和相同的签名规则。`RpcDependencies` 不接受 Transport，`Client` 的构造函数也不接收 Transport；如果未来增加 HTTP 或 WebSocket，应同时实现对应的客户端与服务端协议，而不是只替换客户端发送逻辑。
+客户端与服务端内部职责已分开：`Client` 管理调用批次、重试与节点策略；服务端的 `Server` 是对外门面，服务登记、请求分发、Swoole listener 和 assist-worker 挂载由内部组件完成。调用方只需要配置双方一致的安全和协议参数，无需关心或注入底层 TCP 实现。
 
 ## 1. 定义服务
 
@@ -298,7 +295,7 @@ $rpc->server()->registerService($userService);
 
 Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
 
-`addModule()` 会在装配阶段一次性反射 Module 中带有 `#[RpcAction]` 的 public 方法并缓存；请求处理阶段只查询缓存，不会为每次调用重复执行反射。Module 可以自由定义自己的构造函数，不需要调用框架父构造函数。
+`addModule()` 会在装配阶段一次性反射并缓存带有 `#[RpcAction]` 的方法；请求处理阶段不会重复执行反射。Action 必须是 public、非 static，不能使用 `__` 开头的保留名称，必填参数不能超过框架传入的 `$arg`、`Request`、`Response` 三个参数，也不能声明返回 `Response`。不合法的定义会在 Module 注册时立即抛出 `RpcException`，避免运行到真实请求时才暴露配置错误。Module 可以自由定义自己的构造函数，不需要调用框架父构造函数。
 
 每次请求的 `Response` 由 `ServerRequestHandler` 创建并最终返回。Service 和 Module 的 `__dispatch()` 只修改传入对象，不返回或保存它；不要把请求、响应保存为 Service/Module 属性，因为这些实例会被多个协程复用。
 
@@ -386,7 +383,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。客户端仍只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，应覆写对应 `onException()`，设置 Response 并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。Server 的全局 `onException` 只接收最终仍未处理的异常，回调只接收 `Throwable`，不参与 Response 构造。
+Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，设置 Response 并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -486,9 +483,11 @@ $request->addCall('User.Profile.detail')->setArg(['id' => 1001]);
 [$userResponse, $profileResponse] = $request->exec(timeout: 3.0);
 ```
 
-`Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。同一个批次执行期间不能继续 `addCall()`，也不能被并发执行。
+`Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。同一个批次不能被并发执行；Batch 一旦开始执行便永久封闭，此后即使执行已经结束，也不能继续 `addCall()`，需要追加调用时应创建新的 Batch。
 
-`exec()` 开始时会立即取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常会先被收集，所有协程结束后由 `exec()` 重新抛出第一个异常，不会静默丢失 Response。调用路径会在 `addCall()` 时立即校验。
+`exec()` 必须在 Swoole 协程环境中调用。它开始时会立即取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出，让进程管理与运维体系及时发现。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
+
+需要显式指定节点时可以调用 `RequestContext::setServiceNode()`，但节点的 `serviceName` 必须与调用路径第一段完全一致。例如 `User.Profile.detail` 只能指定属于 `User` 服务的节点；不匹配会立即抛出 `RpcException`，不会把请求发送到错误服务。
 
 ### 节点故障策略
 
@@ -514,18 +513,13 @@ $rpc = new Rpc(
 );
 ```
 
-Server 和 Client 分别提供运行错误回调。Server 回调负责 assist-worker 中无法同步抛回调用方的节点上线、心跳、下线以及 UDP 监听和广播错误，必须在 `attachServer()` 前设置；Client 回调负责节点查询、节点下线和未预期 Transport 错误。两类回调互不影响，回调自身抛出的异常也会被隔离。
+只有 Server 提供 `onRuntimeError`。它负责 assist-worker 中无法同步抛回调用方的节点上线、心跳、下线以及 UDP 监听和广播错误，必须在 `attachServer()` 前设置。客户端始终存在明确的调用协程，因此节点管理器、节点选择器、失败策略和未预期传输异常统一进入 Client `onException`，不再提供 `onRuntimeError`。
 
 ```php
 $rpc->server()->setOnRuntimeError(
     function (string $message): void {
         // Closure 会随 Swoole fork 进入 assist-worker；其中使用的资源需由调用方保证支持 fork。
         logger()->error('[server] ' . $message);
-    }
-);
-$rpc->client()->setOnRuntimeError(
-    function (string $message): void {
-        logger()->error('[client] ' . $message);
     }
 );
 ```
@@ -648,7 +642,7 @@ $server->start();
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
-`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；`ProtocolCodec` 在 Transport 真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；框架在真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
 
 `Request::toJson()` 和 `Response::toJson()` 可以输出适合日志与排障的业务 JSON。例如：
 
@@ -665,11 +659,11 @@ $responseJson = $response->toJson();
 {"status":0,"result":{"id":1001,"name":"张三"},"msg":null,"nodeHealthStatus":"healthy","requestUUID":"request-id"}
 ```
 
-以上内容不包含 Transport 在发送时附加的 `timestamp` 和 `signature`。其中可能包含业务敏感数据，是否写入日志以及如何脱敏由调用方决定。
+以上内容不包含框架发送时附加的 `timestamp` 和 `signature`。其中可能包含业务敏感数据，是否写入日志以及如何脱敏由调用方决定。
 
 组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
 
-`ProtocolConfig::maxPackageSize` 同时提供给服务端 listener 和默认 `TcpTransport`，避免两侧包大小限制各自配置后不一致。客户端发送前会校验完整协议包大小，并通过 `Swoole\Coroutine\Socket::sendAll()` 保证请求全部写入；响应通过 `recvPacket()` 按相同长度头协议完整读取。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
+`ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 
@@ -679,15 +673,15 @@ $nodeManager = new SwooleTableNodeManager(nodeTtlSeconds: 30);
 
 NodeManager 如果存在确定的 TTL，应覆写 `nodeTtlSeconds(): ?int` 返回秒数。`attachServer()` 会要求 TTL 严格大于本机 `heartbeatIntervalMs`，开启 UDP 广播时还必须严格大于 `broadcastIntervalMs`，避免正常节点在下一次刷新前就过期。无法提供固定 TTL 的外部注册中心可以返回 `null`，由其实现自行保证约束。生产环境建议让 TTL 至少达到刷新周期的 2～3 倍，为调度延迟和短暂网络抖动保留余量。
 
-默认 Table 的 `service` 字段为 64 字节，完整节点 JSON 字段为 4096 字节，对应公开常量 `SERVICE_COLUMN_BYTES` 和 `NODE_COLUMN_BYTES`。写入内容超过字段容量或 JSON 编码失败时，`online()`、`heartbeat()` 返回 `false`，由调用位置通过 `onRuntimeError` 记录，不会写入可能被截断的数据。读取时发现损坏记录会将其删除并跳过，不会阻断同一服务下其他健康节点。如果传入自行创建的 `Swoole\Table`，必须使用相同的字段名称、类型和容量。
+默认 Table 的 `service` 字段为 64 字节，完整节点 JSON 字段为 4096 字节，对应公开常量 `SERVICE_COLUMN_BYTES` 和 `NODE_COLUMN_BYTES`。写入内容超过字段容量或 JSON 编码失败时，`online()`、`heartbeat()` 返回 `false`，不会写入可能被截断的数据。`false` 是 NodeManager 明确约定的失败结果，不会转换成异常；服务端后台任务可以通过 `onRuntimeError` 记录并继续后续周期。读取时发现损坏记录会将其删除并跳过，不会阻断同一服务下其他健康节点。如果传入自行创建的 `Swoole\Table`，必须使用相同的字段名称、类型和容量。
 
 `ServiceNode` 只保存客户端发现和连接所需的服务名、节点身份、节点名称、权重、对外地址与端口。`listenAddress` 只属于 `ServerConfig` 的本地监听配置，不会写入 ServiceNode、注册中心或 UDP 广播数据。
 
 自定义 NodeManager 也必须在 `getNodes()` 中只返回当前可用节点。例如 Redis 实现可以依赖键 TTL，Etcd 实现可以依赖 lease，而不需要 `AssistWorker` 识别或清理具体存储。
 
-`getNodes(string $serviceName): array|false` 使用明确的读取语义：空数组表示注册中心查询成功但当前没有可用节点，`false` 表示本次注册中心查询失败。查询失败会触发 `onRuntimeError`，客户端本次仍返回 `NOT_AVAILABLE_NODE`，后续请求会继续重新查询，以便网络恢复后自动恢复服务发现。
+`getNodes(string $serviceName): array|false` 使用明确的读取语义：空数组表示注册中心查询成功但当前没有可用节点，`false` 表示本次注册中心查询失败。两者都不会转换成异常，客户端当前调用返回 `NOT_AVAILABLE_NODE`，后续请求会继续查询。只有 NodeManager 实现自身抛出的未预期异常才会进入 Client `onException`。
 
-没有可用节点时请求不会进入 TCP Transport，也不会生成一个虚假的随机请求标识；`NOT_AVAILABLE_NODE` 响应的 `requestUUID` 为空字符串。
+没有可用节点时不会创建或发送 TCP 请求，也不会生成一个虚假的随机请求标识；`NOT_AVAILABLE_NODE` 响应的 `requestUUID` 为空字符串。
 
 UDP 数据处理会先独立完成数据格式和签名验证；非法或不可信数据直接忽略，不进入全局错误回调。验证通过后才调用 NodeManager，远端节点心跳或下线返回 `false` 时会单独触发 `onRuntimeError`，不会再被误判成非法广播包。
 
@@ -751,6 +745,8 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 ```
 
 默认的 `WeightedRandomNodeSelector` 根据 `serviceWeight()` 生成的节点权重随机选择。
+
+`serviceWeight()` 必须返回大于等于 `1` 的整数。`0` 和负数会在服务注册或节点反序列化时被拒绝；需要停用节点时，请使用节点下线机制，不要使用权重 `0` 表示禁用。
 
 ## 8. 自定义节点管理器
 
@@ -903,7 +899,7 @@ protected function onException(Throwable $throwable, Response $response): void
 
 ## 10. 异常体系
 
-组件主动抛出的配置、协议、注册、挂载与客户端状态异常都继承 `EasySwoole\Rpc\Exception\RpcException`。TCP 连接失败、超时、发送失败、连接关闭和响应解码失败属于可预期的运行结果，`TcpTransport` 会直接返回带对应 `ResponseStatus` 和 `NodeHealthStatus::SUSPECT` 的 `Response`，不会先转换成异常。只有 Transport 内真正未预期的 `Throwable` 才由 `RequestExecutor` 兜底并通知 `onRuntimeError`。业务 Service 和 Module 抛出的异常仍按其各自 `onException()` 约定处理，不会被强制包装成组件异常。
+组件主动抛出的配置、协议、注册、挂载与客户端状态异常都继承 `EasySwoole\Rpc\Exception\RpcException`。TCP 连接失败、超时、发送失败、连接关闭和响应解码失败属于可预期的运行结果，会直接转换成带对应 `ResponseStatus` 和 `NodeHealthStatus::SUSPECT` 的 `Response`。客户端其余未预期异常统一进入 `onException`，没有配置时直接从调用协程抛出。业务 Service 和 Module 抛出的异常仍按其各自 `onException()` 约定处理，不会被强制包装成组件异常。
 
 ### 应该使用哪个异常入口
 
@@ -913,8 +909,7 @@ protected function onException(Throwable $throwable, Response $response): void
 | `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
 | `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
 | `$rpc->server()->setOnRuntimeError()` | AssistWorker、服务端 NodeManager、UDP、TCP receive 等运行错误 | 否，只接收简短错误消息 |
-| `$rpc->client()->setOnException()` | 最终仍会抛给调用方的客户端执行或回调异常 | 否，只观察原始 Throwable，不会吞掉异常 |
-| `$rpc->client()->setOnRuntimeError()` | 客户端 NodeManager 查询/下线失败、未预期 Transport 错误 | 否，只接收简短错误消息 |
+| `$rpc->client()->setOnException()` | 客户端执行或 Action 回调异常；配置后由调用方接管，未配置则直接抛出 | 否 |
 
 配置和生命周期错误应由调用方直接捕获 `RpcException`：
 
@@ -950,6 +945,7 @@ if ($response->isSuccess()) {
 ## 11. 生产环境注意事项
 
 - `Rpc` 不是单例。框架不会强制全局实例；调用方可以根据应用容器和进程模型自行复用。
+- 服务端必须配置 `$rpc->server()->setOnException()`；未配置时，未处理异常会直接抛给调用层，框架不会静默吞掉。
 - 所有 Service 和 Module 必须在 `attachServer()` 前注册。注册完成后 Service 会冻结，不能继续增加 Module。
 - 需要让节点身份跨进程重启保持稳定时，应显式配置 `ServerConfig::nodeId`；不配置则每个 Server 实例生成新的 UUID。
 - `attachServer()` 只能执行一次，并且必须在 Swoole Server `start()` 前调用。挂载失败后应重建 Rpc 与 Swoole Server 实例。
@@ -1014,7 +1010,7 @@ composer test
 src/
 ├── AbstractInterface/  抽象服务、节点管理器和扩展接口
 ├── Attribute/          RpcAction 等 PHP Attribute
-├── Client/             Client 编排、RequestExecutor 与 TCP Transport
+├── Client/             客户端调用、批次执行、重试与 TCP 通信
 ├── Exception/          RPC 统一异常基类
 ├── Protocol/           DTO、签名编解码与长度头协议
 ├── Server/             门面、ServiceRegistry、请求处理、挂载及 AssistWorker

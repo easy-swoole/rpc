@@ -63,7 +63,10 @@ final class ServerRequestHandler
 
     private function report(\Throwable $throwable): void
     {
-        if ($this->onException === null) { return; }
+        if ($this->onException === null) {
+            // 未配置全局异常入口时不能静默吞错，直接交还调用层处理。
+            throw $throwable;
+        }
         // 日志回调自身失败不能反向破坏 RPC 响应流程。
         try { ($this->onException)($throwable); } catch (\Throwable) {}
     }

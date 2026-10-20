@@ -23,8 +23,8 @@ final class ServiceNode implements \JsonSerializable
         if ($port < 1 || $port > 65535) {
             throw new RpcException('Service node port must be between 1 and 65535.');
         }
-        if ($nodeWeight < 0) {
-            throw new RpcException('Service node weight cannot be negative.');
+        if ($nodeWeight < 1) {
+            throw new RpcException('Service node weight must be at least 1.');
         }
     }
 

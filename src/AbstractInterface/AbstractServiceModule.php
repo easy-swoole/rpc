@@ -25,11 +25,27 @@ abstract class AbstractServiceModule
         }
         // Action 元数据在服务装配阶段只反射一次，请求阶段只进行数组查找。
         $reflection = new \ReflectionClass($this);
-        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            $name = $method->getName();
-            if (!str_starts_with($name, '__') && $method->getAttributes(RpcAction::class) !== []) {
-                $this->allowedActions[$name] = true;
+        foreach ($reflection->getMethods() as $method) {
+            if ($method->getAttributes(RpcAction::class) === []) {
+                continue;
             }
+            $name = $method->getName();
+            if (!$method->isPublic()) {
+                throw new RpcException(sprintf('RPC action "%s::%s" must be public.', $reflection->getName(), $name));
+            }
+            if ($method->isStatic()) {
+                throw new RpcException(sprintf('RPC action "%s::%s" cannot be static.', $reflection->getName(), $name));
+            }
+            if (str_starts_with($name, '__')) {
+                throw new RpcException(sprintf('RPC action "%s::%s" cannot use a reserved name.', $reflection->getName(), $name));
+            }
+            if ($method->getNumberOfRequiredParameters() > 3) {
+                throw new RpcException(sprintf('RPC action "%s::%s" cannot require more than 3 parameters.', $reflection->getName(), $name));
+            }
+            if ($this->typeContainsResponse($method->getReturnType())) {
+                throw new RpcException(sprintf('RPC action "%s::%s" cannot declare Response as a return type.', $reflection->getName(), $name));
+            }
+            $this->allowedActions[$name] = true;
         }
         $this->actionsPrepared = true;
     }
@@ -79,5 +95,20 @@ abstract class AbstractServiceModule
     private function isActionAllowed(string $action): bool
     {
         return isset($this->allowedActions[$action]);
+    }
+
+    private function typeContainsResponse(?\ReflectionType $type): bool
+    {
+        if ($type instanceof \ReflectionNamedType) {
+            return !$type->isBuiltin() && $type->getName() === Response::class;
+        }
+        if ($type instanceof \ReflectionUnionType || $type instanceof \ReflectionIntersectionType) {
+            foreach ($type->getTypes() as $nestedType) {
+                if ($this->typeContainsResponse($nestedType)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

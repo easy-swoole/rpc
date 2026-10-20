@@ -20,14 +20,13 @@ final class Client
         NodeFailurePolicyInterface $failurePolicy,
         SecurityConfig $securityConfig = new SecurityConfig(),
         ProtocolConfig $protocolConfig = new ProtocolConfig(),
-        ?callable $onRuntimeError = null,
     ) {
         // TCP 协议与服务端 attachServer() 固定配套，不对外暴露可替换 Transport。
         $transport = new TcpTransport(
             new ProtocolCodec(new PayloadSigner($securityConfig)),
             $protocolConfig,
         );
-        $this->executor = new RequestExecutor($nodeManager, $nodeSelector, $failurePolicy, $transport, $onRuntimeError);
+        $this->executor = new RequestExecutor($nodeManager, $nodeSelector, $failurePolicy, $transport);
     }
     public function buildRequest(): RequestBatch
     {
@@ -44,16 +43,11 @@ final class Client
         return $this;
     }
 
-    public function setOnRuntimeError(callable $callback): self
-    {
-        $this->executor->setOnRuntimeError($callback);
-        return $this;
-    }
-
     private function reportException(\Throwable $throwable): void
     {
         if (!is_callable($this->onException)) {
-            return;
+            // 未配置客户端异常处理器时，不允许内部转发闭包静默吞掉异常。
+            throw $throwable;
         }
         try {
             ($this->onException)($throwable);

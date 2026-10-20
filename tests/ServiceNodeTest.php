@@ -32,6 +32,14 @@ final class ServiceNodeTest extends TestCase
         new ServiceNode('User', nodeId: 'node', port: 0);
     }
 
+    public function testRejectsWeightBelowOne(): void
+    {
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('at least 1');
+
+        new ServiceNode('User', nodeId: 'node', nodeWeight: 0);
+    }
+
     public function testRejectsInvalidSerializedFieldTypes(): void
     {
         $this->expectException(RpcException::class);

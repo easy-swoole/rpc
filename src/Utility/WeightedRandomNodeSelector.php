@@ -13,15 +13,12 @@ final class WeightedRandomNodeSelector implements NodeSelectorInterface
             return null;
         }
         $total = array_sum(array_map(
-            static fn (ServiceNode $node): int => max(0, $node->getNodeWeight()),
+            static fn (ServiceNode $node): int => $node->getNodeWeight(),
             $nodes,
         ));
-        if ($total === 0) {
-            return $nodes[array_rand($nodes)];
-        }
         $cursor = random_int(1, $total);
         foreach ($nodes as $node) {
-            $cursor -= max(0, $node->getNodeWeight());
+            $cursor -= $node->getNodeWeight();
             if ($cursor <= 0) {
                 return $node;
             }

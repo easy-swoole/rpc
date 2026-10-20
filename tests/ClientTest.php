@@ -53,6 +53,20 @@ final class ClientTest extends TestCase
         self::assertSame('', $response->getRequestUUID());
     }
 
+    public function testRejectsExplicitNodeFromAnotherService(): void
+    {
+        $batch = (new Client(
+            new SwooleTableNodeManager(16),
+            new WeightedRandomNodeSelector(),
+            new ConsecutiveFailurePolicy(),
+        ))->buildRequest();
+        $context = $batch->addCall('User.Profile.detail');
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('belongs to service "Order"');
+        $context->setServiceNode(new ServiceNode('Order', nodeId: 'order-node'));
+    }
+
     public function testRejectsNonPositiveTimeoutBeforeExecutingCalls(): void
     {
         $batch = (new Client(
@@ -100,7 +114,43 @@ final class ClientTest extends TestCase
         self::assertSame('client callback failed', $reported->getMessage());
     }
 
-    public function testReportsNodeRegistryQueryFailure(): void
+    public function testClientExceptionHandlerObservesEveryConcurrentActionCallbackException(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $client = $this->client(
+            $manager,
+            new ConsecutiveFailurePolicy(),
+            new class extends TcpTransport {
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    return new Response($request->getRequestUUID());
+                }
+            },
+        );
+        $reported = [];
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported[] = $throwable->getMessage();
+        });
+        $batch = $client->buildRequest();
+        foreach (['first callback failed', 'second callback failed'] as $message) {
+            $batch->addCall('Test.Echo.value')->setOnSuccess(static function () use ($message): never {
+                throw new \RuntimeException($message);
+            });
+        }
+
+        try {
+            $batch->exec();
+            self::fail('The first callback exception must escape after all calls finish.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('first callback failed', $exception->getMessage());
+        }
+
+        sort($reported);
+        self::assertSame(['first callback failed', 'second callback failed'], $reported);
+    }
+
+    public function testNodeRegistryQueryFailureReturnsUnavailableResponse(): void
     {
         $manager = new class extends AbstractNodeManager {
             public function heartbeat(ServiceNode $node): bool { return true; }
@@ -108,24 +158,49 @@ final class ClientTest extends TestCase
             public function online(ServiceNode $node): bool { return true; }
             public function getNodes(string $serviceName): array|false { return false; }
         };
-        $reported = null;
-        $onRuntimeError = function (string $message) use (&$reported): void {
-            $reported = $message;
-        };
         $client = new Client(
             $manager,
             new WeightedRandomNodeSelector(),
             new ConsecutiveFailurePolicy(),
-            onRuntimeError: $onRuntimeError,
         );
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
 
-        $response = $batch->exec()[0];
+        $responses = [];
+        \Swoole\Coroutine\run(static function () use ($batch, &$responses): void {
+            $responses = $batch->exec();
+        });
 
-        self::assertSame(ResponseStatus::NOT_AVAILABLE_NODE, $response->getStatus());
-        self::assertSame('', $response->getRequestUUID());
-        self::assertSame('RPC node query failed for service "Test".', $reported);
+        self::assertCount(1, $responses);
+        self::assertSame(ResponseStatus::NOT_AVAILABLE_NODE, $responses[0]->getStatus());
+        self::assertSame('', $responses[0]->getRequestUUID());
+    }
+
+    public function testUnexpectedNodeManagerExceptionUsesClientExceptionHandler(): void
+    {
+        $manager = new class extends AbstractNodeManager {
+            public function heartbeat(ServiceNode $node): bool { return true; }
+            public function offline(ServiceNode $node): bool { return true; }
+            public function online(ServiceNode $node): bool { return true; }
+            public function getNodes(string $serviceName): array|false
+            {
+                throw new \RuntimeException('unexpected registry failure');
+            }
+        };
+        $client = new Client($manager, new WeightedRandomNodeSelector(), new ConsecutiveFailurePolicy());
+        $reported = null;
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value');
+
+        \Swoole\Coroutine\run(static function () use ($batch): void {
+            self::assertSame([], $batch->exec());
+        });
+
+        self::assertInstanceOf(\RuntimeException::class, $reported);
+        self::assertSame('unexpected registry failure', $reported->getMessage());
     }
 
     public function testRetryOfflinesFailedNodeAndSelectsAnotherNode(): void
@@ -301,6 +376,25 @@ final class ClientTest extends TestCase
         $batch->exec();
     }
 
+    public function testRequestBatchRejectsCallsAfterExecutionCompletes(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $client = $this->client($manager, new ConsecutiveFailurePolicy(), new class extends TcpTransport {
+            public function send(ServiceNode $node, Request $request, float $timeout): Response
+            {
+                return new Response($request->getRequestUUID());
+            }
+        });
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value');
+        $batch->exec();
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('cannot be added');
+        $batch->addCall('Test.Echo.value');
+    }
+
     public function testBusinessErrorDoesNotOfflineNode(): void
     {
         $manager = new SwooleTableNodeManager(16);
@@ -371,14 +465,10 @@ final class ClientTest extends TestCase
         self::assertSame('response timeout', $response->getMsg());
     }
 
-    public function testUnexpectedTransportThrowableIsReportedAndConvertedToResponse(): void
+    public function testUnexpectedTransportThrowableUsesClientExceptionHandler(): void
     {
         $manager = new SwooleTableNodeManager(16);
         $manager->online(new ServiceNode('Test', nodeId: 'node'));
-        $reported = null;
-        $onRuntimeError = function (string $message) use (&$reported): void {
-            $reported = $message;
-        };
         $client = $this->client(
             $manager,
             new ConsecutiveFailurePolicy(),
@@ -388,16 +478,22 @@ final class ClientTest extends TestCase
                     throw new \LogicException('unexpected transport state');
                 }
             },
-            $onRuntimeError,
         );
+        $reported = null;
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported = $throwable;
+        });
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
 
-        $response = $batch->exec()[0];
+        $responses = [];
+        \Swoole\Coroutine\run(static function () use ($batch, &$responses): void {
+            $responses = $batch->exec();
+        });
 
-        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
-        self::assertSame('Unexpected RPC transport failure.', $response->getMsg());
-        self::assertStringContainsString('unexpected transport state', $reported);
+        self::assertSame([], $responses);
+        self::assertInstanceOf(\LogicException::class, $reported);
+        self::assertSame('unexpected transport state', $reported->getMessage());
     }
 
     public function testTcpTransportClassifiesOnlySocketTimeoutsAsConnectTimeout(): void
@@ -498,6 +594,10 @@ final class ClientTest extends TestCase
             self::assertSame('callback failed', $exception->getMessage());
         }
         self::assertSame([], $batch->exec());
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('cannot be added');
+        $batch->addCall('Test.Echo.value');
     }
 
     public function testAddRequestRejectsInvalidPathImmediately(): void
@@ -562,11 +662,10 @@ final class ClientTest extends TestCase
         SwooleTableNodeManager $manager,
         ConsecutiveFailurePolicy $failurePolicy,
         TcpTransport $transport,
-        ?callable $onRuntimeError = null,
     ): Client {
         $selector = new WeightedRandomNodeSelector();
         $client = new Client($manager, $selector, $failurePolicy);
-        $executor = new RequestExecutor($manager, $selector, $failurePolicy, $transport, $onRuntimeError);
+        $executor = new RequestExecutor($manager, $selector, $failurePolicy, $transport);
         (new \ReflectionProperty($client, 'executor'))->setValue($client, $executor);
         return $client;
     }

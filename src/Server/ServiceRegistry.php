@@ -20,7 +20,7 @@ final class ServiceRegistry
         $name = $service->serviceName();
         if (isset($this->services[$name])) { throw new RpcException(sprintf('Service "%s" is already registered.', $name)); }
         $weight = $service->serviceWeight();
-        if ($weight < 0) { throw new RpcException(sprintf('Service "%s" weight cannot be negative.', $name)); }
+        if ($weight < 1) { throw new RpcException(sprintf('Service "%s" weight must be at least 1.', $name)); }
         $node = new ServiceNode(
             serviceName: $name,
             nodeId: $this->nodeId,

@@ -13,22 +13,12 @@ use EasySwoole\Rpc\Server\ServiceNode;
 
 final class RequestExecutor
 {
-    private mixed $onRuntimeError;
-
     public function __construct(
         private readonly AbstractNodeManager $nodeManager,
         private readonly NodeSelectorInterface $nodeSelector,
         private readonly NodeFailurePolicyInterface $failurePolicy,
         private readonly TcpTransport $transport,
-        ?callable $onRuntimeError = null,
-    ) {
-        $this->onRuntimeError = $onRuntimeError;
-    }
-
-    public function setOnRuntimeError(callable $callback): void
-    {
-        $this->onRuntimeError = $callback;
-    }
+    ) {}
 
     public function execute(RequestContext $context, float $timeout): Response
     {
@@ -65,20 +55,9 @@ final class RequestExecutor
 
     private function resolveNode(string $service, ?string $excludedNodeId): ?ServiceNode
     {
-        $queryError = null;
-        try {
-            $nodes = $this->nodeManager->getNodes($service);
-        } catch (\Throwable $throwable) {
-            $nodes = false;
-            $queryError = $throwable->getMessage();
-        }
+        $nodes = $this->nodeManager->getNodes($service);
         if ($nodes === false) {
-            // false 表示注册中心查询失败；空数组则表示查询成功但当前没有节点。
-            $this->report(sprintf(
-                'RPC node query failed for service "%s"%s.',
-                $service,
-                $queryError === null ? '' : ': ' . $queryError,
-            ));
+            // false 是 NodeManager 明确约定的失败返回值，不属于异常；后续请求仍会重新查询。
             return null;
         }
         if ($excludedNodeId !== null && count($nodes) > 1) {
@@ -95,20 +74,8 @@ final class RequestExecutor
 
     private function sendRequest(ServiceNode $node, Request $request, float $timeout): Response
     {
-        try {
-            return $this->transport->send($node, $request, $timeout);
-        } catch (\Throwable $throwable) {
-            $this->report(sprintf(
-                'Unexpected RPC transport failure for service "%s", node "%s": %s',
-                $node->getServiceName(),
-                $node->getNodeId(),
-                $throwable->getMessage(),
-            ));
-            return (new Response($request->getRequestUUID()))
-                ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-                ->setMsg('Unexpected RPC transport failure.');
-        }
+        // 可预期网络失败由 Transport 返回 Response；真正未预期的异常直接交给 Batch。
+        return $this->transport->send($node, $request, $timeout);
     }
 
     private function validateResponse(Request $request, Response $response): Response
@@ -125,20 +92,8 @@ final class RequestExecutor
 
     private function offlineNode(ServiceNode $node): void
     {
-        try {
-            if ($this->nodeManager->offline($node)) {
-                return;
-            }
-            $message = '';
-        } catch (\Throwable $throwable) {
-            $message = ': ' . $throwable->getMessage();
-        }
-        $this->report(sprintf(
-            'RPC node offline failed for service "%s", node "%s"%s.',
-            $node->getServiceName(),
-            $node->getNodeId(),
-            $message,
-        ));
+        // false 是明确的操作失败结果，不应升级成异常；NodeManager 自身抛出的异常会自然向上冒泡。
+        $this->nodeManager->offline($node);
     }
 
     private function unavailableResponse(): Response
@@ -148,15 +103,4 @@ final class RequestExecutor
             ->setStatus(ResponseStatus::NOT_AVAILABLE_NODE);
     }
 
-    private function report(string $message): void
-    {
-        if (!is_callable($this->onRuntimeError)) {
-            return;
-        }
-        try {
-            ($this->onRuntimeError)($message);
-        } catch (\Throwable) {
-            // 运行日志回调不能反向破坏客户端请求生命周期。
-        }
-    }
 }
