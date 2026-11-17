@@ -7,8 +7,11 @@ use EasySwoole\Rpc\Protocol\Protocol;
 
 final class ProtocolConfig
 {
-    public function __construct(public readonly int $maxPackageSize = 2097152)
+    public function __construct(public readonly int $maxPackageSize = 2097152, public readonly int $requestReadTimeoutMs = 3000)
     {
+        if ($requestReadTimeoutMs < 1) {
+            throw new RpcException('Request read timeout must be at least 1 millisecond.');
+        }
         if ($maxPackageSize < Protocol::HEADER_BYTES) {
             throw new RpcException('Maximum package size must be at least 4 bytes.');
         }

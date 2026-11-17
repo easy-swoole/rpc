@@ -9,6 +9,7 @@ final class ProtocolCodec
     public function __construct(private readonly PayloadSigner $signer) {}
 
     public function encodeRequest(Request $request): string { return $this->encode($request->jsonSerialize()); }
+    public function encodeRequestFrame(string $payload): string { return RequestFrame::pack($payload, $this->signer); }
     public function encodeResponse(Response $response): string { return $this->encode($response->jsonSerialize()); }
 
     public function decodeRequest(string $json): Request
@@ -21,6 +22,29 @@ final class ProtocolCodec
         }
         $path = implode('.', [$payload['service'], $payload['module'], $payload['action']]);
         return new Request($path, $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID']);
+    }
+
+    /** @return array{Request, bool}|null */
+    public function inspectRequest(string $json): ?array
+    {
+        $envelope = json_decode($json, true);
+        $payload = $envelope['payload'] ?? null;
+        if (!is_array($payload)) {
+            return null;
+        }
+        foreach (['service', 'module', 'action', 'requestUUID'] as $field) {
+            if (!is_string($payload[$field] ?? null) || $payload[$field] === '') {
+                return null;
+            }
+        }
+        $parts = [$payload['service'], $payload['module'], $payload['action']];
+        foreach ($parts as $part) {
+            if (str_contains($part, '.')) {
+                return null;
+            }
+        }
+        $request = new Request(implode('.', $parts), $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID']);
+        return [$request, $this->signer->accepts($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null)];
     }
 
     public function decodeResponse(string $json): Response

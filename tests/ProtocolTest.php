@@ -5,6 +5,7 @@ namespace EasySwoole\Rpc\Tests;
 use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\RequestFrame;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
@@ -214,6 +215,21 @@ final class ProtocolTest extends TestCase
             $request->getRequestUUID(),
             $codec->decodeRequest(json_encode($data, JSON_THROW_ON_ERROR))->getRequestUUID(),
         );
+    }
+
+    public function testRequestFrameAuthenticatesHeaderBeforeBody(): void
+    {
+        $signer = new PayloadSigner(new SecurityConfig(apiKey: 'shared-api-key'));
+        $payload = 'request body';
+        $packet = RequestFrame::pack($payload, $signer);
+        $header = substr($packet, 0, RequestFrame::HEADER_BYTES);
+
+        self::assertSame(
+            ['length' => strlen($payload), 'hash' => hash('sha256', $payload, true)],
+            RequestFrame::inspect($header, strlen($packet), $signer),
+        );
+        $header[79] = $header[79] ^ "\x01";
+        self::assertNull(RequestFrame::inspect($header, strlen($packet), $signer));
     }
 
     public function testSignedResponseSerializesBusinessResultOnce(): void

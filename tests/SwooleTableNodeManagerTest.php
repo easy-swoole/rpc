@@ -44,7 +44,7 @@ final class SwooleTableNodeManagerTest extends TestCase
         $node = new ServiceNode('Orders', nodeId: 'expired');
         $manager->online($node);
         $key = sha1("Orders\0expired");
-        $table->set($key, ['heartbeat' => time() - 16]);
+        $table->set($key, ['heartbeat' => (int) (microtime(true) * 1000) - 16000]);
 
         self::assertSame([], $manager->getNodes('Orders'));
         self::assertFalse($table->exist($key));
@@ -73,7 +73,7 @@ final class SwooleTableNodeManagerTest extends TestCase
         self::assertTrue($table->set($damagedKey, [
             'service' => 'Orders',
             'node' => '{invalid json',
-            'heartbeat' => time(),
+            'heartbeat' => (int) (microtime(true) * 1000),
         ]));
 
         $nodes = $manager->getNodes('Orders');

@@ -8,6 +8,7 @@ use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
 use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\RequestFrame;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
@@ -33,21 +34,21 @@ class TcpTransport
         $deadline = microtime(true) + $timeout;
         // 编码失败属于调用或程序异常，不应伪装成网络传输失败。
         $payload = $this->codec->encodeRequest($request);
-        if (!$this->config->payloadFits($payload)) {
+        if (strlen($payload) > $this->config->maxPackageSize - RequestFrame::HEADER_BYTES) {
             throw new RpcException(sprintf(
                 'RPC request package exceeds the maximum size of %d bytes.',
                 $this->config->maxPackageSize,
             ));
         }
 
-        $packet = Protocol::pack($payload);
+        $packet = $this->codec->encodeRequestFrame($payload);
         $domain = filter_var($node->getHost(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
             ? AF_INET6
             : AF_INET;
         // 部分 PHP/Swoole 构建没有 IPPROTO_TCP；传 0 由系统为 SOCK_STREAM 自动选择 TCP。
         $client = new \Swoole\Coroutine\Socket($domain, SOCK_STREAM, 0);
         try {
-            // 客户端与服务端统一使用 4 字节网络序长度头，recvPacket() 会读取完整响应帧。
+            // 响应采用 4 字节网络序长度头。
             if (!$client->setProtocol($this->config->frameSettings())) {
                 return $this->failure(
                     $request,

@@ -476,30 +476,25 @@ final class ServerTest extends TestCase
         $reported = false;
         $this->server->setOnException(function () use (&$reported): void { $reported = true; });
 
-        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
         $handler = (new \ReflectionProperty($this->server, 'handler'))->getValue($this->server);
-        $response = $codec->decodeResponse($handler->handlePacket('invalid packet'));
-
-        self::assertInstanceOf(Response::class, $response);
-        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
-        self::assertSame('Illegal RPC request.', $response->getMsg());
+        self::assertNull($handler->handlePacket('invalid packet'));
         self::assertFalse($reported);
     }
 
-    public function testInvalidTcpFrameReturnsIllegalPackageWithoutRuntimeError(): void
+    public function testInvalidRequestSignatureReturnsIllegalPackageWithRequestUuid(): void
     {
-        $reported = false;
-        $this->server->setOnRuntimeError(function (string $message) use (&$reported): void {
-            $reported = true;
-        });
-        $attacher = (new \ReflectionProperty($this->server, 'attacher'))->getValue($this->server);
-        $packet = (new \ReflectionMethod($attacher, 'buildResponsePacket'))->invoke($attacher, 'invalid frame');
-        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
-        $response = $codec->decodeResponse(Protocol::unpack($packet));
+        $security = new SecurityConfig(apiKey: 'server-key');
+        $server = new Server(new SwooleTableNodeManager(16), securityConfig: $security);
+        $handler = (new \ReflectionProperty($server, 'handler'))->getValue($server);
+        $sender = new ProtocolCodec(new PayloadSigner(new SecurityConfig(apiKey: 'other-key')));
+        $receiver = new ProtocolCodec(new PayloadSigner($security));
 
+        $request = new Request('Test.Echo.value', requestUUID: 'test-id');
+        $response = $receiver->decodeResponse($handler->handlePacket($sender->encodeRequest($request)));
+
+        self::assertSame('test-id', $response->getRequestUUID());
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
-        self::assertSame('Illegal RPC request.', $response->getMsg());
-        self::assertFalse($reported);
+        self::assertSame('signature verify error', $response->getMsg());
     }
 
     public function testNetworkResponseUsesTheSharedApiKeySignature(): void
@@ -532,11 +527,8 @@ final class ServerTest extends TestCase
         }));
         $codec = new ProtocolCodec(new PayloadSigner($security));
         $request = new Request('Test.Large.value', requestUUID: 'request-id');
-        $attacher = (new \ReflectionProperty($server, 'attacher'))->getValue($server);
-        $packet = (new \ReflectionMethod($attacher, 'buildResponsePacket'))->invoke(
-            $attacher,
-            Protocol::pack($codec->encodeRequest($request)),
-        );
+        $handler = (new \ReflectionProperty($server, 'handler'))->getValue($server);
+        $packet = Protocol::pack($handler->handlePacket($codec->encodeRequest($request)));
 
         self::assertLessThanOrEqual($protocol->maxPackageSize, strlen($packet));
         $response = $codec->decodeResponse(Protocol::unpack($packet));

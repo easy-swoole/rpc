@@ -59,7 +59,7 @@ final class SwooleTableNodeManager extends AbstractNodeManager
         return $this->table->set($this->key($node), [
             'service' => $node->getServiceName(),
             'node' => $encodedNode,
-            'heartbeat' => time(),
+            'heartbeat' => self::nowMilliseconds(),
         ]);
     }
 
@@ -72,10 +72,10 @@ final class SwooleTableNodeManager extends AbstractNodeManager
     public function getNodes(string $serviceName): array|false
     {
         $nodes = [];
-        $deadline = time() - $this->nodeTtlSeconds;
+        $deadline = self::nowMilliseconds() - $this->nodeTtlSeconds * 1000;
         foreach ($this->table as $key => $row) {
             // 可用性过滤属于 NodeManager 职责，调用方只会拿到 TTL 内的节点。
-            if ($row['heartbeat'] < $deadline) {
+            if ($row['heartbeat'] <= $deadline) {
                 $this->table->del((string) $key);
                 continue;
             }
@@ -95,6 +95,11 @@ final class SwooleTableNodeManager extends AbstractNodeManager
             }
         }
         return $nodes;
+    }
+
+    private static function nowMilliseconds(): int
+    {
+        return (int) (microtime(true) * 1000);
     }
 
     private function key(ServiceNode $node): string

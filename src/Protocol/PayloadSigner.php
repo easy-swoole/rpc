@@ -25,10 +25,32 @@ final class PayloadSigner
         if (!is_int($timestamp) || abs(time() - $timestamp) > $this->config->timestampToleranceSeconds) {
             throw new RpcException('RPC signature timestamp is invalid or expired.');
         }
-        $expected = $this->sign($payload);
-        if (!is_string($signature) || $signature === '' || !hash_equals((string) $expected, $signature)) {
+        if (!$this->accepts($payload, $timestamp, $signature)) {
             throw new RpcException('Invalid RPC signature.');
         }
+    }
+
+    public function accepts(array $payload, mixed $timestamp, mixed $signature): bool
+    {
+        return $this->config->apiKey === null || (
+            is_int($timestamp)
+            && abs(time() - $timestamp) <= $this->config->timestampToleranceSeconds
+            && is_string($signature)
+            && hash_equals((string) $this->sign($payload), $signature)
+        );
+    }
+
+    public function signHeader(string $header): string
+    {
+        return $this->config->apiKey === null
+            ? str_repeat("\0", 32)
+            : hash_hmac('sha256', $header, $this->config->apiKey, true);
+    }
+
+    public function acceptsHeader(string $header, int $timestamp, string $signature): bool
+    {
+        return abs(time() - $timestamp) <= $this->config->timestampToleranceSeconds
+            && hash_equals($this->signHeader($header), $signature);
     }
 
     private function canonicalJson(array $payload): string

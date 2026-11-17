@@ -35,14 +35,16 @@ final class ServerRequestHandler
             return $this->serverError($request->getRequestUUID());
         }
     }
-    public function handlePacket(string $payload): string
+    public function handlePacket(string $payload): ?string
     {
-        try {
-            $request = $this->codec->decodeRequest($payload);
-        } catch (RpcException) {
-            // 非法数据属于可预期的客户端输入，不应触发服务端全局异常回调。
+        $decoded = $this->codec->inspectRequest($payload);
+        if ($decoded === null) {
+            return null;
+        }
+        [$request, $signatureValid] = $decoded;
+        if (!$signatureValid) {
             return $this->encodeWithinLimit(
-                new Response('', status: ResponseStatus::ILLEGAL_PACKAGE, msg: 'Illegal RPC request.'),
+                new Response($request->getRequestUUID(), status: ResponseStatus::ILLEGAL_PACKAGE, msg: 'signature verify error'),
             );
         }
 

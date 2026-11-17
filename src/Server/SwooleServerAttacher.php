@@ -7,6 +7,8 @@ use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Protocol;
+use EasySwoole\Rpc\Protocol\PayloadSigner;
+use EasySwoole\Rpc\Protocol\RequestFrame;
 use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Config\SecurityConfig;
 use Swoole\Server\Port;
@@ -15,6 +17,10 @@ final class SwooleServerAttacher
 {
     private ServerAttachStatus $status = ServerAttachStatus::PENDING;
     private mixed $onRuntimeError;
+    private readonly PayloadSigner $signer;
+
+    /** @var array<int, array{timer: int, buffer: string, frame: array{length: int, hash: string}|null}> */
+    private array $receiving = [];
 
     public function __construct(
         private readonly ServerConfig $serverConfig,
@@ -27,6 +33,7 @@ final class SwooleServerAttacher
         ?callable $onRuntimeError = null,
     ) {
         $this->onRuntimeError = $onRuntimeError;
+        $this->signer = new PayloadSigner($securityConfig);
     }
 
     public function status(): ServerAttachStatus { return $this->status; }
@@ -74,7 +81,17 @@ final class SwooleServerAttacher
             if (!$listener instanceof Port) {
                 throw new RpcException('Unable to create RPC listener.');
             }
-            $listener->set($this->protocolConfig->frameSettings());
+            $listener->set(['open_length_check' => false, 'open_eof_check' => false, 'open_eof_split' => false]);
+            $listener->on('connect', function (\Swoole\Server $server, int $fd): void {
+                $timer = \Swoole\Timer::after($this->protocolConfig->requestReadTimeoutMs, function () use ($server, $fd): void {
+                    unset($this->receiving[$fd]);
+                    $server->close($fd);
+                });
+                $this->receiving[$fd] = ['timer' => $timer, 'buffer' => '', 'frame' => null];
+            });
+            $listener->on('close', function (\Swoole\Server $server, int $fd): void {
+                $this->clearRead($fd);
+            });
             if (!$listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
                 $this->handleReceive($server, $fd, $packet);
             })) {
@@ -90,25 +107,54 @@ final class SwooleServerAttacher
 
     private function handleReceive(\Swoole\Server $server, int $fd, string $packet): void
     {
+        if (!isset($this->receiving[$fd])) {
+            return;
+        }
+        $state = &$this->receiving[$fd];
+        $state['buffer'] .= $packet;
+        if ($state['frame'] === null) {
+            if (strlen($state['buffer']) < RequestFrame::HEADER_BYTES) {
+                return;
+            }
+            $state['frame'] = RequestFrame::inspect(
+                substr($state['buffer'], 0, RequestFrame::HEADER_BYTES),
+                $this->protocolConfig->maxPackageSize,
+                $this->signer,
+            );
+            if ($state['frame'] === null) {
+                $this->clearRead($fd);
+                $server->close($fd);
+                return;
+            }
+            $state['buffer'] = substr($state['buffer'], RequestFrame::HEADER_BYTES);
+        }
+        $length = strlen($state['buffer']);
+        if ($length < $state['frame']['length']) {
+            return;
+        }
+
+        $payload = $state['buffer'];
+        $frame = $state['frame'];
+        $this->clearRead($fd);
         try {
-            $responsePacket = $this->buildResponsePacket($packet);
-            // 客户端可能已结束等待，发送失败直接结束当前响应。
-            $server->send($fd, $responsePacket);
+            if ($length !== $frame['length'] || !hash_equals($frame['hash'], hash('sha256', $payload, true))) {
+                return;
+            }
+            $response = $this->handler->handlePacket($payload);
+            if ($response !== null) {
+                $server->send($fd, Protocol::pack($response));
+            }
         } finally {
-            // 短连接完成后释放连接，客户端提前关闭时无需额外处理。
             $server->close($fd);
         }
     }
 
-    private function buildResponsePacket(string $packet): string
+    private function clearRead(int $fd): void
     {
-        try {
-            $payload = Protocol::unpack($packet);
-        } catch (RpcException) {
-            // 非法帧属于客户端输入问题，只返回 ILLEGAL_PACKAGE，不进入全局异常回调。
-            $payload = '';
+        if (isset($this->receiving[$fd])) {
+            \Swoole\Timer::clear($this->receiving[$fd]['timer']);
+            unset($this->receiving[$fd]);
         }
-        return Protocol::pack($this->handler->handlePacket($payload));
     }
 
     private function assertUdpAvailable(): void

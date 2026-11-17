@@ -384,7 +384,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，通过 ResponseBuilder 设置响应并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。
+Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，通过 ResponseBuilder 设置响应并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。服务端收到结构错误的 TCP 请求时直接关闭连接。结构合法但验签失败时，返回带原请求 UUID 的 `ILLEGAL_PACKAGE`，消息为 `signature verify error`。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -669,6 +669,10 @@ $responseJson = $response->toJson();
 以上内容不包含框架发送时附加的 `timestamp` 和 `signature`。其中可能包含业务敏感数据，是否写入日志以及如何脱敏由调用方决定。
 
 组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
+
+TCP 请求使用 80 字节固定包头，依次包含版本标识、包体长度、Unix 秒时间戳、包体 SHA-256 和 HMAC-SHA256。服务端收齐包头即检查版本、长度、时间窗口和签名，拒绝时直接关闭连接。收齐包体后，再核对 SHA-256 并交给请求解码器。`ProtocolConfig::requestReadTimeoutMs` 默认 3000，从连接建立起限制整帧读取时间。未配置 `apiKey` 时签名字段为全零。TCP 响应仍使用 4 字节长度头。客户端和服务端需要一起升级。
+
+RPC listener 在 worker 中维护每条连接的读取状态。宿主 Swoole Server 需要将同一连接的 connect、receive、close 事件分发到同一 worker。进程模式可使用默认的按连接分发模式。
 
 `ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。客户端编码后的请求帧（包含长度头）超过此限制时，会在连接前抛出 `RpcException`。服务端响应帧超限时，会尝试返回带原请求 UUID 的精简 `SERVICE_ERROR`，节点健康状态保持为 `HEALTHY`。如果上限连精简错误响应也容纳不了，服务端会抛出 `RpcException`。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
