@@ -2,6 +2,39 @@
 
 基于 Swoole 协程与 TCP 短连接的 RPC 组件。服务端通过 `Service.Module.action` 分发请求，客户端通过节点管理器发现服务节点，并发完成多个调用。
 
+## 设计与调用流程
+
+RPC 让一个进程调用另一个进程里的 PHP 方法。以 `User.Profile.detail` 为例，`User` 是服务名，`Profile` 是服务下的模块，`detail` 是对外开放的 Action。运行该服务的实例称为节点，每个节点通告自己的 TCP 地址和端口。
+
+```mermaid
+flowchart LR
+    subgraph Provider["服务提供方"]
+        Register["注册 User 服务和 Profile 模块"]
+        ProviderWorker["AssistWorker"]
+        Listener["Swoole TCP RPC 监听"]
+        Action["执行 User.Profile.detail"]
+        Register --> ProviderWorker
+        Register --> Listener
+        Listener --> Action
+    end
+    subgraph Gateway["调用方，例如 HTTP 网关"]
+        Discovery["AssistWorker 接收发现消息"]
+        Table["NodeManager 共享节点表"]
+        Http["HTTP 请求"]
+        Batch["Client 创建调用批次"]
+        Select["按服务名查表并选择节点"]
+        Result["按完整调用路径读取 Response"]
+        Discovery --> Table
+        Http --> Batch --> Select
+        Table --> Select
+    end
+    ProviderWorker -->|UDP 心跳与下线通知| Discovery
+    Select -->|TCP 请求| Listener
+    Action -->|TCP 响应| Result
+```
+
+UDP 负责告诉客户端去哪里调用。TCP 负责传输参数和结果。默认节点表由调用方的辅助进程和 worker 共享，默认选节点策略按权重随机选择。同一个 `Rpc` 实例可以复用，每次调用通过 `buildRequest()` 创建独立批次。
+
 ## 环境要求
 
 - PHP >= 8.1
@@ -11,11 +44,13 @@
 composer require easyswoole/rpc:^6.0
 ```
 
-## 快速开始：固定节点调用
+## 快速开始：从服务注册到 HTTP 调用
 
-下面的示例不启用 UDP 服务发现，客户端直接登记一个固定节点，适合第一次验证调用链。完整示例包含 Service、Module、服务端和客户端四部分。
+在安装了依赖的目录中依次创建 `service.php`、`server.php` 和 `gateway.php`。示例在本机运行两个独立进程。
 
-### 1. 创建 Service 与 Module
+### 1. 定义 Service、Module 和 Action
+
+将下面的代码保存为 `service.php`。
 
 ```php
 <?php
@@ -63,7 +98,9 @@ User.Profile.detail
   └─────────────── Service::serviceName()
 ```
 
-### 2. 启动服务端
+### 2. 注册服务并配置 UDP 通告
+
+将下面的代码保存为 `server.php`。服务端监听 TCP 9601，并向网关的 UDP 9600 发送心跳。
 
 ```php
 <?php
@@ -74,22 +111,26 @@ use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Config\RpcConfig;
 use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use Swoole\Server;
 
 require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/service.php';
 
 $rpc = new Rpc(config: new RpcConfig(
     server: new ServerConfig(
         advertiseHost: '127.0.0.1', // 客户端能够访问的主机名或 IP，不能写 0.0.0.0
-        listenAddress: '0.0.0.0', // RPC listener 实际绑定地址
+        listenAddress: '127.0.0.1', // RPC listener 实际绑定地址
         listenPort: 9601,         // RPC 对外监听端口
         nodeId: 'user-rpc-node-1', // 可选：跨重启保持稳定的节点唯一标识
         nodeName: 'user-rpc-1',
     ),
     discovery: new DiscoveryConfig(
-        listen: false,
-        broadcast: false,
+        broadcast: true,
+        broadcastAddresses: ['127.0.0.1:9600'],
+        broadcastIntervalMs: 1000,
     ),
+    security: new SecurityConfig(apiKey: 'local-demo-key'),
 ));
 
 $service = new UserService();
@@ -102,12 +143,12 @@ $rpc->server()->setOnException(static function (Throwable $throwable): void {
 });
 
 $rpc->server()->setOnRuntimeError(static function (string $message): void {
-    // 捕获服务端心跳、节点登记、UDP 和 TCP 回调等后台运行错误。
+    // 捕获服务端心跳、节点登记、UDP 等后台运行错误。
     error_log('[rpc server runtime] ' . $message);
 });
 
 // 9501 是宿主 Server 的主端口；RPC 会自动增加监听 9601 的 subPort。
-$server = new Server('0.0.0.0', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
+$server = new Server('127.0.0.1', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
 
 // 主端口使用 TCP Server 时必须有自己的 receive 回调；它不负责 RPC 请求。
 $server->on('receive', static function (Server $server, int $fd): void {
@@ -125,13 +166,69 @@ $server->start();
 php server.php
 ```
 
-### 3. 客户端调用
+### 3. 启动 HTTP 网关，自动发现并调用服务
+
+下面的网关在启动前创建一个共享的 `Rpc` 实例，并把 UDP 发现辅助进程挂载到 HTTP Server。辅助进程收到心跳后，将节点写入与 HTTP worker 共享的节点表。每个 HTTP 请求使用同一个 RPC 客户端创建独立批次。
+
+将以下代码保存为 `gateway.php`。它调用快速开始中的 `User.Profile.detail`。
+
+```php
+<?php
+
+use EasySwoole\Rpc\Config\DiscoveryConfig;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
+use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Rpc;
+use Swoole\Http\Request;
+use Swoole\Http\Response;
+use Swoole\Http\Server;
+
+require __DIR__ . '/vendor/autoload.php';
+
+$rpc = new Rpc(new RpcConfig(
+    server: new ServerConfig(listenAddress: '127.0.0.1', listenPort: 9502),
+    discovery: new DiscoveryConfig(listen: true, listenAddress: '127.0.0.1', listenPort: 9600),
+    security: new SecurityConfig(apiKey: 'local-demo-key'),
+));
+$client = $rpc->client();
+$server = new Server('127.0.0.1', 8080, SWOOLE_PROCESS);
+$server->set(['worker_num' => 2, 'enable_coroutine' => true]);
+$server->on('request', static function (Request $request, Response $http) use ($client): void {
+    $batch = $client->buildRequest();
+    $batch->addCall('User.Profile.detail')->setArg(['id' => 1001]);
+    $response = $batch->exec(timeout: 1.0)['User.Profile.detail'];
+
+    $http->status($response->isSuccess() ? 200 : 502);
+    $http->header('Content-Type', 'application/json');
+    $http->end($response->toJson());
+});
+
+$rpc->server()->attachServer($server);
+$server->start();
+```
+
+在另一个终端运行 `php gateway.php`，再访问：
+
+```bash
+curl http://127.0.0.1:8080/
+```
+
+发现节点后，HTTP 返回 200，响应的 `status` 为 0，`result` 包含用户 ID、姓名和请求 UUID。第一条心跳到达前返回 HTTP 502，RPC 状态为 `NOT_AVAILABLE_NODE`。
+
+本机运行时使用上面的回环地址。跨机器运行时，把网关 UDP 监听地址改为可接收心跳的地址，并将发送目标改为网关的可达 IP 和 UDP 端口。服务节点仍通过心跳通告自己的 TCP RPC 地址。
+
+### 可选：命令行直接调用固定节点
+
+将示例保存为 `client.php`。这个客户端在协程里直接调用上面的服务端。
 
 ```php
 <?php
 
 use EasySwoole\Rpc\Rpc;
 use EasySwoole\Rpc\Config\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
@@ -147,24 +244,29 @@ $nodeManager->online(new ServiceNode(
     port: 9601,
 ));
 
-$rpc = new Rpc(dependencies: new RpcDependencies(nodeManager: $nodeManager));
+$rpc = new Rpc(
+    config: new RpcConfig(security: new SecurityConfig(apiKey: 'local-demo-key')),
+    dependencies: new RpcDependencies(nodeManager: $nodeManager),
+);
 
-$batch = $rpc->client()->buildRequest();
-$batch->addCall('User.Profile.detail')
-    ->setArg(['id' => 1001])
-    ->setClientArg(['traceId' => 'trace-001']);
+\Swoole\Coroutine\run(static function () use ($rpc): void {
+    $batch = $rpc->client()->buildRequest();
+    $batch->addCall('User.Profile.detail')
+        ->setArg(['id' => 1001])
+        ->setClientArg(['traceId' => 'trace-001']);
 
-$response = $batch->exec(timeout: 3.0)['User.Profile.detail'];
+    $response = $batch->exec(timeout: 3.0)['User.Profile.detail'];
 
-if (!$response->isSuccess()) {
-    throw new RuntimeException(sprintf(
-        'RPC failed: status=%d, message=%s',
-        $response->getStatus()->value,
-        (string) $response->getMsg(),
-    ));
-}
+    if (!$response->isSuccess()) {
+        throw new RuntimeException(sprintf(
+            'RPC failed: status=%d, message=%s',
+            $response->getStatus()->value,
+            (string) $response->getMsg(),
+        ));
+    }
 
-var_dump($response->getResult());
+    var_dump($response->getResult());
+});
 ```
 
 运行：
@@ -184,29 +286,6 @@ array(3) {
 ```
 
 固定节点只适合本地验证或外部配置已经保证节点稳定的场景。生产环境通常应使用 Redis、Etcd 等集中式 NodeManager，或者在可信内网中启用 UDP 服务发现。
-
-## 调用流程
-
-```text
-Client.buildRequest().addCall()
-    → NodeManager.getNodes(serviceName)
-    → NodeSelector.select(nodes)
-    → 发送 TCP 请求
-    → Swoole TCP listener
-    → Server.handle()
-    → Service 定位 Module
-    → Module 定位 RpcAction
-    → Response
-```
-
-默认组合：
-
-- `SwooleTableNodeManager`：在本机多个 Swoole Worker 间共享节点；
-- `WeightedRandomNodeSelector`：根据 Service 声明的权重选择节点。
-
-`Rpc` 构造函数只接收两个聚合对象：`RpcConfig` 保存不可变的运行配置，`RpcDependencies` 保存可替换的 NodeManager、NodeSelector 和 NodeFailurePolicy。两者都能省略并自动创建默认对象，只通过 getter 暴露内部实例。
-
-客户端与服务端内部职责已分开：`Client` 管理调用批次、重试与节点策略；服务端的 `Server` 是对外门面，服务登记、请求分发、Swoole listener 和 assist-worker 挂载由内部组件完成。调用方只需要配置双方一致的安全和协议参数，无需关心或注入底层 TCP 实现。
 
 ## 1. 定义服务
 
@@ -537,6 +616,9 @@ $rpc->server()->setOnRuntimeError(
 
 ## 配置速查
 
+`RpcConfig` 保存运行配置，`RpcDependencies` 提供可替换的 NodeManager、NodeSelector 和 NodeFailurePolicy。省略这两个参数时，框架会创建默认实例。
+
+
 ### RpcConfig
 
 | 配置 | 默认值 | 用途 |
@@ -648,33 +730,6 @@ $server->start();
 ```
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
-
-`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；框架在真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名与发包共用同一次业务数据 JSON 转换的结果。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
-
-`Request::toJson()` 和 `Response::toJson()` 可以输出适合日志与排障的业务 JSON。例如：
-
-```php
-$requestJson = $request->toJson();
-$responseJson = $response->toJson();
-```
-
-```json
-{"service":"User","module":"Profile","action":"detail","arg":{"id":1001},"clientArg":{"traceId":"trace-001"},"requestUUID":"request-id"}
-```
-
-```json
-{"status":0,"result":{"id":1001,"name":"张三"},"msg":null,"nodeHealthStatus":"healthy","requestUUID":"request-id"}
-```
-
-以上内容不包含框架发送时附加的 `timestamp` 和 `signature`。其中可能包含业务敏感数据，是否写入日志以及如何脱敏由调用方决定。
-
-组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
-
-TCP 请求使用 80 字节固定包头，依次包含版本标识、包体长度、Unix 秒时间戳、包体 SHA-256 和 HMAC-SHA256。服务端收齐包头即检查版本、长度、时间窗口和签名，拒绝时直接关闭连接。收齐包体后，再核对 SHA-256 并交给请求解码器。`ProtocolConfig::requestReadTimeoutMs` 默认 3000，从连接建立起限制整帧读取时间。未配置 `apiKey` 时签名字段为全零。TCP 响应仍使用 4 字节长度头。客户端和服务端需要一起升级。
-
-RPC listener 在 worker 中维护每条连接的读取状态。宿主 Swoole Server 需要将同一连接的 connect、receive、close 事件分发到同一 worker。进程模式可使用默认的按连接分发模式。
-
-`ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。客户端编码后的请求帧（包含长度头）超过此限制时，会在连接前抛出 `RpcException`。服务端响应帧超限时，会尝试返回带原请求 UUID 的精简 `SERVICE_ERROR`，节点健康状态保持为 `HEALTHY`。如果上限连精简错误响应也容纳不了，服务端会抛出 `RpcException`。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 
@@ -955,6 +1010,35 @@ if ($response->isSuccess()) {
     ));
 }
 ```
+
+## 协议与安全
+
+`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；框架在真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名与发包共用同一次业务数据 JSON 转换的结果。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+
+`Request::toJson()` 和 `Response::toJson()` 可以输出适合日志与排障的业务 JSON。例如：
+
+```php
+$requestJson = $request->toJson();
+$responseJson = $response->toJson();
+```
+
+```json
+{"service":"User","module":"Profile","action":"detail","arg":{"id":1001},"clientArg":{"traceId":"trace-001"},"requestUUID":"request-id"}
+```
+
+```json
+{"status":0,"result":{"id":1001,"name":"张三"},"msg":null,"nodeHealthStatus":"healthy","requestUUID":"request-id"}
+```
+
+以上内容不包含框架发送时附加的 `timestamp` 和 `signature`。其中可能包含业务敏感数据，是否写入日志以及如何脱敏由调用方决定。
+
+组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
+
+TCP 请求使用 80 字节固定包头，依次包含版本标识、包体长度、Unix 秒时间戳、包体 SHA-256 和 HMAC-SHA256。服务端收齐包头即检查版本、长度、时间窗口和签名，拒绝时直接关闭连接。收齐包体后，再核对 SHA-256 并交给请求解码器。`ProtocolConfig::requestReadTimeoutMs` 默认 3000，从连接建立起限制整帧读取时间。未配置 `apiKey` 时签名字段为全零。TCP 响应仍使用 4 字节长度头。客户端和服务端需要一起升级。
+
+RPC listener 在 worker 中维护每条连接的读取状态。宿主 Swoole Server 需要将同一连接的 connect、receive、close 事件分发到同一 worker。进程模式可使用默认的按连接分发模式。
+
+`ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。客户端编码后的请求帧（包含长度头）超过此限制时，会在连接前抛出 `RpcException`。服务端响应帧超限时，会尝试返回带原请求 UUID 的精简 `SERVICE_ERROR`，节点健康状态保持为 `HEALTHY`。如果上限连精简错误响应也容纳不了，服务端会抛出 `RpcException`。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
 ## 11. 生产环境注意事项
 
