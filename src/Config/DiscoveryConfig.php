@@ -1,6 +1,6 @@
 <?php
 
-namespace EasySwoole\Rpc\Server;
+namespace EasySwoole\Rpc\Config;
 
 use EasySwoole\Rpc\Exception\RpcException;
 

@@ -2,6 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Config\ServerConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Exception\RpcException;

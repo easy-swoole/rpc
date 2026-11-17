@@ -1,8 +1,9 @@
 <?php
 
-namespace EasySwoole\Rpc\Protocol;
+namespace EasySwoole\Rpc\Config;
 
 use EasySwoole\Rpc\Exception\RpcException;
+use EasySwoole\Rpc\Protocol\Protocol;
 
 final class ProtocolConfig
 {

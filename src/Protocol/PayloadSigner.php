@@ -3,7 +3,7 @@
 namespace EasySwoole\Rpc\Protocol;
 
 use EasySwoole\Rpc\Exception\RpcException;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 
 final class PayloadSigner
 {

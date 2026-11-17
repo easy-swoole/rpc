@@ -71,9 +71,9 @@ User.Profile.detail
 use App\Rpc\ProfileModule;
 use App\Rpc\UserService;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\RpcConfig;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\Server\ServerConfig;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
+use EasySwoole\Rpc\Config\ServerConfig;
 use Swoole\Server;
 
 require __DIR__ . '/vendor/autoload.php';
@@ -131,7 +131,7 @@ php server.php
 <?php
 
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
@@ -339,9 +339,9 @@ public function detail(mixed $arg, Request $request, ResponseBuilder $response):
 use App\Rpc\ProfileModule;
 use App\Rpc\UserService;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\RpcConfig;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\Server\ServerConfig;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
+use EasySwoole\Rpc\Config\ServerConfig;
 use Swoole\Server;
 
 require __DIR__ . '/vendor/autoload.php';
@@ -425,7 +425,7 @@ $server->start();
 
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 
@@ -510,7 +510,7 @@ $profileResponse = $responses['User.Profile.detail'];
 
 ```php
 use EasySwoole\Rpc\Utility\ConsecutiveFailurePolicy;
-use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcDependencies;
 
 $rpc = new Rpc(
     dependencies: new RpcDependencies(
@@ -617,9 +617,9 @@ $discoveryConfig = new DiscoveryConfig(
 在构造 `Rpc` 时传入 UDP 服务发现配置；`attachServer()` 会自动完成端口预检和 assist-worker 挂载：
 
 ```php
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\RpcConfig;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 
 $rpc = new Rpc(
     config: new RpcConfig(
@@ -734,7 +734,7 @@ NodeManager 不负责选择节点。自定义负载策略需要实现 `NodeSelec
 
 ```php
 use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
-use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class FirstNodeSelector implements NodeSelectorInterface
@@ -775,7 +775,7 @@ Redis 类型的实现可以使用下面的按 PID 建连模式：
 
 ```php
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
-use EasySwoole\Rpc\RpcDependencies;
+use EasySwoole\Rpc\Config\RpcDependencies;
 use EasySwoole\Rpc\Server\ServiceNode;
 
 final class RedisNodeManager extends AbstractNodeManager

@@ -1,10 +1,6 @@
 <?php
 
-namespace EasySwoole\Rpc;
-
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\Server\ServerConfig;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+namespace EasySwoole\Rpc\Config;
 
 final class RpcConfig
 {

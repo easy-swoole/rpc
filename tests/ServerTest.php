@@ -2,7 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
@@ -14,15 +14,15 @@ use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\AssistWorkerConfig;
 use EasySwoole\Rpc\Server\ServerAttachStatus;
-use EasySwoole\Rpc\Server\ServerConfig;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
+use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\Tests\Fixtures\EchoModule;
 use EasySwoole\Rpc\Tests\Fixtures\TestService;
 use EasySwoole\Rpc\Tests\Fixtures\WeightedService;

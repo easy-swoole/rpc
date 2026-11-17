@@ -7,8 +7,8 @@ use EasySwoole\Rpc\AbstractInterface\NodeSelectorInterface;
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 
 final class Client
 {

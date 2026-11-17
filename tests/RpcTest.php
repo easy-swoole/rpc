@@ -3,13 +3,13 @@
 namespace EasySwoole\Rpc\Tests;
 
 use EasySwoole\Rpc\Rpc;
-use EasySwoole\Rpc\RpcConfig;
-use EasySwoole\Rpc\RpcDependencies;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
-use EasySwoole\Rpc\Server\ServerConfig;
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\RpcDependencies;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
+use EasySwoole\Rpc\Config\ServerConfig;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
 use EasySwoole\Rpc\Exception\RpcException;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
 use PHPUnit\Framework\TestCase;
 
 final class RpcTest extends TestCase

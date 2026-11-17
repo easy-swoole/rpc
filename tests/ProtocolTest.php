@@ -2,7 +2,7 @@
 
 namespace EasySwoole\Rpc\Tests;
 
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;

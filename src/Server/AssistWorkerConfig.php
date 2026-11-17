@@ -2,8 +2,10 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\Exception\RpcException;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 
 final class AssistWorkerConfig
 {

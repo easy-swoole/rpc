@@ -2,11 +2,13 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Protocol;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use Swoole\Server\Port;
 
 final class SwooleServerAttacher

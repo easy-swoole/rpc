@@ -2,7 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Exception\RpcException;
 

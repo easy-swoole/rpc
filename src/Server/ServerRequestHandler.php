@@ -5,7 +5,7 @@ namespace EasySwoole\Rpc\Server;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseBuilder;

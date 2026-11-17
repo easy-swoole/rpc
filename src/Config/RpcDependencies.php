@@ -1,6 +1,6 @@
 <?php
 
-namespace EasySwoole\Rpc;
+namespace EasySwoole\Rpc\Config;
 
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\NodeFailurePolicyInterface;

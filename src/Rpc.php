@@ -2,6 +2,8 @@
 
 namespace EasySwoole\Rpc;
 
+use EasySwoole\Rpc\Config\RpcConfig;
+use EasySwoole\Rpc\Config\RpcDependencies;
 use EasySwoole\Rpc\Client\Client;
 use EasySwoole\Rpc\Server\Server;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;

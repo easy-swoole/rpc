@@ -2,7 +2,7 @@
 
 namespace EasySwoole\Rpc\Server;
 
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Component\Process\AbstractProcess;
 use EasySwoole\Component\Process\Config as ProcessConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;

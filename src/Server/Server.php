@@ -2,14 +2,16 @@
 
 namespace EasySwoole\Rpc\Server;
 
+use EasySwoole\Rpc\Config\ServerConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\AbstractInterface\AbstractService;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 
 final class Server
 {

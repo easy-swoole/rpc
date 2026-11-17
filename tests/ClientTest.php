@@ -10,7 +10,7 @@ use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
-use EasySwoole\Rpc\Protocol\ProtocolConfig;
+use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\ServiceNode;

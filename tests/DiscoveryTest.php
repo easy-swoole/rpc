@@ -2,12 +2,12 @@
 
 namespace EasySwoole\Rpc\Tests;
 
-use EasySwoole\Rpc\SecurityConfig;
+use EasySwoole\Rpc\Config\SecurityConfig;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Server\AssistWorker;
 use EasySwoole\Rpc\Server\AssistWorkerConfig;
-use EasySwoole\Rpc\Server\DiscoveryConfig;
+use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\Server\DiscoveryMessage;
 use EasySwoole\Rpc\Server\ServiceNode;
 use EasySwoole\Rpc\Utility\SwooleTableNodeManager;
