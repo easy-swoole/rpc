@@ -65,7 +65,8 @@ final class SwooleTableNodeManager extends AbstractNodeManager
 
     public function offline(ServiceNode $node): bool
     {
-        return $this->table->del($this->key($node));
+        $key = $this->key($node);
+        return $this->table->del($key) || !$this->table->exists($key);
     }
 
     public function getNodes(string $serviceName): array|false

@@ -92,31 +92,11 @@ final class SwooleServerAttacher
     {
         try {
             $responsePacket = $this->buildResponsePacket($packet);
-            try {
-                if (!$server->send($fd, $responsePacket)) {
-                    $this->report(sprintf(
-                        'RPC TCP response send failed for connection %d.',
-                        $fd,
-                    ));
-                }
-            } catch (\Throwable $throwable) {
-                $this->report(sprintf(
-                    'RPC TCP response send failed for connection %d: %s',
-                    $fd,
-                    $throwable->getMessage(),
-                ));
-            }
+            // 客户端可能已结束等待，发送失败直接结束当前响应。
+            $server->send($fd, $responsePacket);
         } finally {
-            // 当前协议采用 TCP 短连接，一个请求响应完成后立即关闭连接。
-            try {
-                $server->close($fd);
-            } catch (\Throwable $throwable) {
-                $this->report(sprintf(
-                    'RPC TCP connection %d close failed: %s',
-                    $fd,
-                    $throwable->getMessage(),
-                ));
-            }
+            // 短连接完成后释放连接，客户端提前关闭时无需额外处理。
+            $server->close($fd);
         }
     }
 
@@ -191,15 +171,4 @@ final class SwooleServerAttacher
         }
     }
 
-    private function report(string $message): void
-    {
-        if (!is_callable($this->onRuntimeError)) {
-            return;
-        }
-        try {
-            ($this->onRuntimeError)($message);
-        } catch (\Throwable) {
-            // 日志回调异常不能破坏 TCP 响应和连接清理。
-        }
-    }
 }

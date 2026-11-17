@@ -918,7 +918,7 @@ protected function onException(Throwable $throwable, ResponseBuilder $response):
 | `AbstractServiceModule::onException()` | Action 内的业务异常；默认重新抛出 | 是，覆写后可以通过 ResponseBuilder 设置响应 |
 | `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以通过 ResponseBuilder 设置响应 |
 | `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
-| `$rpc->server()->setOnRuntimeError()` | AssistWorker、服务端 NodeManager、UDP、TCP receive 等运行错误 | 否，只接收简短错误消息 |
+| `$rpc->server()->setOnRuntimeError()` | AssistWorker、服务端 NodeManager、UDP 等运行错误 | 否，只接收简短错误消息 |
 | `$rpc->client()->setOnException()` | 客户端执行或 Action 回调异常；配置后由调用方接管，未配置则直接抛出 | 否 |
 
 配置和生命周期错误应由调用方直接捕获 `RpcException`：
@@ -1026,3 +1026,5 @@ src/
 ├── Server/             门面、ServiceRegistry、请求处理、挂载及 AssistWorker
 └── Utility/            Swoole Table 节点管理和默认节点选择器
 ```
+
+服务端完成 Action 后尝试发送响应并关闭短连接。客户端提前断开造成的发送失败不会触发服务端运行错误回调，Action 已完成的业务操作仍然有效。
