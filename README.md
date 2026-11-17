@@ -6,34 +6,66 @@
 
 RPC 让一个进程调用另一个进程里的 PHP 方法。以 `User.Profile.detail` 为例，`User` 是服务名，`Profile` 是服务下的模块，`detail` 是对外开放的 Action。运行该服务的实例称为节点，每个节点通告自己的 TCP 地址和端口。
 
+### 1. 服务启动与节点发现
+
+服务提供方启动 TCP 进程执行远程调用。HTTP 网关启动发现进程接收节点通告。提供方和网关各有自己的节点表。下图按快速开始中的 UDP 配置展示。
+
 ```mermaid
-flowchart LR
-    subgraph Provider["服务提供方"]
-        Register["注册 User 服务和 Profile 模块"]
-        ProviderWorker["AssistWorker"]
-        Listener["Swoole TCP RPC 监听"]
-        Action["执行 User.Profile.detail"]
-        Register --> ProviderWorker
-        Register --> Listener
-        Listener --> Action
-    end
-    subgraph Gateway["调用方，例如 HTTP 网关"]
-        Discovery["AssistWorker 接收发现消息"]
-        Table["NodeManager 共享节点表"]
-        Http["HTTP 请求"]
-        Batch["Client 创建调用批次"]
-        Select["按服务名查表并选择节点"]
-        Result["按完整调用路径读取 Response"]
-        Discovery --> Table
-        Http --> Batch --> Select
-        Table --> Select
-    end
-    ProviderWorker -->|UDP 心跳与下线通知| Discovery
-    Select -->|TCP 请求| Listener
-    Action -->|TCP 响应| Result
+flowchart TD
+    Register["提供方：注册 User 服务及 Profile 模块"] --> Attach["attachServer 挂载自定义进程"]
+    Attach --> Tcp["默认 3 个 TCP 进程共用一个监听端口"]
+    Tcp --> Ready["进程成功监听后，按 index 刷新共享进程心跳"]
+    Ready --> Health{"AssistWorker 检查：至少一个 TCP 进程存活？"}
+    Health -->|是| Online["登记并续约本机节点"]
+    Online --> Heartbeat["发送 UDP 心跳，通告服务名与 TCP 地址"]
+    Health -->|全部失活| Offline["停止续约，摘除已发布节点并发送 UDP 下线通知"]
+    Offline -->|TCP 进程恢复监听| Ready
+    Shutdown["提供方正常关停"] --> Offline
+
+    Heartbeat --> Receive["网关：AssistWorker 接收 UDP 通告"]
+    Offline --> Receive
+    Receive --> Verify{"发现包是否合法？"}
+    Verify -->|否| Discard["丢弃，继续接收"]
+    Verify -->|是| Update["心跳写入或续约，下线通知删除节点"]
+    Update --> Table["网关 NodeManager 节点表，供 HTTP worker 查询"]
+    Table --> Expiry["查询时过滤并清理已超过 TTL 的记录"]
 ```
 
-UDP 负责告诉客户端去哪里调用。TCP 负责传输参数和结果。默认节点表由调用方的辅助进程和 worker 共享，默认选节点策略按权重随机选择。同一个 `Rpc` 实例可以复用，每次调用通过 `buildRequest()` 创建独立批次。
+三个 TCP 进程共用同一个地址和端口，网关发现的是一个 RPC 节点。提供方没有发出下线通知时，网关依靠节点 TTL 清理陈旧记录。
+
+### 2. 一次 RPC 调用如何完成
+
+HTTP worker 复用同一个 RPC 客户端，为每个 HTTP 请求创建独立批次。下面以批次中的一个调用为例。
+
+```mermaid
+flowchart TD
+    Http["收到 HTTP 请求"] --> Batch["buildRequest 后添加 User.Profile.detail"]
+    Batch --> Lookup["exec 并发执行批次，按 User 查询节点"]
+    Lookup -->|查询失败| LookupFailed["NODE_LOOKUP_FAILED"]
+    Lookup -->|无节点| NoNode["NOT_AVAILABLE_NODE"]
+    Lookup -->|有节点| Select["按权重选择节点"]
+    Select --> Send["TCP 短连接：发送固定包头和 JSON 包体"]
+
+    Send --> Header{"服务端先收齐固定包头，检查长度、时间戳和签名"}
+    Header -->|校验失败或超时| Close["直接关闭连接"]
+    Header -->|通过| Body["用剩余时间读取包体"]
+    Body -->|超时或提前断开| Close
+    Body -->|收齐| Check{"校验包体哈希、JSON 结构和内层签名"}
+    Check -->|失败| Illegal["返回 ILLEGAL_PACKAGE 和具体原因"]
+    Check -->|通过| Action["按 Service、Module、Action 分发"]
+    Action --> Response["构建并编码只读 Response"]
+
+    Close --> Evaluate["客户端得到传输失败或超时状态"]
+    Illegal --> Decode["客户端解码响应并检查签名和请求 UUID"]
+    Response --> Decode
+    Evaluate --> Retry{"失败策略和重试预算允许再次尝试？"}
+    Decode --> Retry
+    Retry -->|是，仍有时间| Lookup
+    Retry -->|否| Result["按完整调用路径返回最终 Response"]
+    LookupFailed --> Fallback["重试选节点失败时保留上一次调用的响应"]
+    NoNode --> Fallback
+    Fallback --> Result
+```
 
 ## 环境要求
 
