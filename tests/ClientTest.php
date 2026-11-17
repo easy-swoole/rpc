@@ -27,17 +27,17 @@ final class ClientTest extends TestCase
         $node = new ServiceNode('Test', nodeId: 'node'); $manager->online($node);
         $transport = new class extends TcpTransport {
             public function send(ServiceNode $node, Request $request, float $timeout): Response
-            { return (new Response($request->getRequestUUID()))->setResult($request->getArg()); }
+            { return new Response($request->getRequestUUID(), result: $request->getArg()); }
         };
-        $called = false;
+        $callbackResponse = null;
         $client = $this->client($manager, new ConsecutiveFailurePolicy(), $transport);
         $batch = $client->buildRequest();
-        $batch->addCall('Test.Echo.value')->setArg('value')->setOnSuccess(function (Response $response) use (&$called): void {
-            $called = $response->getResult() === 'value';
+        $batch->addCall('Test.Echo.value')->setArg('value')->setOnSuccess(function (Response $response) use (&$callbackResponse): void {
+            $callbackResponse = $response;
         });
         $responses = $this->execBatch($batch);
-        self::assertTrue($called);
-        self::assertSame('value', $responses[0]->getResult());
+        self::assertSame($responses['Test.Echo.value'], $callbackResponse);
+        self::assertSame('value', $responses['Test.Echo.value']->getResult());
     }
 
     public function testReportsMissingNodeWithoutCallingTransport(): void
@@ -49,7 +49,7 @@ final class ClientTest extends TestCase
         );
         $batch = $client->buildRequest();
         $batch->addCall('Missing.Module.action');
-        $response = $this->execBatch($batch)[0];
+        $response = $this->execBatch($batch)['Missing.Module.action'];
         self::assertSame(ResponseStatus::NOT_AVAILABLE_NODE, $response->getStatus());
         self::assertSame('', $response->getRequestUUID());
     }
@@ -129,8 +129,8 @@ final class ClientTest extends TestCase
             $reported[] = $throwable->getMessage();
         });
         $batch = $client->buildRequest();
-        foreach (['first callback failed', 'second callback failed'] as $message) {
-            $batch->addCall('Test.Echo.value')->setOnSuccess(static function () use ($message): never {
+        foreach (['Test.Echo.first' => 'first callback failed', 'Test.Echo.second' => 'second callback failed'] as $path => $message) {
+            $batch->addCall($path)->setOnSuccess(static function () use ($message): never {
                 throw new \RuntimeException($message);
             });
         }
@@ -154,7 +154,7 @@ final class ClientTest extends TestCase
         $batch->exec();
     }
 
-    public function testNodeRegistryQueryFailureReturnsUnavailableResponse(): void
+    public function testNodeRegistryQueryFailureReturnsLookupFailedResponse(): void
     {
         $manager = new class extends AbstractNodeManager {
             public function heartbeat(ServiceNode $node): bool { return true; }
@@ -168,16 +168,16 @@ final class ClientTest extends TestCase
             new ConsecutiveFailurePolicy(),
         );
         $batch = $client->buildRequest();
-        $batch->addCall('Test.Echo.value');
-
-        $responses = [];
-        \Swoole\Coroutine\run(static function () use ($batch, &$responses): void {
-            $responses = $batch->exec();
+        $failedResponse = null;
+        $batch->addCall('Test.Echo.value')->setOnFail(static function (Response $response) use (&$failedResponse): void {
+            $failedResponse = $response;
         });
+        $responses = $this->execBatch($batch);
 
         self::assertCount(1, $responses);
-        self::assertSame(ResponseStatus::NOT_AVAILABLE_NODE, $responses[0]->getStatus());
-        self::assertSame('', $responses[0]->getRequestUUID());
+        self::assertSame(ResponseStatus::NODE_LOOKUP_FAILED, $responses['Test.Echo.value']->getStatus());
+        self::assertSame($responses['Test.Echo.value'], $failedResponse);
+        self::assertSame('', $responses['Test.Echo.value']->getRequestUUID());
     }
 
     public function testUnexpectedNodeManagerExceptionUsesClientExceptionHandler(): void
@@ -219,18 +219,20 @@ final class ClientTest extends TestCase
             {
                 $this->visited[] = $node->getNodeId();
                 if ($node->getNodeId() === 'failed') {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-                        ->setMsg('down');
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::TRANSPORT_ERROR,
+                        nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                        msg: 'down',
+                    );
                 }
-                return (new Response($request->getRequestUUID()))->setResult('ok');
+                return new Response($request->getRequestUUID(), result: 'ok');
             }
         };
         $client = $this->client($manager, new ConsecutiveFailurePolicy(1), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
-        self::assertTrue($this->execBatch($batch)[0]->isSuccess());
+        self::assertTrue($this->execBatch($batch)['Test.Echo.value']->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
         self::assertSame(['healthy'], array_map(static fn (ServiceNode $node): string => $node->getNodeId(), $manager->getNodes('Test')));
     }
@@ -248,18 +250,20 @@ final class ClientTest extends TestCase
             {
                 $this->visited[] = $node->getNodeId();
                 if ($node->getNodeId() === 'failed') {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::TRANSPORT_ERROR,
+                        nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                    );
                 }
-                return (new Response($request->getRequestUUID()))->setResult('ok');
+                return new Response($request->getRequestUUID(), result: 'ok');
             }
         };
         $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->setServiceNode($failed)->enableRetry(1);
 
-        self::assertTrue($this->execBatch($batch)[0]->isSuccess());
+        self::assertTrue($this->execBatch($batch)['Test.Echo.value']->isSuccess());
         self::assertSame(['failed', 'healthy'], $transport->visited);
         self::assertCount(2, $manager->getNodes('Test'));
     }
@@ -274,16 +278,18 @@ final class ClientTest extends TestCase
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
                 $this->visited[] = $node->getNodeId();
-                return (new Response($request->getRequestUUID()))
-                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                return new Response(
+                    $request->getRequestUUID(),
+                    status: ResponseStatus::TRANSPORT_ERROR,
+                    nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                );
             }
         };
         $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(1);
 
-        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)[0]->getStatus());
+        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)['Test.Echo.value']->getStatus());
         self::assertSame(['only', 'only'], $transport->visited);
     }
 
@@ -295,15 +301,17 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(1), new class extends TcpTransport {
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
-                return (new Response($request->getRequestUUID()))
-                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                return new Response(
+                    $request->getRequestUUID(),
+                    status: ResponseStatus::TRANSPORT_ERROR,
+                    nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                );
             }
         });
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(1);
 
-        $response = $this->execBatch($batch)[0];
+        $response = $this->execBatch($batch)['Test.Echo.value'];
         self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
         self::assertNotSame('', $response->getRequestUUID());
     }
@@ -320,9 +328,10 @@ final class ClientTest extends TestCase
             }
         });
         $batch = $client->buildRequest();
-        $batch->addCall('Test.Echo.value'); $batch->addCall('Test.Echo.value');
+        $batch->addCall('Test.Echo.value');
+        $batch->addCall('Test.Echo.other');
         $start = microtime(true);
-        self::assertCount(2, $this->execBatch($batch));
+        self::assertSame(['Test.Echo.value', 'Test.Echo.other'], array_keys($this->execBatch($batch)));
         self::assertLessThan(0.09, microtime(true) - $start);
     }
 
@@ -334,7 +343,7 @@ final class ClientTest extends TestCase
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
                 \Swoole\Coroutine::sleep(0.01);
-                return (new Response($request->getRequestUUID()))->setResult($request->getArg());
+                return new Response($request->getRequestUUID(), result: $request->getArg());
             }
         });
         $first = $client->buildRequest();
@@ -348,7 +357,7 @@ final class ClientTest extends TestCase
             foreach (['first' => $first, 'second' => $second] as $key => $batch) {
                 $waitGroup->add();
                 \Swoole\Coroutine::create(function () use ($key, $batch, &$results, $waitGroup): void {
-                    $results[$key] = $batch->exec()[0]->getResult();
+                    $results[$key] = $batch->exec()['Test.Echo.value']->getResult();
                     $waitGroup->done();
                 });
             }
@@ -413,15 +422,17 @@ final class ClientTest extends TestCase
             public function send(ServiceNode $node, Request $request, float $timeout): Response
             {
                 $this->calls++;
-                return (new Response($request->getRequestUUID()))
-                    ->setStatus(ResponseStatus::SERVICE_ERROR)
-                    ->setMsg('business failed');
+                return new Response(
+                    $request->getRequestUUID(),
+                    status: ResponseStatus::SERVICE_ERROR,
+                    msg: 'business failed',
+                );
             }
         };
         $client = $this->client($manager, new ConsecutiveFailurePolicy(), $transport);
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value')->enableRetry(3);
-        $response = $this->execBatch($batch)[0];
+        $response = $this->execBatch($batch)['Test.Echo.value'];
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
         self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
         self::assertSame(1, $transport->calls);
@@ -435,17 +446,19 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(3), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-                        ->setMsg('network down');
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::TRANSPORT_ERROR,
+                        nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                        msg: 'network down',
+                    );
                 }
             });
 
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $batch = $client->buildRequest();
             $batch->addCall('Test.Echo.value');
-            self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)[0]->getStatus());
+            self::assertSame(ResponseStatus::TRANSPORT_ERROR, $this->execBatch($batch)['Test.Echo.value']->getStatus());
             self::assertCount($attempt < 3 ? 1 : 0, $manager->getNodes('Test'));
         }
     }
@@ -458,16 +471,18 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::SERVER_TIMEOUT)
-                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-                        ->setMsg('response timeout');
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::SERVER_TIMEOUT,
+                        nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                        msg: 'response timeout',
+                    );
                 }
             });
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $response = $this->execBatch($batch)[0];
+        $response = $this->execBatch($batch)['Test.Echo.value'];
 
         self::assertSame(ResponseStatus::SERVER_TIMEOUT, $response->getStatus());
         self::assertSame('response timeout', $response->getMsg());
@@ -502,6 +517,41 @@ final class ClientTest extends TestCase
         self::assertSame([], $responses);
         self::assertInstanceOf(\LogicException::class, $reported);
         self::assertSame('unexpected transport state', $reported->getMessage());
+    }
+
+    public function testBatchPreservesCallPathAfterHandledException(): void
+    {
+        $manager = new SwooleTableNodeManager(16);
+        $manager->online(new ServiceNode('Test', nodeId: 'node'));
+        $failure = new \LogicException('unexpected transport state');
+        $client = $this->client(
+            $manager,
+            new ConsecutiveFailurePolicy(),
+            new class($failure) extends TcpTransport {
+                public function __construct(private readonly \LogicException $failure) {}
+
+                public function send(ServiceNode $node, Request $request, float $timeout): Response
+                {
+                    if ($request->getArg() === 'first') {
+                        throw $this->failure;
+                    }
+                    return new Response($request->getRequestUUID(), result: $request->getArg());
+                }
+            },
+        );
+        $reported = [];
+        $client->setOnException(static function (\Throwable $throwable) use (&$reported): void {
+            $reported[] = $throwable;
+        });
+
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.first')->setArg('first');
+        $batch->addCall('Test.Echo.second')->setArg('second');
+        $responses = $this->execBatch($batch);
+
+        self::assertSame([$failure], $reported);
+        self::assertSame(['Test.Echo.second'], array_keys($responses));
+        self::assertSame('second', $responses['Test.Echo.second']->getResult());
     }
 
     public function testRequestEncodingFailureUsesClientExceptionHandler(): void
@@ -539,9 +589,11 @@ final class ClientTest extends TestCase
                 if (count($this->timeouts) === 1) {
                     \Swoole\Coroutine::sleep(0.02);
                 }
-                return (new Response($request->getRequestUUID()))
-                    ->setStatus(ResponseStatus::TRANSPORT_ERROR)
-                    ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                return new Response(
+                    $request->getRequestUUID(),
+                    status: ResponseStatus::TRANSPORT_ERROR,
+                    nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                );
             }
         };
         $client = $this->client($manager, new ConsecutiveFailurePolicy(99), $transport);
@@ -592,11 +644,10 @@ final class ClientTest extends TestCase
         $transport = new TcpTransport(config: new ProtocolConfig(maxPackageSize: 64));
         $request = new Request('Test.Echo.value', str_repeat('x', 128));
 
-        $response = $transport->send(new ServiceNode('Test', nodeId: 'node', host: '127.0.0.1'), $request, 1.0);
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('RPC request package exceeds the maximum size of 64 bytes.');
 
-        self::assertSame(ResponseStatus::TRANSPORT_ERROR, $response->getStatus());
-        self::assertSame(NodeHealthStatus::SUSPECT, $response->getNodeHealthStatus());
-        self::assertStringContainsString('maximum size', $response->getMsg());
+        $transport->send(new ServiceNode('Test', nodeId: 'node', host: '127.0.0.1'), $request, 1.0);
     }
 
     public function testTcpTransportCanCreateARealStreamSocketWithoutIpProtoTcpConstant(): void
@@ -628,7 +679,7 @@ final class ClientTest extends TestCase
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
 
-        self::assertSame(ResponseStatus::RESPONSE_DECODE_ERROR, $this->execBatch($batch)[0]->getStatus());
+        self::assertSame(ResponseStatus::RESPONSE_DECODE_ERROR, $this->execBatch($batch)['Test.Echo.value']->getStatus());
     }
 
     public function testRequestBatchCanOnlyBeExecutedOnceAfterHandledCallbackException(): void
@@ -654,6 +705,21 @@ final class ClientTest extends TestCase
         $this->execBatch($batch);
     }
 
+    public function testBatchRejectsDuplicateCallPathImmediately(): void
+    {
+        $client = new Client(
+            new SwooleTableNodeManager(16),
+            new WeightedRandomNodeSelector(),
+            new ConsecutiveFailurePolicy(),
+        );
+        $batch = $client->buildRequest();
+        $batch->addCall('Test.Echo.value')->setArg('first');
+
+        $this->expectException(RpcException::class);
+        $this->expectExceptionMessage('RPC request path "Test.Echo.value" is already in this batch.');
+        $batch->addCall('Test.Echo.value');
+    }
+
     public function testAddRequestRejectsInvalidPathImmediately(): void
     {
         $client = new Client(
@@ -674,15 +740,17 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(99), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::SERVICE_ERROR)
-                        ->setNodeHealthStatus(NodeHealthStatus::OFFLINE);
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::SERVICE_ERROR,
+                        nodeHealthStatus: NodeHealthStatus::OFFLINE,
+                    );
                 }
             });
 
         $batch = $client->buildRequest();
         $batch->addCall('Test.Echo.value');
-        $response = $this->execBatch($batch)[0];
+        $response = $this->execBatch($batch)['Test.Echo.value'];
 
         self::assertSame(NodeHealthStatus::OFFLINE, $response->getNodeHealthStatus());
         self::assertSame([], $manager->getNodes('Test'));
@@ -695,9 +763,11 @@ final class ClientTest extends TestCase
         $client = $this->client($manager, new ConsecutiveFailurePolicy(2), new class extends TcpTransport {
                 public function send(ServiceNode $node, Request $request, float $timeout): Response
                 {
-                    return (new Response($request->getRequestUUID()))
-                        ->setStatus(ResponseStatus::SERVICE_ERROR)
-                        ->setNodeHealthStatus(NodeHealthStatus::SUSPECT);
+                    return new Response(
+                        $request->getRequestUUID(),
+                        status: ResponseStatus::SERVICE_ERROR,
+                        nodeHealthStatus: NodeHealthStatus::SUSPECT,
+                    );
                 }
             });
 
@@ -724,7 +794,7 @@ final class ClientTest extends TestCase
         return $client;
     }
 
-    /** @return list<Response> */
+    /** @return array<string, Response> */
     private function execBatch(RequestBatch $batch, float $timeout = 3.0): array
     {
         $responses = [];

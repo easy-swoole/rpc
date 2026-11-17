@@ -72,14 +72,7 @@ final class SwooleServerAttacher
             if (!$listener instanceof Port) {
                 throw new RpcException('Unable to create RPC listener.');
             }
-            $listener->set([
-                // 与客户端 Protocol::pack() 保持一致：4 字节长度头 + JSON 载荷。
-                'open_length_check' => true,
-                'package_length_type' => 'N',
-                'package_length_offset' => 0,
-                'package_body_offset' => 4,
-                'package_max_length' => $this->protocolConfig->maxPackageSize,
-            ]);
+            $listener->set($this->protocolConfig->frameSettings());
             if (!$listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
                 $this->handleReceive($server, $fd, $packet);
             })) {

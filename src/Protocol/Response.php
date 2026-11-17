@@ -6,27 +6,20 @@ use EasySwoole\Rpc\Exception\RpcException;
 
 final class Response implements \JsonSerializable, \Stringable
 {
-    private ResponseStatus $status = ResponseStatus::OK;
-    private mixed $result = null;
-    private mixed $msg = null;
-    private NodeHealthStatus $nodeHealthStatus = NodeHealthStatus::HEALTHY;
+    public function __construct(
+        private readonly string $requestUUID,
+        private readonly ResponseStatus $status = ResponseStatus::OK,
+        private readonly mixed $result = null,
+        private readonly mixed $msg = null,
+        private readonly NodeHealthStatus $nodeHealthStatus = NodeHealthStatus::HEALTHY,
+    ) {}
 
-    public function __construct(private readonly string $requestUUID) {}
     public function getStatus(): ResponseStatus { return $this->status; }
     public function getResult(): mixed { return $this->result; }
     public function getMsg(): mixed { return $this->msg; }
     public function getNodeHealthStatus(): NodeHealthStatus { return $this->nodeHealthStatus; }
     public function getRequestUUID(): string { return $this->requestUUID; }
-    public function setStatus(ResponseStatus $status): self { $this->status = $status; return $this; }
-    public function setResult(mixed $result): self { $this->result = $result; return $this; }
-    public function setMsg(mixed $msg): self { $this->msg = $msg; return $this; }
-    public function setNodeHealthStatus(NodeHealthStatus $nodeHealthStatus): self
-    {
-        $this->nodeHealthStatus = $nodeHealthStatus;
-        return $this;
-    }
     public function isSuccess(): bool { return $this->status === ResponseStatus::OK; }
-    public function jsonSerialize(): array { return $this->payload(); }
     public function toJson(): string
     {
         try {
@@ -52,24 +45,31 @@ final class Response implements \JsonSerializable, \Stringable
 
     public static function fromArray(array $data): self
     {
-        if (!isset($data['status']) || !is_int($data['status'])
-            || ResponseStatus::tryFrom($data['status']) === null) {
+        $status = is_int($data['status'] ?? null) ? ResponseStatus::tryFrom($data['status']) : null;
+        if ($status === null) {
             throw new RpcException('RPC response contains an invalid status.');
         }
-        if (!isset($data['nodeHealthStatus']) || !is_string($data['nodeHealthStatus'])
-            || NodeHealthStatus::tryFrom($data['nodeHealthStatus']) === null) {
+        $nodeHealthStatus = is_string($data['nodeHealthStatus'] ?? null)
+            ? NodeHealthStatus::tryFrom($data['nodeHealthStatus'])
+            : null;
+        if ($nodeHealthStatus === null) {
             throw new RpcException('RPC response contains an invalid node health status.');
         }
         if (!array_key_exists('requestUUID', $data) || !is_string($data['requestUUID'])) {
             throw new RpcException('RPC response contains an invalid request UUID.');
         }
-        return (new self($data['requestUUID']))
-            ->setStatus(ResponseStatus::from($data['status']))
-            ->setNodeHealthStatus(NodeHealthStatus::from($data['nodeHealthStatus']))
-            ->setResult($data['result'] ?? null)->setMsg($data['msg'] ?? null);
+        return new self(
+            $data['requestUUID'],
+            status: $status,
+            result: $data['result'] ?? null,
+            msg: $data['msg'] ?? null,
+            nodeHealthStatus: $nodeHealthStatus,
+        );
     }
 
-    public function payload(): array
+    public function payload(): array { return $this->jsonSerialize(); }
+
+    public function jsonSerialize(): array
     {
         return [
             'status' => $this->status->value,

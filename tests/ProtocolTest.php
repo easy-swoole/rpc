@@ -6,6 +6,7 @@ use EasySwoole\Rpc\SecurityConfig;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
@@ -103,9 +104,26 @@ final class ProtocolTest extends TestCase
         $codec->decodeRequest($json);
     }
 
+    public function testResponseBuilderBuildsReadOnlyResponse(): void
+    {
+        $builder = new ResponseBuilder('request-id');
+        $response = $builder->setResult(['value' => 1])->build();
+
+        $builder->setResult(['value' => 2])->setStatus(ResponseStatus::SERVICE_ERROR);
+
+        self::assertSame(['value' => 1], $response->getResult());
+        self::assertSame(ResponseStatus::OK, $response->getStatus());
+        foreach (['setStatus', 'setResult', 'setMsg', 'setNodeHealthStatus'] as $method) {
+            self::assertFalse(method_exists($response, $method));
+        }
+        foreach ((new \ReflectionClass(Response::class))->getProperties() as $property) {
+            self::assertTrue($property->isReadOnly());
+        }
+    }
+
     public function testResponseJsonRoundTrip(): void
     {
-        $response = (new Response('request-id'))->setStatus(ResponseStatus::SERVICE_ERROR)->setResult(['ok' => false])->setMsg('bad');
+        $response = new Response('request-id', status: ResponseStatus::SERVICE_ERROR, result: ['ok' => false], msg: 'bad');
         $copy = Response::fromJson($response->toJson());
         self::assertSame($response->jsonSerialize(), $copy->jsonSerialize());
         self::assertSame(ResponseStatus::SERVICE_ERROR, $copy->getStatus());
@@ -198,11 +216,31 @@ final class ProtocolTest extends TestCase
         );
     }
 
+    public function testSignedResponseSerializesBusinessResultOnce(): void
+    {
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig(apiKey: 'shared-api-key')));
+        $result = new class implements \JsonSerializable {
+            public int $serializationCount = 0;
+
+            public function jsonSerialize(): object
+            {
+                return (object) ['0' => ++$this->serializationCount];
+            }
+        };
+
+        $json = $codec->encodeResponse(new Response('request-id', result: $result));
+        $response = $codec->decodeResponse($json);
+
+        self::assertSame(1, $result->serializationCount);
+        self::assertSame([1], $response->getResult());
+        self::assertStringContainsString('"result":{"0":1}', $json);
+    }
+
     public function testSignedResponseRoundTripAndTamperDetection(): void
     {
         $security = new SecurityConfig(apiKey: 'shared-api-key');
         $codec = new ProtocolCodec(new PayloadSigner($security));
-        $response = (new Response('request-id'))->setResult(['b' => 2, 'a' => 1]);
+        $response = new Response('request-id', result: ['b' => 2, 'a' => 1]);
         $json = $codec->encodeResponse($response);
         $copy = $codec->decodeResponse($json);
         self::assertSame('request-id', $copy->getRequestUUID());

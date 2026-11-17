@@ -154,7 +154,7 @@ $batch->addCall('User.Profile.detail')
     ->setArg(['id' => 1001])
     ->setClientArg(['traceId' => 'trace-001']);
 
-[$response] = $batch->exec(timeout: 3.0);
+$response = $batch->exec(timeout: 3.0)['User.Profile.detail'];
 
 if (!$response->isSuccess()) {
     throw new RuntimeException(sprintf(
@@ -295,11 +295,11 @@ $rpc->server()->registerService($userService);
 
 Service 注册后由 `ServiceRegistry` 统一冻结，不能继续添加 Module；重复的 `moduleName()` 也会在注册阶段抛出异常。所有 Module 必须在 `registerService()` 前完成装配。
 
-`addModule()` 会在装配阶段一次性反射并缓存带有 `#[RpcAction]` 的方法；请求处理阶段不会重复执行反射。Action 必须是 public、非 static，不能使用 `__` 开头的保留名称，必填参数不能超过框架传入的 `$arg`、`Request`、`Response` 三个参数，也不能声明返回 `Response`。不合法的定义会在 Module 注册时立即抛出 `RpcException`，避免运行到真实请求时才暴露配置错误。Module 可以自由定义自己的构造函数，不需要调用框架父构造函数。
+`addModule()` 会在装配阶段一次性反射并缓存带有 `#[RpcAction]` 的方法；请求处理阶段不会重复执行反射。Action 必须是 public、非 static，不能使用 `__` 开头的保留名称，必填参数不能超过框架传入的 `$arg`、`Request`、`ResponseBuilder` 三个参数，也不能声明返回 `Response` 或 `ResponseBuilder`。不合法的定义会在 Module 注册时立即抛出 `RpcException`，避免运行到真实请求时才暴露配置错误。Module 可以自由定义自己的构造函数，不需要调用框架父构造函数。
 
-每次请求的 `Response` 由 `ServerRequestHandler` 创建并最终返回。Service 和 Module 的 `__dispatch()` 只修改传入对象，不返回或保存它；不要把请求、响应保存为 Service/Module 属性，因为这些实例会被多个协程复用。
+每次请求由 `ServerRequestHandler` 创建独立的 `ResponseBuilder`。Service 和 Module 的 `__dispatch()` 使用它构建响应，分发及钩子结束后由处理器生成只读的 `Response`。Service 和 Module 实例会被多个协程复用，请把请求和构建器保留在当前调用的局部变量中。
 
-Action 只能返回业务结果，由框架写入当前 `Response`。框架会把当前 `Response` 作为第三个参数注入 Action；需要设置消息等响应元数据时，应修改这个对象，不能自行创建或返回 `Response`。返回 `Response` 会按业务服务异常处理，避免 Action 替换框架维护的请求响应关联。
+Action 通过返回值提供业务结果，框架会将该值写入构建器。Action 使用第三个参数 `ResponseBuilder` 设置状态、消息和节点健康标记。`setResult()` 供框架分发器和服务端钩子使用，Action 正常返回时以其返回值为准。覆写 `afterRequest()`、`moduleNotFound()`、`actionNotFound()` 或 Service/Module 的 `onException()` 时，原响应参数的类型也改为 `ResponseBuilder`。
 
 推荐让 Action 只返回能够被 JSON 编码的业务数据：
 
@@ -311,22 +311,23 @@ public function detail(mixed $arg): array
 }
 ```
 
-需要调整响应元数据时，使用框架注入的当前 `Response`：
+需要调整响应元数据时，使用框架注入的 `ResponseBuilder`：
 
 ```php
-use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\Request;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 
 #[RpcAction]
-public function detail(mixed $arg, Request $request, Response $response): array
+public function detail(mixed $arg, Request $request, ResponseBuilder $response): array
 {
-    // requestUUID 由框架维护；Action 只修改当前响应，不创建新的 Response。
+    // requestUUID 由框架维护。
     $response->setMsg('读取成功');
 
     return ['id' => (int) $arg['id']];
 }
 ```
 
-不要返回资源、闭包、递归对象等不能被 JSON 编码的值。服务端遇到无法序列化的结果时会触发 `onException`，并向客户端返回隐藏内部细节的 `SERVICE_ERROR`。
+不要返回资源、闭包、递归对象等不能被 JSON 编码的值。服务端会通过全局 `onException` 上报序列化失败。配置了该回调时，客户端收到隐藏内部细节的 `SERVICE_ERROR`，节点健康标记为 `HEALTHY`。
 
 ## 3. 启动 RPC 服务端
 
@@ -383,7 +384,7 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，设置 Response 并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。
+Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，通过 ResponseBuilder 设置响应并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。非法数据包和请求格式错误属于可预期的客户端输入，只返回 `ResponseStatus::ILLEGAL_PACKAGE` 和 `Illegal RPC request.`，不会通知全局处理器。
 
 `attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
 
@@ -458,8 +459,10 @@ $context
     });
 
 $responses = $request->exec(timeout: 3.0); // timeout 必须大于 0；同一批次中的调用会并发执行
-$response = $responses[0];
+$response = $responses['User.Profile.getUser'];
 ```
+
+`enableRetry()` 默认不开启。开启后，如果服务端已经执行 Action，但客户端在收到响应前超时或断连，重试可能再次执行同一个 Action。只为幂等 Action 开启重试。
 
 Module 调用使用三段路径：
 
@@ -467,12 +470,14 @@ Module 调用使用三段路径：
 $client = $rpc->client();
 $request = $client->buildRequest();
 $request->addCall('User.Profile.detail')->setArg(['id' => 1001]);
-$response = $request->exec()[0];
+$response = $request->exec()['User.Profile.detail'];
 ```
+
+客户端 `onSuccess`、`onFail` 和 `exec()` 都提供只读的 `Response`，通过 getter 读取状态、结果、消息、节点健康标记和请求 UUID。只读约束作用于响应字段，`result` 或 `msg` 中的对象仍遵循 PHP 的对象引用语义。
 
 ### 并发调用多个服务
 
-同一个 RequestBatch 中加入的调用会通过 Swoole 协程并发执行，返回顺序与添加顺序一致：
+同一个 RequestBatch 中加入的调用会通过 Swoole 协程并发执行，`exec()` 返回以完整调用路径为键的 `array<string, Response>`，按添加顺序排列。同一个服务的不同 Action 可以在同一批次中调用，重复添加相同路径会立即抛出 `RpcException`。
 
 ```php
 $client = $rpc->client();
@@ -480,12 +485,14 @@ $request = $client->buildRequest();
 $request->addCall('User.Profile.getUser')->setArg(['id' => 1001]);
 $request->addCall('User.Profile.detail')->setArg(['id' => 1001]);
 
-[$userResponse, $profileResponse] = $request->exec(timeout: 3.0);
+$responses = $request->exec(timeout: 3.0);
+$userResponse = $responses['User.Profile.getUser'];
+$profileResponse = $responses['User.Profile.detail'];
 ```
 
 `Client` 本身不再保存请求队列。每次 `buildRequest()` 都会创建一个独立的 `RequestBatch`，所以同一个 Client 可以在多个协程中并发构建和执行不同批次。RequestBatch 是一次性对象：不能并发执行，执行完成后也不能再次 `exec()` 或继续 `addCall()`；需要发起后续调用时应创建新的 Batch。
 
-`exec()` 必须在 Swoole 协程环境中调用，否则会立即抛出明确的 `RpcException`。`timeout` 是单个 Action 的总 deadline，连接、发送、接收和重试共同消耗这段时间，各阶段只使用剩余时间，不会按阶段重复累计。Batch 开始时会取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出。`onException` 回调自身抛出的异常也不会被框架吞掉。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
+`exec()` 必须在 Swoole 协程环境中调用，否则会立即抛出明确的 `RpcException`。`timeout` 是单个 Action 的总 deadline，连接、发送、接收和重试共同消耗这段时间，各阶段只使用剩余时间，不会按阶段重复累计。Batch 开始时会取走当前调用队列，即使回调或扩展组件抛出异常也不会重复执行旧调用。每个调用协程的意外异常（包括 Action 的 `onSuccess` / `onFail` 回调异常）都会独立通知 Client `onException`；配置该回调表示由调用方接管异常，未配置时异常会直接从调用协程抛出。`onException` 回调自身抛出的异常也不会被框架吞掉。如果某项在取得 Response 前抛出异常且由 `onException` 接管，结果会缺少该项的路径键。例如上面的 `User.Profile.getUser` 抛出异常、`User.Profile.detail` 成功时，结果只包含 `User.Profile.detail`。已经取得的 Response 不会因为 Action 回调异常而从 Batch 返回结果中丢失。调用路径会在 `addCall()` 时立即校验。
 
 需要显式指定节点时可以调用 `RequestContext::setServiceNode()`，但节点的 `serviceName` 必须与调用路径第一段完全一致。例如 `User.Profile.detail` 只能指定属于 `User` 服务的节点；不匹配会立即抛出 `RpcException`，不会把请求发送到错误服务。
 
@@ -642,7 +649,7 @@ $server->start();
 
 当 `listen=true` 时，`attachServer()` 会先在主进程中尝试 bind UDP 地址。若端口已被其他程序占用、地址不可用或当前用户没有监听权限，会立即抛出异常，避免 assist-worker 启动后反复退出。预检成功后会立即释放探测 Socket，再由 `AssistWorker` 正式监听。
 
-`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；框架在真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
+`SecurityConfig` 是 RPC 请求、RPC 响应与 UDP 服务发现共用的安全配置。所有通信方必须使用相同的 `apiKey`；请求、响应和 UDP payload 使用 HMAC-SHA256 签名，并验证时间戳是否处于允许窗口内。`Request` 和 `Response` 本身只保存业务数据，不持有时间戳或签名；框架在真正序列化数据时才加入时间戳并生成签名，服务端响应也遵循相同规则。签名与发包共用同一次业务数据 JSON 转换的结果。签名前会递归规范化对象键顺序，避免等价 JSON 因键顺序不同产生不同签名。服务端会把请求的 `requestUUID` 原样写入响应，客户端再校验二者是否一致。签名只保证来源和内容没有被篡改，不加密 `arg`、`clientArg`、`result` 或节点信息；需要加密业务数据时，应由应用层自行约定。未配置 `apiKey` 时关闭签名验证。`broadcastAddresses` 应填写其他实例实际监听的 UDP 地址。
 
 `Request::toJson()` 和 `Response::toJson()` 可以输出适合日志与排障的业务 JSON。例如：
 
@@ -663,7 +670,7 @@ $responseJson = $response->toJson();
 
 组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
 
-`ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
+`ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。客户端编码后的请求帧（包含长度头）超过此限制时，会在连接前抛出 `RpcException`。服务端响应帧超限时，会尝试返回带原请求 UUID 的精简 `SERVICE_ERROR`，节点健康状态保持为 `HEALTHY`。如果上限连精简错误响应也容纳不了，服务端会抛出 `RpcException`。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
 节点过期判断属于 NodeManager 的职责。内置 `SwooleTableNodeManager` 默认只返回最近 15 秒内收到过心跳的节点，并在查询时移除过期记录；可通过 `nodeTtlSeconds` 调整：
 
@@ -679,9 +686,9 @@ NodeManager 如果存在确定的 TTL，应覆写 `nodeTtlSeconds(): ?int` 返�
 
 自定义 NodeManager 也必须在 `getNodes()` 中只返回当前可用节点。例如 Redis 实现可以依赖键 TTL，Etcd 实现可以依赖 lease，而不需要 `AssistWorker` 识别或清理具体存储。
 
-`getNodes(string $serviceName): array|false` 使用明确的读取语义：空数组表示注册中心查询成功但当前没有可用节点，`false` 表示本次注册中心查询失败。两者都不会转换成异常，客户端当前调用返回 `NOT_AVAILABLE_NODE`，后续请求会继续查询。只有 NodeManager 实现自身抛出的未预期异常才会进入 Client `onException`。
+`getNodes(string $serviceName): array|false` 使用明确的读取语义：空数组表示注册中心查询成功但当前没有可用节点，`false` 表示本次注册中心查询失败。首次选节点时，空数组对应 `NOT_AVAILABLE_NODE`，`false` 对应 `NODE_LOOKUP_FAILED`。两种状态都触发 `onFail`，响应以完整调用路径为键。重试选节点时若查询失败或没有可用节点，保留上一次实际调用的失败响应。后续调用会重新查询。只有 NodeManager 实现自身抛出的未预期异常才会进入 Client `onException`。
 
-没有可用节点时不会创建或发送 TCP 请求，也不会生成一个虚假的随机请求标识；`NOT_AVAILABLE_NODE` 响应的 `requestUUID` 为空字符串。
+这两种选节点失败都发生在发送请求前，响应的 `requestUUID` 为空字符串。
 
 UDP 数据处理会先独立完成数据格式和签名验证；非法或不可信数据直接忽略，不进入全局错误回调。验证通过后才调用 NodeManager，远端节点心跳或下线返回 `false` 时会单独触发 `onRuntimeError`，不会再被误判成非法广播包。
 
@@ -830,7 +837,7 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 
 `Response::getStatus()` 返回 `ResponseStatus` 枚举；`Response::isSuccess()` 仅在状态为 `ResponseStatus::OK` 时返回 `true`。JSON 协议中仍使用对应的整数值。
 
-服务端会对 Response 进行最终序列化。如果 Action 返回资源、递归对象等无法编码为 JSON 的结果，服务端会触发全局 `onException`，丢弃非法结果，并向客户端返回保留原 `requestUUID` 的 `SERVICE_ERROR`，不会把业务结果编码错误伪装成 TCP 网络失败。客户端会严格校验响应状态、节点健康状态和 `requestUUID` 的字段类型；格式不合法时统一作为 `RESPONSE_DECODE_ERROR` 处理。
+服务端会对 Response 进行最终序列化。如果 Action 返回资源、递归对象等无法编码为 JSON 的结果，服务端会向已配置的全局 `onException` 上报异常，丢弃非法结果，并返回带原 `requestUUID` 的 `SERVICE_ERROR`，节点健康标记为 `HEALTHY`。未配置全局回调时，序列化异常继续向上抛出。客户端会严格校验响应状态、节点健康状态和 `requestUUID` 的字段类型；格式不合法时统一作为 `RESPONSE_DECODE_ERROR` 处理。
 
 ### NodeHealthStatus
 
@@ -846,10 +853,10 @@ $rpc = new Rpc(dependencies: new RpcDependencies(
 
 ```php
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
-use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 
-protected function onException(Throwable $throwable, Response $response): void
+protected function onException(Throwable $throwable, ResponseBuilder $response): void
 {
     // 明确这是当前业务失败，节点仍健康，不累计连续失败次数。
     $response
@@ -873,6 +880,7 @@ protected function onException(Throwable $throwable, Response $response): void
 | `ResponseStatus::SERVER_TIMEOUT` | `1003` | 已连接后等待服务响应明确发生超时 |
 | `ResponseStatus::TRANSPORT_ERROR` | `1004` | 拒绝连接、连接重置、对端提前关闭、发送失败等非超时传输错误 |
 | `ResponseStatus::RESPONSE_DECODE_ERROR` | `1005` | 客户端无法解析响应、签名验证失败或响应中的 request UUID 不匹配 |
+| `ResponseStatus::NODE_LOOKUP_FAILED` | `1006` | 注册中心查询节点失败 |
 | `ResponseStatus::ILLEGAL_PACKAGE` | `2002` | 数据包、请求格式、请求签名或时间戳非法 |
 | `ResponseStatus::SERVICE_SHUTDOWN` | `3000` | 服务已停止接收请求；默认同时标记节点为 `OFFLINE` |
 | `ResponseStatus::SERVICE_NOT_EXIST` | `3001` | 服务不存在 |
@@ -907,8 +915,8 @@ protected function onException(Throwable $throwable, Response $response): void
 
 | 入口 | 适用场景 | 是否参与响应 |
 | --- | --- | --- |
-| `AbstractServiceModule::onException()` | Action 内的业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
-| `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以修改当前 Response |
+| `AbstractServiceModule::onException()` | Action 内的业务异常；默认重新抛出 | 是，覆写后可以通过 ResponseBuilder 设置响应 |
+| `AbstractService::onException()` | Service 路由及 Service 级业务异常；默认重新抛出 | 是，覆写后可以通过 ResponseBuilder 设置响应 |
 | `$rpc->server()->setOnException()` | 未被业务层处理的服务端异常、结果序列化失败 | 否，只负责记录和告警 |
 | `$rpc->server()->setOnRuntimeError()` | AssistWorker、服务端 NodeManager、UDP、TCP receive 等运行错误 | 否，只接收简短错误消息 |
 | `$rpc->client()->setOnException()` | 客户端执行或 Action 回调异常；配置后由调用方接管，未配置则直接抛出 | 否 |
@@ -930,7 +938,7 @@ try {
 网络失败不会从 `RequestBatch::exec()` 直接抛出，应检查 Response：
 
 ```php
-$response = $batch->exec(timeout: 3.0)[0];
+$response = $batch->exec(timeout: 3.0)['User.Profile.detail'];
 
 if ($response->isSuccess()) {
     $result = $response->getResult();

@@ -6,6 +6,7 @@ use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 
@@ -43,14 +44,14 @@ abstract class AbstractServiceModule
                 throw new RpcException(sprintf('RPC action "%s::%s" cannot require more than 3 parameters.', $reflection->getName(), $name));
             }
             if ($this->typeContainsResponse($method->getReturnType())) {
-                throw new RpcException(sprintf('RPC action "%s::%s" cannot declare Response as a return type.', $reflection->getName(), $name));
+                throw new RpcException(sprintf('RPC action "%s::%s" cannot declare Response as a return type or return a ResponseBuilder.', $reflection->getName(), $name));
             }
             $this->allowedActions[$name] = true;
         }
         $this->actionsPrepared = true;
     }
 
-    final public function __dispatch(Request $request, Response $response): void
+    final public function __dispatch(Request $request, ResponseBuilder $response): void
     {
         // 正常情况下已由 addModule() 预热；保留惰性兜底以支持直接调度测试等场景。
         $this->__prepareActions();
@@ -67,10 +68,10 @@ abstract class AbstractServiceModule
                 $this->actionNotFound($request, $response);
                 return;
             }
-            // Response 由框架创建并作为第三个参数传入；Action 返回值只表示业务 result。
+            // Action 通过返回值提供 result，通过第三个参数设置响应元数据。
             $result = $this->{$action}($request->getArg(), $request, $response);
-            if ($result instanceof Response) {
-                throw new RpcException('RPC actions must return business data instead of a Response object.');
+            if ($result instanceof Response || $result instanceof ResponseBuilder) {
+                throw new RpcException('RPC actions must return business data instead of a Response object or ResponseBuilder.');
             }
             $response->setResult($result);
         } catch (\Throwable $throwable) {
@@ -81,12 +82,12 @@ abstract class AbstractServiceModule
     }
 
     protected function onRequest(Request $request): bool { return true; }
-    protected function afterRequest(Request $request, Response $response): void {}
-    protected function actionNotFound(Request $request, Response $response): void
+    protected function afterRequest(Request $request, ResponseBuilder $response): void {}
+    protected function actionNotFound(Request $request, ResponseBuilder $response): void
     {
         $response->setStatus(ResponseStatus::ACTION_NOT_EXIST);
     }
-    protected function onException(\Throwable $throwable, Response $response): void
+    protected function onException(\Throwable $throwable, ResponseBuilder $response): void
     {
         // 默认继续向 Service 和 Server 冒泡，避免开发阶段静默丢失异常。
         throw $throwable;
@@ -100,7 +101,7 @@ abstract class AbstractServiceModule
     private function typeContainsResponse(?\ReflectionType $type): bool
     {
         if ($type instanceof \ReflectionNamedType) {
-            return !$type->isBuiltin() && $type->getName() === Response::class;
+            return in_array($type->getName(), [Response::class, ResponseBuilder::class], true);
         }
         if ($type instanceof \ReflectionUnionType || $type instanceof \ReflectionIntersectionType) {
             foreach ($type->getTypes() as $nestedType) {

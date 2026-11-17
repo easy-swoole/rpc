@@ -10,10 +10,9 @@ use Swoole\Coroutine\WaitGroup;
 
 final class RequestBatch
 {
-    /** @var list<RequestContext> */
+    /** @var array<string, RequestContext> */
     private array $calls = [];
-    private bool $executing = false;
-    private bool $executed = false;
+    private bool $started = false;
 
     public function __construct(
         private readonly RequestExecutor $executor,
@@ -22,14 +21,17 @@ final class RequestBatch
 
     public function addCall(string $path): RequestContext
     {
-        if ($this->executed) {
+        if ($this->started) {
             throw new RpcException('Calls cannot be added after an RPC request batch has started executing.');
         }
         Request::validatePath($path);
-        return $this->calls[] = new RequestContext($path);
+        if (isset($this->calls[$path])) {
+            throw new RpcException(sprintf('RPC request path "%s" is already in this batch.', $path));
+        }
+        return $this->calls[$path] = new RequestContext($path);
     }
 
-    /** @return list<Response> */
+    /** @return array<string, Response> */
     public function exec(float $timeout = 3.0): array
     {
         if (!is_finite($timeout) || $timeout <= 0) {
@@ -38,28 +40,24 @@ final class RequestBatch
         if (Coroutine::getCid() < 0) {
             throw new RpcException('RPC request batch must be executed inside a Swoole coroutine.');
         }
-        if ($this->executing) {
-            throw new RpcException('The same RPC request batch cannot be executed concurrently.');
-        }
-        if ($this->executed) {
+        if ($this->started) {
             throw new RpcException('The same RPC request batch can only be executed once.');
         }
 
-        $this->executing = true;
-        $this->executed = true;
+        $this->started = true;
         $responses = [];
         // 执行前先取走队列，即使回调抛出异常，旧调用也不会在下次 exec() 中重复执行。
         $calls = $this->calls;
         $this->calls = [];
         $waitGroup = new WaitGroup();
-        foreach ($calls as $index => $context) {
-            // 每个调用独占一个协程；最终按原始下标恢复调用方添加时的顺序。
+        foreach ($calls as $path => $context) {
+            // 每个调用独占一个协程；响应以完整调用路径记录。
             $waitGroup->add();
-            Coroutine::create(function () use (&$responses, $index, $context, $timeout, $waitGroup): void {
+            Coroutine::create(function () use (&$responses, $path, $context, $timeout, $waitGroup): void {
                 try {
                     $response = $this->executor->execute($context, $timeout);
                     // Response 已经完成，Action 回调异常不应导致该响应从 Batch 结果中丢失。
-                    $responses[$index] = $response;
+                    $responses[$path] = $response;
                     $context->notify($response);
                 } catch (\Throwable $throwable) {
                     if ($this->onException) {
@@ -73,12 +71,13 @@ final class RequestBatch
                 }
             });
         }
-        try {
-            $waitGroup->wait();
-        } finally {
-            $this->executing = false;
+        $waitGroup->wait();
+        $orderedResponses = [];
+        foreach (array_keys($calls) as $path) {
+            if (isset($responses[$path])) {
+                $orderedResponses[$path] = $responses[$path];
+            }
         }
-        ksort($responses);
-        return array_values($responses);
+        return $orderedResponses;
     }
 }

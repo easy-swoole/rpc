@@ -9,7 +9,7 @@ final class ProtocolCodec
     public function __construct(private readonly PayloadSigner $signer) {}
 
     public function encodeRequest(Request $request): string { return $this->encode($request->jsonSerialize()); }
-    public function encodeResponse(Response $response): string { return $this->encode($response->payload()); }
+    public function encodeResponse(Response $response): string { return $this->encode($response->jsonSerialize()); }
 
     public function decodeRequest(string $json): Request
     {
@@ -33,7 +33,14 @@ final class ProtocolCodec
         // 时间戳参与签名但不进入 Request/Response 对象，避免对象创建时间影响实际发送时间。
         $payload['timestamp'] = time();
         try {
-            return json_encode(['payload' => $payload, 'signature' => $this->signer->sign($payload)], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            // 业务对象只序列化一次。签名使用接收端解码时看到的数据，发包复用原始 JSON。
+            $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+            $signature = $this->signer->sign(json_decode($payloadJson, true, 512, JSON_THROW_ON_ERROR));
+            return sprintf(
+                '{"payload":%s,"signature":%s}',
+                $payloadJson,
+                json_encode($signature, JSON_THROW_ON_ERROR),
+            );
         } catch (\JsonException $exception) {
             throw new RpcException('Unable to encode RPC envelope.', previous: $exception);
         }

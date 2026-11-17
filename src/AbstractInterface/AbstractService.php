@@ -5,7 +5,7 @@ namespace EasySwoole\Rpc\AbstractInterface;
 use EasySwoole\Rpc\Exception\RpcException;
 
 use EasySwoole\Rpc\Protocol\Request;
-use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 
@@ -46,7 +46,7 @@ abstract class AbstractService
         $this->frozen = true;
     }
 
-    public function __dispatch(Request $request, Response $response): void
+    public function __dispatch(Request $request, ResponseBuilder $response): void
     {
         try {
             if (!$this->onRequest($request)) {
@@ -70,12 +70,12 @@ abstract class AbstractService
     }
 
     protected function onRequest(Request $request): bool { return true; }
-    protected function afterRequest(Request $request, Response $response): void {}
-    protected function moduleNotFound(Request $request, Response $response): void
+    protected function afterRequest(Request $request, ResponseBuilder $response): void {}
+    protected function moduleNotFound(Request $request, ResponseBuilder $response): void
     {
         $response->setStatus(ResponseStatus::MODULE_NOT_EXIST);
     }
-    protected function onException(\Throwable $throwable, Response $response): void
+    protected function onException(\Throwable $throwable, ResponseBuilder $response): void
     {
         // 默认不吞掉异常；业务只有在明确覆写此方法后才表示已经处理。
         throw $throwable;

@@ -30,6 +30,7 @@ final class Server
         $this->handler = new ServerRequestHandler(
             $this->registry,
             new ProtocolCodec(new PayloadSigner($securityConfig)),
+            $protocolConfig,
         );
         $this->attacher = new SwooleServerAttacher(
             $config,

@@ -9,10 +9,12 @@ use EasySwoole\Rpc\AbstractInterface\AbstractServiceModule;
 use EasySwoole\Rpc\Attribute\RpcAction;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
+use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Server\Server;
@@ -398,7 +400,7 @@ final class ServerTest extends TestCase
             public function moduleName(): string { return 'Business'; }
             #[RpcAction]
             public function execute(): never { throw new \RuntimeException('handled business failure'); }
-            protected function onException(\Throwable $throwable, Response $response): void
+            protected function onException(\Throwable $throwable, ResponseBuilder $response): void
             {
                 $response
                     ->setStatus(ResponseStatus::SERVICE_ERROR)
@@ -517,6 +519,33 @@ final class ServerTest extends TestCase
         self::assertSame('request-id', $response->getRequestUUID());
     }
 
+    public function testOversizedActionResultReturnsServiceErrorWithinFrameLimit(): void
+    {
+        $security = new SecurityConfig(apiKey: 'shared-api-key');
+        $protocol = new ProtocolConfig(maxPackageSize: 512);
+        $server = new Server(new SwooleTableNodeManager(16), securityConfig: $security, protocolConfig: $protocol);
+        $server->registerService((new TestService())->addModule(new class extends AbstractServiceModule {
+            public function moduleName(): string { return 'Large'; }
+
+            #[RpcAction]
+            public function value(): string { return str_repeat('x', 1024); }
+        }));
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $request = new Request('Test.Large.value', requestUUID: 'request-id');
+        $attacher = (new \ReflectionProperty($server, 'attacher'))->getValue($server);
+        $packet = (new \ReflectionMethod($attacher, 'buildResponsePacket'))->invoke(
+            $attacher,
+            Protocol::pack($codec->encodeRequest($request)),
+        );
+
+        self::assertLessThanOrEqual($protocol->maxPackageSize, strlen($packet));
+        $response = $codec->decodeResponse(Protocol::unpack($packet));
+        self::assertSame('request-id', $response->getRequestUUID());
+        self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
+        self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
+        self::assertNull($response->getResult());
+    }
+
     public function testUnserializableActionResultReturnsServiceErrorWithRequestUuid(): void
     {
         $service = new class extends AbstractService {
@@ -540,9 +569,10 @@ final class ServerTest extends TestCase
         ));
 
         self::assertSame(ResponseStatus::SERVICE_ERROR, $response->getStatus());
-        self::assertSame(NodeHealthStatus::SUSPECT, $response->getNodeHealthStatus());
+        self::assertSame(NodeHealthStatus::HEALTHY, $response->getNodeHealthStatus());
         self::assertSame('request-id', $response->getRequestUUID());
         self::assertSame('Server error.', $response->getMsg());
+        self::assertNull($response->getResult());
         self::assertInstanceOf(RpcException::class, $reported);
     }
 
@@ -603,7 +633,7 @@ final class ServerTest extends TestCase
             'cannot require more than 3 parameters' => new class extends AbstractServiceModule {
                 public function moduleName(): string { return 'TooManyParameters'; }
                 #[RpcAction]
-                public function invalid(mixed $arg, Request $request, Response $response, mixed $extra): void {}
+                public function invalid(mixed $arg, Request $request, ResponseBuilder $response, mixed $extra): void {}
             },
         ];
 
@@ -628,7 +658,7 @@ final class ServerTest extends TestCase
         $service->addModule(new class extends AbstractServiceModule {
             public function moduleName(): string { return 'Result'; }
             #[RpcAction]
-            public function execute(mixed $arg, Request $request, Response $response): array
+            public function execute(mixed $arg, Request $request, ResponseBuilder $response): array
             {
                 $response->setMsg('custom message');
                 return ['requestUUID' => $request->getRequestUUID()];
@@ -649,14 +679,14 @@ final class ServerTest extends TestCase
     {
         $service = new class extends AbstractService {
             public function serviceName(): string { return 'Hook'; }
-            protected function moduleNotFound(Request $request, Response $response): void
+            protected function moduleNotFound(Request $request, ResponseBuilder $response): void
             {
                 $response->setStatus(ResponseStatus::MODULE_NOT_EXIST)->setMsg('custom module missing');
             }
         };
         $service->addModule(new class extends AbstractServiceModule {
             public function moduleName(): string { return 'Custom'; }
-            protected function actionNotFound(Request $request, Response $response): void
+            protected function actionNotFound(Request $request, ResponseBuilder $response): void
             {
                 $response->setStatus(ResponseStatus::ACTION_NOT_EXIST)->setMsg('custom action missing');
             }
@@ -674,7 +704,7 @@ final class ServerTest extends TestCase
     {
         $service = new class extends AbstractService {
             public function serviceName(): string { return 'Unexpected'; }
-            protected function afterRequest(Request $request, Response $response): void
+            protected function afterRequest(Request $request, ResponseBuilder $response): void
             {
                 throw new \RuntimeException('unexpected after-request failure');
             }

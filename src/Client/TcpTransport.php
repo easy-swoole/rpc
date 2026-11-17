@@ -32,18 +32,15 @@ class TcpTransport
         }
         $deadline = microtime(true) + $timeout;
         // 编码失败属于调用或程序异常，不应伪装成网络传输失败。
-        $packet = Protocol::pack($this->codec->encodeRequest($request));
-        if (strlen($packet) > $this->config->maxPackageSize) {
-            return $this->failure(
-                $request,
-                ResponseStatus::TRANSPORT_ERROR,
-                sprintf(
-                    'RPC request package exceeds the maximum size of %d bytes.',
-                    $this->config->maxPackageSize,
-                ),
-            );
+        $payload = $this->codec->encodeRequest($request);
+        if (!$this->config->payloadFits($payload)) {
+            throw new RpcException(sprintf(
+                'RPC request package exceeds the maximum size of %d bytes.',
+                $this->config->maxPackageSize,
+            ));
         }
 
+        $packet = Protocol::pack($payload);
         $domain = filter_var($node->getHost(), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
             ? AF_INET6
             : AF_INET;
@@ -51,13 +48,7 @@ class TcpTransport
         $client = new \Swoole\Coroutine\Socket($domain, SOCK_STREAM, 0);
         try {
             // 客户端与服务端统一使用 4 字节网络序长度头，recvPacket() 会读取完整响应帧。
-            if (!$client->setProtocol([
-                'open_length_check' => true,
-                'package_length_type' => 'N',
-                'package_length_offset' => 0,
-                'package_body_offset' => 4,
-                'package_max_length' => $this->config->maxPackageSize,
-            ])) {
+            if (!$client->setProtocol($this->config->frameSettings())) {
                 return $this->failure(
                     $request,
                     ResponseStatus::TRANSPORT_ERROR,
@@ -122,10 +113,12 @@ class TcpTransport
 
     private function failure(Request $request, ResponseStatus $status, string $message): Response
     {
-        return (new Response($request->getRequestUUID()))
-            ->setStatus($status)
-            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-            ->setMsg($message);
+        return new Response(
+            $request->getRequestUUID(),
+            status: $status,
+            nodeHealthStatus: NodeHealthStatus::SUSPECT,
+            msg: $message,
+        );
     }
 
     private function deadlineExceeded(Request $request): Response

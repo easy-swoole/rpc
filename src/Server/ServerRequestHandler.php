@@ -5,28 +5,34 @@ namespace EasySwoole\Rpc\Server;
 use EasySwoole\Rpc\Exception\RpcException;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
+use EasySwoole\Rpc\Protocol\ProtocolConfig;
 use EasySwoole\Rpc\Protocol\Request;
 use EasySwoole\Rpc\Protocol\Response;
+use EasySwoole\Rpc\Protocol\ResponseBuilder;
 use EasySwoole\Rpc\Protocol\ResponseStatus;
 
 final class ServerRequestHandler
 {
     private $onException = null;
-    public function __construct(private readonly ServiceRegistry $registry, private readonly ProtocolCodec $codec) {}
+    public function __construct(
+        private readonly ServiceRegistry $registry,
+        private readonly ProtocolCodec $codec,
+        private readonly ProtocolConfig $protocolConfig = new ProtocolConfig(),
+    ) {}
     public function setOnException(?callable $callback): void { $this->onException = $callback; }
     public function handle(Request $request): Response
     {
         // 响应始终回显请求标识，客户端依靠它校验响应是否属于当前请求。
-        $response = new Response($request->getRequestUUID());
+        $response = new ResponseBuilder($request->getRequestUUID());
         $service = $this->registry->find($request->getService());
-        if ($service === null) { return $response->setStatus(ResponseStatus::SERVICE_NOT_EXIST); }
+        if ($service === null) { return $response->setStatus(ResponseStatus::SERVICE_NOT_EXIST)->build(); }
         try {
-            // Response 由请求处理器创建和返回，Service/Module 只负责修改其内容。
+            // Service/Module 在构建阶段修改响应，处理器在分发结束后生成只读响应。
             $service->__dispatch($request, $response);
-            return $response;
+            return $response->build();
         } catch (\Throwable $throwable) {
             $this->report($throwable);
-            return $this->markServerError($response);
+            return $this->serverError($request->getRequestUUID());
         }
     }
     public function handlePacket(string $payload): string
@@ -35,31 +41,50 @@ final class ServerRequestHandler
             $request = $this->codec->decodeRequest($payload);
         } catch (RpcException) {
             // 非法数据属于可预期的客户端输入，不应触发服务端全局异常回调。
-            return $this->codec->encodeResponse(
-                (new Response(''))->setStatus(ResponseStatus::ILLEGAL_PACKAGE)->setMsg('Illegal RPC request.'),
+            return $this->encodeWithinLimit(
+                new Response('', status: ResponseStatus::ILLEGAL_PACKAGE, msg: 'Illegal RPC request.'),
             );
         }
 
         $response = $this->handle($request);
         try {
-            return $this->codec->encodeResponse($response);
+            $encoded = $this->codec->encodeResponse($response);
         } catch (\Throwable $throwable) {
             // 业务结果无法序列化时仍返回一个最小安全响应，不能让客户端误判为网络故障。
             $this->report($throwable);
-            return $this->codec->encodeResponse(
-                $this->markServerError(new Response($request->getRequestUUID())),
+            return $this->encodeWithinLimit(
+                $this->serverError($request->getRequestUUID(), NodeHealthStatus::HEALTHY),
             );
         }
+        if ($this->protocolConfig->payloadFits($encoded)) {
+            return $encoded;
+        }
+
+        if ($this->onException !== null) {
+            $this->report(new RpcException('RPC response package exceeds the maximum size.'));
+        }
+        return $this->encodeWithinLimit(
+            new Response($request->getRequestUUID(), status: ResponseStatus::SERVICE_ERROR),
+        );
     }
 
-    private function markServerError(Response $response): Response
+    private function encodeWithinLimit(Response $response): string
     {
-        return $response
-            ->setStatus(ResponseStatus::SERVICE_ERROR)
-            // 异常可能发生在 Action 已写入结果之后，错误响应不能携带半完成的业务数据。
-            ->setResult(null)
-            ->setNodeHealthStatus(NodeHealthStatus::SUSPECT)
-            ->setMsg('Server error.');
+        $encoded = $this->codec->encodeResponse($response);
+        if (!$this->protocolConfig->payloadFits($encoded)) {
+            throw new RpcException('RPC error response package exceeds the maximum size.');
+        }
+        return $encoded;
+    }
+
+    private function serverError(string $requestUUID, NodeHealthStatus $nodeHealthStatus = NodeHealthStatus::SUSPECT): Response
+    {
+        return new Response(
+            $requestUUID,
+            status: ResponseStatus::SERVICE_ERROR,
+            msg: 'Server error.',
+            nodeHealthStatus: $nodeHealthStatus,
+        );
     }
 
     private function report(\Throwable $throwable): void
