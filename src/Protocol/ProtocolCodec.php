@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\Protocol;
 
 use EasySwoole\Rpc\Exception\RpcException;
+use EasySwoole\Rpc\Exception\RequestSignatureException;
 
 final class ProtocolCodec
 {
@@ -15,36 +16,52 @@ final class ProtocolCodec
     public function decodeRequest(string $json): Request
     {
         $payload = $this->decode($json);
-        foreach (['service', 'module', 'action', 'requestUUID'] as $field) {
-            if (!isset($payload[$field]) || !is_string($payload[$field]) || $payload[$field] === '') {
-                throw new RpcException(sprintf('RPC request contains an invalid %s.', $field));
-            }
+        $invalidField = $this->invalidRequestField($payload);
+        if ($invalidField !== null) {
+            throw new RpcException(sprintf('RPC request contains an invalid %s.', $invalidField));
         }
-        $path = implode('.', [$payload['service'], $payload['module'], $payload['action']]);
-        return new Request($path, $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID']);
+        return $this->requestFromPayload($payload);
     }
 
-    /** @return array{Request, bool}|null */
-    public function inspectRequest(string $json): ?array
+    public function inspectRequest(string $json): Request
     {
-        $envelope = json_decode($json, true);
+        $envelope = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         $payload = $envelope['payload'] ?? null;
         if (!is_array($payload)) {
-            return null;
+            throw new RpcException('invalid request envelope');
         }
-        foreach (['service', 'module', 'action', 'requestUUID'] as $field) {
-            if (!is_string($payload[$field] ?? null) || $payload[$field] === '') {
-                return null;
+        $invalidField = $this->invalidRequestField($payload);
+        if ($invalidField !== null) {
+            throw new RpcException(sprintf('invalid request field: %s', $invalidField));
+        }
+        try {
+            $this->signer->verify($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null);
+        } catch (RpcException $exception) {
+            throw new RequestSignatureException($payload['requestUUID'], $exception);
+        }
+        return $this->requestFromPayload($payload);
+    }
+
+    private function invalidRequestField(array $payload): ?string
+    {
+        foreach (['service', 'module', 'action'] as $field) {
+            $value = $payload[$field] ?? null;
+            if (!is_string($value) || $value === '' || str_contains($value, '.')) {
+                return $field;
             }
         }
-        $parts = [$payload['service'], $payload['module'], $payload['action']];
-        foreach ($parts as $part) {
-            if (str_contains($part, '.')) {
-                return null;
-            }
-        }
-        $request = new Request(implode('.', $parts), $payload['arg'] ?? null, $payload['clientArg'] ?? null, $payload['requestUUID']);
-        return [$request, $this->signer->accepts($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null)];
+        $uuid = $payload['requestUUID'] ?? null;
+        return !is_string($uuid) || $uuid === '' ? 'requestUUID' : null;
+    }
+
+    private function requestFromPayload(array $payload): Request
+    {
+        return new Request(
+            implode('.', [$payload['service'], $payload['module'], $payload['action']]),
+            $payload['arg'] ?? null,
+            $payload['clientArg'] ?? null,
+            $payload['requestUUID'],
+        );
     }
 
     public function decodeResponse(string $json): Response

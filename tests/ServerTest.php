@@ -203,7 +203,7 @@ final class ServerTest extends TestCase
         (new \ReflectionMethod($attacher, 'assertNodeTtlIntervals'))->invoke($attacher);
     }
 
-    public function testRejectsRegisteredPortAndCreatesMissingRpcSubPort(): void
+    public function testRejectsRegisteredPortAndAttachesIndependentRpcProcesses(): void
     {
         $mainPort = random_int(20000, 30000);
         $rpcPort = $mainPort + 1;
@@ -213,6 +213,8 @@ final class ServerTest extends TestCase
             new ServerConfig(listenAddress: '127.0.0.1', listenPort: $mainPort),
             new DiscoveryConfig(listen: false, broadcast: false),
         );
+
+        $conflictingRpcServer->registerService(new TestService());
 
         try {
             $conflictingRpcServer->attachServer($swooleServer);
@@ -259,8 +261,7 @@ final class ServerTest extends TestCase
 
         self::assertTrue($rpcServer->hasAttach());
         self::assertSame(ServerAttachStatus::ATTACHED, $rpcServer->getAttachStatus());
-        self::assertCount(2, $swooleServer->ports);
-        self::assertSame($rpcPort, $swooleServer->ports[1]->port);
+        self::assertCount(1, $swooleServer->ports);
         try {
             $rpcServer->registerService(new WeightedService());
             self::fail('Services must not be registered after the RPC Server is attached.');
@@ -477,7 +478,11 @@ final class ServerTest extends TestCase
         $this->server->setOnException(function () use (&$reported): void { $reported = true; });
 
         $handler = (new \ReflectionProperty($this->server, 'handler'))->getValue($this->server);
-        self::assertNull($handler->handlePacket('invalid packet'));
+        $codec = new ProtocolCodec(new PayloadSigner(new SecurityConfig()));
+        $response = $codec->decodeResponse($handler->handlePacket('invalid packet'));
+
+        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+        self::assertSame('json decode error', $response->getMsg());
         self::assertFalse($reported);
     }
 
@@ -491,6 +496,22 @@ final class ServerTest extends TestCase
 
         $request = new Request('Test.Echo.value', requestUUID: 'test-id');
         $response = $receiver->decodeResponse($handler->handlePacket($sender->encodeRequest($request)));
+
+        self::assertSame('test-id', $response->getRequestUUID());
+        self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());
+        self::assertSame('signature verify error', $response->getMsg());
+    }
+
+    public function testUncanonicalizableSignedRequestReturnsIllegalPackage(): void
+    {
+        $security = new SecurityConfig(apiKey: 'server-key');
+        $server = new Server(new SwooleTableNodeManager(16), securityConfig: $security);
+        $handler = (new \ReflectionProperty($server, 'handler'))->getValue($server);
+        $codec = new ProtocolCodec(new PayloadSigner($security));
+        $request = new Request('Test.Echo.value', arg: 'overflow', requestUUID: 'test-id');
+        $payload = str_replace('"overflow"', '1e400', $codec->encodeRequest($request));
+
+        $response = $codec->decodeResponse($handler->handlePacket($payload));
 
         self::assertSame('test-id', $response->getRequestUUID());
         self::assertSame(ResponseStatus::ILLEGAL_PACKAGE, $response->getStatus());

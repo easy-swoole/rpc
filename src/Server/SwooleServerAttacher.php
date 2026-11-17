@@ -6,21 +6,15 @@ use EasySwoole\Rpc\Config\ServerConfig;
 use EasySwoole\Rpc\Config\DiscoveryConfig;
 use EasySwoole\Rpc\AbstractInterface\AbstractNodeManager;
 use EasySwoole\Rpc\Exception\RpcException;
-use EasySwoole\Rpc\Protocol\Protocol;
 use EasySwoole\Rpc\Protocol\PayloadSigner;
-use EasySwoole\Rpc\Protocol\RequestFrame;
 use EasySwoole\Rpc\Config\ProtocolConfig;
 use EasySwoole\Rpc\Config\SecurityConfig;
-use Swoole\Server\Port;
+use EasySwoole\Component\Process\Socket\TcpProcessConfig;
 
 final class SwooleServerAttacher
 {
     private ServerAttachStatus $status = ServerAttachStatus::PENDING;
     private mixed $onRuntimeError;
-    private readonly PayloadSigner $signer;
-
-    /** @var array<int, array{timer: int, buffer: string, frame: array{length: int, hash: string}|null}> */
-    private array $receiving = [];
 
     public function __construct(
         private readonly ServerConfig $serverConfig,
@@ -33,7 +27,6 @@ final class SwooleServerAttacher
         ?callable $onRuntimeError = null,
     ) {
         $this->onRuntimeError = $onRuntimeError;
-        $this->signer = new PayloadSigner($securityConfig);
     }
 
     public function status(): ServerAttachStatus { return $this->status; }
@@ -52,108 +45,51 @@ final class SwooleServerAttacher
             throw new RpcException('RPC Server attachment can only be attempted once.');
         }
         $this->status = ServerAttachStatus::ATTACHING;
-        // 从这一刻起禁止再注册服务，保证 listener 与 AssistWorker 使用同一份节点快照。
+        // 从这一刻起禁止再注册服务，保证 TCP 进程与 AssistWorker 使用同一份节点快照。
         $this->registry->freeze();
         try {
             $this->assertNodeTtlIntervals();
-            // 已存在的端口可能由业务方配置了其他协议，不能擅自复用为 RPC listener。
-            foreach ($server->ports as $port) {
-                if ((int) $port->port === $this->serverConfig->listenPort) {
-                    throw new RpcException(sprintf(
-                        'Port %d is already registered on the Swoole server.',
-                        $this->serverConfig->listenPort,
-                    ));
+            $nodes = $this->registry->nodes();
+            if ($nodes !== []) {
+                // 已存在的端口可能由业务方配置了其他协议，不能擅自复用为 RPC listener。
+                foreach ($server->ports as $port) {
+                    if ((int) $port->port === $this->serverConfig->listenPort) {
+                        throw new RpcException(sprintf(
+                            'Port %d is already registered on the Swoole server.',
+                            $this->serverConfig->listenPort,
+                        ));
+                    }
                 }
             }
-            // 在创建 listener 和挂载进程之前完成所有可预检项目，减少半挂载状态。
+            // 在挂载进程之前完成所有可预检项目，减少半挂载状态。
             $this->assertUdpAvailable();
+            $heartbeats = $nodes === [] ? null : new TcpProcessHeartbeats($this->serverConfig->tcpProcessCount);
+            if ($heartbeats !== null) {
+                $signer = new PayloadSigner($this->securityConfig);
+                for ($index = 0; $index < $this->serverConfig->tcpProcessCount; $index++) {
+                    $config = new TcpProcessConfig();
+                    $config->setProcessName('rpc-tcp-' . $index);
+                    $config->setProcessGroup('rpc');
+                    $config->setPipeType(TcpProcessConfig::PIPE_TYPE_NONE);
+                    $config->setEnableCoroutine(true);
+                    $config->setListenAddress($this->serverConfig->listenAddress);
+                    $config->setListenPort($this->serverConfig->listenPort);
+                    $tcpProcess = new RpcTcpProcess($config, $index, $heartbeats, $this->protocolConfig, $signer, $this->handler);
+                    $server->addProcess($tcpProcess->getProcess());
+                }
+            }
             $worker = new AssistWorker(
-                $this->registry->nodes(),
+                $nodes,
                 $this->nodeManager,
-                AssistWorkerConfig::fromServer(
-                    $this->serverConfig,
-                    $this->discoveryConfig,
-                    $this->securityConfig,
-                ),
+                AssistWorkerConfig::fromServer($this->serverConfig, $this->discoveryConfig, $this->securityConfig),
                 $this->onRuntimeError,
+                $heartbeats,
             );
-            $listener = $server->addListener($this->serverConfig->listenAddress, $this->serverConfig->listenPort, SWOOLE_SOCK_TCP);
-            if (!$listener instanceof Port) {
-                throw new RpcException('Unable to create RPC listener.');
-            }
-            $listener->set(['open_length_check' => false, 'open_eof_check' => false, 'open_eof_split' => false]);
-            $listener->on('connect', function (\Swoole\Server $server, int $fd): void {
-                $timer = \Swoole\Timer::after($this->protocolConfig->requestReadTimeoutMs, function () use ($server, $fd): void {
-                    unset($this->receiving[$fd]);
-                    $server->close($fd);
-                });
-                $this->receiving[$fd] = ['timer' => $timer, 'buffer' => '', 'frame' => null];
-            });
-            $listener->on('close', function (\Swoole\Server $server, int $fd): void {
-                $this->clearRead($fd);
-            });
-            if (!$listener->on('receive', function (\Swoole\Server $server, int $fd, int $reactorId, string $packet): void {
-                $this->handleReceive($server, $fd, $packet);
-            })) {
-                throw new RpcException('Unable to register the RPC receive callback.');
-            }
             $server->addProcess($worker->getProcess());
             $this->status = ServerAttachStatus::ATTACHED;
         } catch (\Throwable $throwable) {
             $this->status = ServerAttachStatus::FAILED;
             throw $throwable;
-        }
-    }
-
-    private function handleReceive(\Swoole\Server $server, int $fd, string $packet): void
-    {
-        if (!isset($this->receiving[$fd])) {
-            return;
-        }
-        $state = &$this->receiving[$fd];
-        $state['buffer'] .= $packet;
-        if ($state['frame'] === null) {
-            if (strlen($state['buffer']) < RequestFrame::HEADER_BYTES) {
-                return;
-            }
-            $state['frame'] = RequestFrame::inspect(
-                substr($state['buffer'], 0, RequestFrame::HEADER_BYTES),
-                $this->protocolConfig->maxPackageSize,
-                $this->signer,
-            );
-            if ($state['frame'] === null) {
-                $this->clearRead($fd);
-                $server->close($fd);
-                return;
-            }
-            $state['buffer'] = substr($state['buffer'], RequestFrame::HEADER_BYTES);
-        }
-        $length = strlen($state['buffer']);
-        if ($length < $state['frame']['length']) {
-            return;
-        }
-
-        $payload = $state['buffer'];
-        $frame = $state['frame'];
-        $this->clearRead($fd);
-        try {
-            if ($length !== $frame['length'] || !hash_equals($frame['hash'], hash('sha256', $payload, true))) {
-                return;
-            }
-            $response = $this->handler->handlePacket($payload);
-            if ($response !== null) {
-                $server->send($fd, Protocol::pack($response));
-            }
-        } finally {
-            $server->close($fd);
-        }
-    }
-
-    private function clearRead(int $fd): void
-    {
-        if (isset($this->receiving[$fd])) {
-            \Swoole\Timer::clear($this->receiving[$fd]['timer']);
-            unset($this->receiving[$fd]);
         }
     }
 

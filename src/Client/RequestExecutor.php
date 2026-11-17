@@ -89,6 +89,10 @@ final class RequestExecutor
     private function validateResponse(Request $request, Response $response): Response
     {
         // 服务端必须原样回传 requestUUID，防止并发场景下错误响应被当前请求接收。
+        // 包体损坏时服务端可能无法提取请求 UUID，短连接仍只承载当前请求。
+        if ($response->getStatus() === ResponseStatus::ILLEGAL_PACKAGE && $response->getRequestUUID() === '') {
+            return $response;
+        }
         if ($response->getRequestUUID() === $request->getRequestUUID()) {
             return $response;
         }

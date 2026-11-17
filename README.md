@@ -147,7 +147,7 @@ $rpc->server()->setOnRuntimeError(static function (string $message): void {
     error_log('[rpc server runtime] ' . $message);
 });
 
-// 9501 是宿主 Server 的主端口；RPC 会自动增加监听 9601 的 subPort。
+// 9501 是宿主 Server 的主端口；独立 RPC 进程监听 9601。
 $server = new Server('127.0.0.1', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
 
 // 主端口使用 TCP Server 时必须有自己的 receive 回调；它不负责 RPC 请求。
@@ -430,7 +430,7 @@ $rpc = new Rpc(
         server: new ServerConfig(
             advertiseHost: '127.0.0.1', // 客户端实际连接的主机名或 IP，不能填写 0.0.0.0
             listenAddress: '0.0.0.0', // RPC TCP listener 的绑定地址
-            listenPort: 9601,         // attachServer 会创建并监听这个 subPort
+            listenPort: 9601,         // RPC TCP 进程绑定此端口
             nodeName: 'user-rpc-1',   // 便于日志和运维识别
         ),
         discovery: new DiscoveryConfig(
@@ -454,7 +454,7 @@ $rpc->server()->setOnException(
 );
 
 $server = new Server('0.0.0.0', 9501, SWOOLE_PROCESS, SWOOLE_SOCK_TCP);
-// 主端口是普通 TCP 监听，需要由应用注册自己的回调；RPC 使用自动创建的 9601 subPort。
+// 主端口是普通 TCP 监听，需要由应用注册自己的回调；RPC 进程独立监听 9601。
 $server->on('receive', static function (Server $server, int $fd): void {
     $server->close($fd);
 });
@@ -463,35 +463,35 @@ $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，通过 ResponseBuilder 设置响应并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。服务端收到结构错误的 TCP 请求时直接关闭连接。结构合法但验签失败时，返回带原请求 UUID 的 `ILLEGAL_PACKAGE`，消息为 `signature verify error`。
+Service 和 Module 的默认 `onException()` 会原样重新抛出异常：Module 未处理的异常先冒泡到 Service，Service 仍未处理时继续进入 Server 全局 `onException`，避免开发阶段静默丢失错误。Server 没有配置全局 `onException` 时，异常会直接交还调用层，不会被框架转换或吞掉；开发和部署时必须显式配置该回调。配置后，回调负责记录和告警，客户端只会收到 `ResponseStatus::SERVICE_ERROR` 和统一的 `Server error.`，不会暴露异常消息、文件和行号。线上业务如果能够明确处理异常，也可以覆写 Service 或 Module 的 `onException()`，通过 ResponseBuilder 设置响应并写入自己的日志；覆写方法正常返回即表示异常已经处理，不再通知上层。TCP 固定包头校验失败时直接关闭连接。包头通过后，包体未在截止时间内收齐时关闭连接。包体哈希、JSON 解析、请求结构或内层签名错误均返回 `ILLEGAL_PACKAGE`，消息标明原因。内层验签失败时回显原请求 UUID，无法安全提取 UUID 时响应中的 UUID 为空。
 
-`attachServer()` 会检查主端口和全部 subPort。若 `ServerConfig::listenPort` 已经注册，它会抛出异常，不会擅自覆盖已有 listener 的协议配置和回调；只有端口尚未注册时才调用 `addListener()` 创建 RPC 专用 TCP subPort。它会自动挂载一个 assist-worker。
+有本机服务时，`attachServer()` 通过宿主的 `addProcess()` 挂载独立 TCP 进程和一个 `AssistWorker`。TCP 进程默认三个，通过 `SO_REUSEPORT` 共用一个地址和端口，需要部署系统支持该选项。宿主负责进程启停，TCP 进程自行接收连接和执行 Action。有本机服务且宿主已占用 RPC 端口时，挂载会抛出异常。只调用远端服务的网关只启动 `AssistWorker`。
 
-TCP receive 回调具有最外层保护：非法长度帧和非法请求只返回 `ResponseStatus::ILLEGAL_PACKAGE`，不会进入全局错误回调；响应发送失败或回调内未预期错误会通知 `onRuntimeError`；连接始终在 `finally` 中关闭。
+TCP 短连接在请求结束后关闭。客户端提前断开时，回包失败不会触发运行错误回调。
 
-assist-worker 通过当前 `$server->addProcess()` 直接挂载，不进入 `ProcessManager` 的全局待挂载列表，避免多个 Server 或多个 RPC 实例之间重复添加进程。`attachServer()` 先完成端口、UDP 和进程对象预检，再统一提交 listener 与进程挂载。状态可通过 `getAttachStatus()` 获取，包含 `PENDING`、`ATTACHING`、`ATTACHED` 和 `FAILED`；`hasAttach()` 仅在状态为 `ATTACHED` 时返回 `true`。每个 RPC Server 只允许尝试挂载一次，失败后不能在可能存在部分外部资源的同一个实例上重试。
+挂载成功表示进程已交给宿主管理。TCP 进程在宿主启动后绑定端口。每个 RPC Server 只允许尝试挂载一次。
 
 | ServerAttachStatus | 含义 |
 | --- | --- |
 | `PENDING` | 尚未执行 `attachServer()`，允许注册 Service |
 | `ATTACHING` | 正在执行预检和资源提交，不允许再修改 Service |
-| `ATTACHED` | listener 与 AssistWorker 已成功挂载 |
+| `ATTACHED` | RPC 自定义进程已挂载到宿主 |
 | `FAILED` | 挂载失败；当前 RPC Server 实例不可重试，应重建 Swoole Server 和 RPC 实例 |
 
-### 挂载到已有 Server 的子监听
+### 挂载到已有 HTTP Server
 
-已有 HTTP Server 时只需传入主 Server，RPC subPort 会按配置自动创建：
+已有 HTTP Server 时，可以直接用它托管 RPC 进程：
 
 ```php
 use Swoole\Http\Server;
 
 $server = new Server('0.0.0.0', 9501);
-// 不要提前创建 RPC subPort；目标端口已存在时会拒绝挂载。
+// RPC 进程自行绑定 ServerConfig::listenPort。
 $rpc->server()->attachServer($server);
 $server->start();
 ```
 
-调用方不再创建或传入 subPort。本机服务节点的上线、心跳和下线由自动挂载的 `AssistWorker` 维护。
+本机服务节点的上线、心跳和下线由 `AssistWorker` 维护。
 
 ## 4. 客户端调用
 
@@ -633,12 +633,13 @@ $rpc->server()->setOnRuntimeError(
 | 配置 | 默认值 | 注意事项 |
 | --- | --- | --- |
 | `advertiseHost` | `127.0.0.1` | 注册给客户端连接的主机名或 IP；不能使用 `0.0.0.0` |
-| `listenAddress` | `0.0.0.0` | RPC TCP subPort 的本地绑定地址 |
+| `listenAddress` | `0.0.0.0` | RPC TCP 进程的本地绑定地址 |
 | `listenPort` | `9502` | RPC TCP 监听端口；若宿主 Server 已监听该端口会拒绝挂载 |
 | `advertisePort` | `null` | 客户端连接端口；为空时使用 `listenPort`，有端口映射时单独设置 |
 | `nodeId` | `null` | 可选的稳定节点唯一标识；为空时每次创建 Server 自动生成 UUID，显式配置时不能为空字符串 |
 | `nodeName` | 空字符串 | 便于日志和进程识别，不作为节点唯一身份 |
 | `heartbeatIntervalMs` | `5000` | AssistWorker 刷新本机节点的周期 |
+| `tcpProcessCount` | `3` | 共用一个 RPC TCP 监听端口的进程数 |
 
 ### DiscoveryConfig
 
@@ -670,7 +671,9 @@ $rpc->server()->setOnRuntimeError(
 
 ## 5. 节点心跳与 UDP 服务发现
 
-`attachServer()` 只挂载一个 `AssistWorker` 进程，但进程内部保持两组独立职责：
+每个 RPC 实例挂载一个 `AssistWorker`。它通过 fork 前创建的共享表检查 TCP 进程，每个进程成功监听后按 index 刷新心跳。至少一个进程存活时才登记和续约本机节点，全部退出或心跳过期时摘除并发送下线通告。进程恢复监听后重新上线。正常关停时，`AssistWorker` 也会主动发下线通知。
+
+`AssistWorker` 有两组职责：
 
 - 本机节点生命周期始终启用，负责上线、定时心跳和关闭下线；
 - UDP 服务发现仅在开启 `listen` 或 `broadcast` 时启用，负责广播、接收远端节点和广播下线。
@@ -1034,9 +1037,9 @@ $responseJson = $response->toJson();
 
 组件不实现协议层重放缓存。UDP 服务发现只应在调用方认可的可信内网中启用，因此不会为广播包维护 nonce 或去重状态。TCP 请求是否允许重复执行属于业务语义：支付、创建订单等写操作应由业务层使用业务单号、幂等键或持久化状态完成去重，RPC 框架不会把相同 `requestUUID` 自动判定为同一笔业务。
 
-TCP 请求使用 80 字节固定包头，依次包含版本标识、包体长度、Unix 秒时间戳、包体 SHA-256 和 HMAC-SHA256。服务端收齐包头即检查版本、长度、时间窗口和签名，拒绝时直接关闭连接。收齐包体后，再核对 SHA-256 并交给请求解码器。`ProtocolConfig::requestReadTimeoutMs` 默认 3000，从连接建立起限制整帧读取时间。未配置 `apiKey` 时签名字段为全零。TCP 响应仍使用 4 字节长度头。客户端和服务端需要一起升级。
+TCP 请求使用 80 字节固定包头，依次包含版本标识、包体长度、Unix 秒时间戳、包体 SHA-256 和 HMAC-SHA256。服务端收齐包头即检查版本、长度、时间窗口和签名，拒绝时直接关闭连接。收齐包体后，再核对 SHA-256 并交给请求解码器。`ProtocolConfig::requestReadTimeoutMs` 默认 3000，从 TCP 进程接收连接起限制整帧读取时间。未配置 `apiKey` 时签名字段为全零。TCP 响应仍使用 4 字节长度头。客户端和服务端需要一起升级。
 
-RPC listener 在 worker 中维护每条连接的读取状态。宿主 Swoole Server 需要将同一连接的 connect、receive、close 事件分发到同一 worker。进程模式可使用默认的按连接分发模式。
+RPC TCP 进程在连接协程内读取整帧。宿主的业务 worker 和 `dispatch_mode` 不参与该链路。
 
 `ProtocolConfig::maxPackageSize` 同时约束客户端和服务端的数据包大小，双方使用同一个配置即可。客户端编码后的请求帧（包含长度头）超过此限制时，会在连接前抛出 `RpcException`。服务端响应帧超限时，会尝试返回带原请求 UUID 的精简 `SERVICE_ERROR`，节点健康状态保持为 `HEALTHY`。如果上限连精简错误响应也容纳不了，服务端会抛出 `RpcException`。`DiscoveryConfig` 会在构造时校验 UDP 监听端口、广播周期和所有广播地址；开启广播时必须至少提供一个有效的 `host:port`。节点 TTL 仍属于 NodeManager 自身配置，因为不同注册中心可能使用本地时间、Redis TTL 或 Etcd lease，RPC 配置不会暗中推断它。
 
@@ -1089,7 +1092,7 @@ RPC listener 在 worker 中维护每条连接的读取状态。宿主 Swoole Ser
 
 ### attachServer 提示端口已经注册
 
-RPC 不会复用调用方已经创建的 listener，因为无法确认该端口原有协议和回调是否准备给 RPC 使用。请修改 `ServerConfig::listenPort`，并让 `attachServer()` 自动创建 RPC subPort。
+RPC 不会复用调用方已经创建的 listener，因为无法确认该端口原有协议和回调是否准备给 RPC 使用。请修改 `ServerConfig::listenPort`，让独立 TCP 进程绑定一个空闲端口。
 
 ### UDP 端口暂时不可用会怎样
 
@@ -1100,6 +1103,12 @@ RPC 不会复用调用方已经创建的 listener，因为无法确认该端口�
 ```bash
 composer install
 composer test
+```
+
+安装依赖后，可用 Python 3.10+ 启动真实 Swoole 进程，验证快速开始中的 HTTP 网关、TCP 进程退出与恢复、UDP 上下线和 TCP 包头拒绝：
+
+```bash
+python3 tests/integration/quickstart.py
 ```
 
 ## 项目结构

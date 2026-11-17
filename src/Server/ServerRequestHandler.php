@@ -3,6 +3,7 @@
 namespace EasySwoole\Rpc\Server;
 
 use EasySwoole\Rpc\Exception\RpcException;
+use EasySwoole\Rpc\Exception\RequestSignatureException;
 use EasySwoole\Rpc\Protocol\NodeHealthStatus;
 use EasySwoole\Rpc\Protocol\ProtocolCodec;
 use EasySwoole\Rpc\Config\ProtocolConfig;
@@ -35,17 +36,16 @@ final class ServerRequestHandler
             return $this->serverError($request->getRequestUUID());
         }
     }
-    public function handlePacket(string $payload): ?string
+    public function handlePacket(string $payload): string
     {
-        $decoded = $this->codec->inspectRequest($payload);
-        if ($decoded === null) {
-            return null;
-        }
-        [$request, $signatureValid] = $decoded;
-        if (!$signatureValid) {
-            return $this->encodeWithinLimit(
-                new Response($request->getRequestUUID(), status: ResponseStatus::ILLEGAL_PACKAGE, msg: 'signature verify error'),
-            );
+        try {
+            $request = $this->codec->inspectRequest($payload);
+        } catch (RequestSignatureException $exception) {
+            return $this->illegalPackage($exception->getMessage(), $exception->requestUUID);
+        } catch (\JsonException) {
+            return $this->illegalPackage('json decode error');
+        } catch (RpcException $exception) {
+            return $this->illegalPackage($exception->getMessage());
         }
 
         $response = $this->handle($request);
@@ -67,6 +67,13 @@ final class ServerRequestHandler
         }
         return $this->encodeWithinLimit(
             new Response($request->getRequestUUID(), status: ResponseStatus::SERVICE_ERROR),
+        );
+    }
+
+    public function illegalPackage(string $message, string $requestUUID = ''): string
+    {
+        return $this->encodeWithinLimit(
+            new Response($requestUUID, status: ResponseStatus::ILLEGAL_PACKAGE, msg: $message),
         );
     }
 

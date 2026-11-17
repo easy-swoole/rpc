@@ -14,6 +14,7 @@ final class ServerConfig
         public readonly ?string $nodeId = null,
         public readonly string $nodeName = '',
         public readonly int $heartbeatIntervalMs = 5000,
+        public readonly int $tcpProcessCount = 3,
     ) {
         self::validatePort($listenPort, 'Listen');
         if ($advertisePort !== null) {
@@ -24,6 +25,9 @@ final class ServerConfig
         }
         if ($nodeId === '') {
             throw new RpcException('Server node ID cannot be empty when configured.');
+        }
+        if ($tcpProcessCount < 1) {
+            throw new RpcException('TCP process count must be at least 1.');
         }
         if ($heartbeatIntervalMs < 1) {
             throw new RpcException('Heartbeat interval must be at least 1 millisecond.');

@@ -15,6 +15,7 @@ final class AssistWorker extends AbstractProcess
     private ?int $heartbeatTimerId = null;
     private ?int $discoveryTimerId = null;
     private ?int $udpRetryTimerId = null;
+    private bool $published = false;
     private bool $running = false;
     private bool $shuttingDown = false;
 
@@ -24,6 +25,7 @@ final class AssistWorker extends AbstractProcess
         private readonly AbstractNodeManager $nodeManager,
         private readonly AssistWorkerConfig $config = new AssistWorkerConfig(),
         ?callable $onRuntimeError = null,
+        private readonly ?TcpProcessHeartbeats $tcpHeartbeats = null,
     ) {
         $this->onRuntimeError = $onRuntimeError;
         $processConfig = new ProcessConfig();
@@ -40,11 +42,13 @@ final class AssistWorker extends AbstractProcess
 
     protected function run($arg): void
     {
-        // AssistWorker 启动即登记本机服务，并持续刷新本机 NodeManager 中的心跳。
-        $this->onlineServices();
+        $this->refreshAvailability();
+        if ($this->tcpHeartbeats !== null) {
+            $this->addTick(TcpProcessHeartbeats::INTERVAL_MS, fn () => $this->refreshAvailability());
+        }
         $this->heartbeatTimerId = $this->addTick(
             $this->config->heartbeatIntervalMs,
-            fn () => $this->heartbeatServices(),
+            fn () => $this->tcpAvailable() && $this->published ? $this->heartbeatServices() : null,
         );
 
         if (!$this->udpEnabled()) {
@@ -58,6 +62,7 @@ final class AssistWorker extends AbstractProcess
     {
         $this->shuttingDown = true;
         // 先通知其他实例下线，再删除本机记录；收不到广播时仍由 NodeManager TTL 兜底。
+        $this->published = false;
         $this->broadcast(DiscoveryMessage::OFFLINE);
         $this->offlineServices();
         if ($this->heartbeatTimerId !== null) {
@@ -159,12 +164,12 @@ final class AssistWorker extends AbstractProcess
             $peer = null;
             $packet = $this->socket?->recvfrom($peer);
             if ($packet === false) {
-                // recvfrom() 返回 false 通常表示 Socket 或进程正在关闭，继续重建没有意义。
-                if (!$this->shuttingDown) {
-                    $this->report($this->socket?->errMsg ?: 'RPC discovery receive loop stopped unexpectedly.');
+                if ($this->shuttingDown || !$this->running) {
+                    return;
                 }
-                $this->stopDiscovery();
-                return;
+                // 让出协程，避免 socket 持续返回错误时占满 worker。
+                \Swoole\Coroutine::sleep(0.01);
+                continue;
             }
             if (is_string($packet) && $packet !== '') {
                 try {
@@ -181,6 +186,9 @@ final class AssistWorker extends AbstractProcess
     private function broadcast(string $action = DiscoveryMessage::HEARTBEAT): void
     {
         if (!$this->config->discovery->broadcast || $this->socket === null) {
+            return;
+        }
+        if ($action === DiscoveryMessage::HEARTBEAT && (!$this->published || !$this->tcpAvailable())) {
             return;
         }
         foreach ($this->serviceNodes as $node) {
@@ -208,6 +216,37 @@ final class AssistWorker extends AbstractProcess
                 }
             }
         }
+    }
+
+    private function tcpAvailable(): bool
+    {
+        return $this->tcpHeartbeats === null || $this->tcpHeartbeats->hasLiveProcess();
+    }
+
+    private function refreshAvailability(): void
+    {
+        if ($this->shuttingDown) {
+            return;
+        }
+        if (!$this->tcpAvailable()) {
+            $this->withdrawServices();
+            return;
+        }
+        if (!$this->published) {
+            $this->published = true;
+            $this->onlineServices();
+            $this->broadcast();
+        }
+    }
+
+    private function withdrawServices(): void
+    {
+        if (!$this->published) {
+            return;
+        }
+        $this->published = false;
+        $this->broadcast(DiscoveryMessage::OFFLINE);
+        $this->offlineServices();
     }
 
     private function onlineServices(): void
