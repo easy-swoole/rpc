@@ -39,7 +39,7 @@ final class RequestExecutor
             }
             if ($node === null) {
                 // 已经发生过真实调用时保留最后一次失败，避免被“无可用节点”覆盖根因。
-                return $lastResponse ?? $this->unavailableResponse();
+                return $lastResponse ?? new Response('', status: ResponseStatus::NOT_AVAILABLE_NODE);
             }
             $context->setServiceNode($node);
             $request = new Request($context->getRequestPath(), $context->getArg(), $context->getClientArg());
@@ -102,15 +102,6 @@ final class RequestExecutor
             status: ResponseStatus::RESPONSE_DECODE_ERROR,
             nodeHealthStatus: NodeHealthStatus::SUSPECT,
             msg: 'RPC response request UUID does not match the request UUID.',
-        );
-    }
-
-    private function unavailableResponse(): Response
-    {
-        // 尚未生成或发出 TCP 请求，因此这里不能伪造一个随机 requestUUID。
-        return new Response(
-            '',
-            status: ResponseStatus::NOT_AVAILABLE_NODE,
         );
     }
 

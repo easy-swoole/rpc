@@ -56,11 +56,9 @@ final class AssistWorker extends AbstractProcess
             },
         );
 
-        if (!$this->udpEnabled()) {
-            return;
+        if ($this->config->discovery->listen || $this->config->discovery->broadcast) {
+            $this->startDiscoveryLifecycle();
         }
-
-        $this->startDiscoveryLifecycle();
     }
 
     protected function onShutDown(): void
@@ -87,11 +85,6 @@ final class AssistWorker extends AbstractProcess
             return $manager->offline($node);
         }
         return $manager->heartbeat($node);
-    }
-
-    private function udpEnabled(): bool
-    {
-        return $this->config->discovery->listen || $this->config->discovery->broadcast;
     }
 
     private function startUdpDiscovery(): bool

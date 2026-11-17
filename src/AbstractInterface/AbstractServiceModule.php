@@ -64,7 +64,7 @@ abstract class AbstractServiceModule
             }
             $action = $request->getAction();
             // 只有显式标记 #[RpcAction] 的 public 方法才能作为远程入口。
-            if (!$this->isActionAllowed($action)) {
+            if (!isset($this->allowedActions[$action])) {
                 $this->actionNotFound($request, $response);
                 return;
             }
@@ -91,11 +91,6 @@ abstract class AbstractServiceModule
     {
         // 默认继续向 Service 和 Server 冒泡，避免开发阶段静默丢失异常。
         throw $throwable;
-    }
-
-    private function isActionAllowed(string $action): bool
-    {
-        return isset($this->allowedActions[$action]);
     }
 
     private function typeContainsResponse(?\ReflectionType $type): bool

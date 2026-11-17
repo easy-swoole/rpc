@@ -33,7 +33,13 @@ final class Client
         // 批次彼此隔离，同一个 Client 可以在不同协程中并发创建多个批次。
         return new RequestBatch(
             $this->executor,
-            function (\Throwable $throwable): void { $this->reportException($throwable); },
+            function (\Throwable $throwable): void {
+                if(is_callable($this->onException)) {
+                    ($this->onException)($throwable);
+                }else{
+                    throw $throwable;
+                }
+            },
         );
     }
 
@@ -41,15 +47,5 @@ final class Client
     {
         $this->onException = $callback;
         return $this;
-    }
-
-    private function reportException(\Throwable $throwable): void
-    {
-        if (!is_callable($this->onException)) {
-            // 未配置客户端异常处理器时，不允许内部转发闭包静默吞掉异常。
-            throw $throwable;
-        }
-        // onException 属于异常接管入口；回调自身异常同样必须直接暴露。
-        ($this->onException)($throwable);
     }
 }
