@@ -47,6 +47,7 @@ final class RpcTcpProcess extends AbstractTcpProcess
             if ($this->isShutDown) {
                 return;
             }
+            // 包头和包体共享一个读包期限，验签通过后才开始读包体。
             $deadline = hrtime(true) + $this->protocolConfig->requestReadTimeoutMs * 1_000_000;
             $header = $this->read($socket, RequestFrame::HEADER_BYTES, $deadline);
             if ($header === null) {
@@ -64,6 +65,7 @@ final class RpcTcpProcess extends AbstractTcpProcess
             if (hrtime(true) >= $deadline) {
                 return;
             }
+            // 固定包头已通过验签，包体出错可以返回具体原因。
             $response = $validHash
                 ? $this->handler->handlePacket($payload)
                 : $this->handler->illegalPackage('body hash mismatch');

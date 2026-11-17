@@ -1118,10 +1118,17 @@ src/
 ├── AbstractInterface/  抽象服务、节点管理器和扩展接口
 ├── Attribute/          RpcAction 等 PHP Attribute
 ├── Client/             客户端调用、批次执行、重试与 TCP 通信
-├── Exception/          RPC 统一异常基类
+├── Config/             配置与依赖装配
+├── Exception/          RPC 异常
 ├── Protocol/           DTO、签名编解码与长度头协议
-├── Server/             门面、ServiceRegistry、请求处理、挂载及 AssistWorker
+├── Server/             服务注册、TCP 进程、请求分发与节点发现
 └── Utility/            Swoole Table 节点管理和默认节点选择器
 ```
+
+第一次读源码，可以从 `src/Rpc.php` 看客户端和服务端如何使用同一个节点管理器，再沿这三条路径阅读：
+
+- 客户端调用从 `RequestBatch` 开始，经 `RequestExecutor` 选节点或重试，由 `TcpTransport` 完成网络收发。
+- 服务端启动由 `SwooleServerAttacher` 挂载进程。请求进入 `RpcTcpProcess` 后先收包和验签，再交给 `ServerRequestHandler` 按路径分发到 Service、Module 和 Action。
+- 节点发现由 `AssistWorker` 处理。它读取 `TcpProcessHeartbeats` 判断本机服务何时上线，也把远端 UDP 通告写入节点表供客户端查询。
 
 服务端完成 Action 后尝试发送响应并关闭短连接。客户端提前断开造成的发送失败不会触发服务端运行错误回调，Action 已完成的业务操作仍然有效。

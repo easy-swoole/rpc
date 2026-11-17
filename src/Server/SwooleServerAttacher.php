@@ -50,33 +50,16 @@ final class SwooleServerAttacher
         try {
             $this->assertNodeTtlIntervals();
             $nodes = $this->registry->nodes();
+            // 纯客户端网关只需要发现进程，不占用 RPC TCP 端口。
             if ($nodes !== []) {
-                // 已存在的端口可能由业务方配置了其他协议，不能擅自复用为 RPC listener。
-                foreach ($server->ports as $port) {
-                    if ((int) $port->port === $this->serverConfig->listenPort) {
-                        throw new RpcException(sprintf(
-                            'Port %d is already registered on the Swoole server.',
-                            $this->serverConfig->listenPort,
-                        ));
-                    }
-                }
+                $this->assertTcpPortNotUsedByHost($server);
             }
-            // 在挂载进程之前完成所有可预检项目，减少半挂载状态。
             $this->assertUdpAvailable();
-            $heartbeats = $nodes === [] ? null : new TcpProcessHeartbeats($this->serverConfig->tcpProcessCount);
-            if ($heartbeats !== null) {
-                $signer = new PayloadSigner($this->securityConfig);
-                for ($index = 0; $index < $this->serverConfig->tcpProcessCount; $index++) {
-                    $config = new TcpProcessConfig();
-                    $config->setProcessName('rpc-tcp-' . $index);
-                    $config->setProcessGroup('rpc');
-                    $config->setPipeType(TcpProcessConfig::PIPE_TYPE_NONE);
-                    $config->setEnableCoroutine(true);
-                    $config->setListenAddress($this->serverConfig->listenAddress);
-                    $config->setListenPort($this->serverConfig->listenPort);
-                    $tcpProcess = new RpcTcpProcess($config, $index, $heartbeats, $this->protocolConfig, $signer, $this->handler);
-                    $server->addProcess($tcpProcess->getProcess());
-                }
+
+            // 先创建共享表，再把进程交给宿主。子进程启动后会看到同一张表。
+            $heartbeats = null;
+            if ($nodes !== []) {
+                $heartbeats = $this->attachTcpProcesses($server);
             }
             $worker = new AssistWorker(
                 $nodes,
@@ -91,6 +74,45 @@ final class SwooleServerAttacher
             $this->status = ServerAttachStatus::FAILED;
             throw $throwable;
         }
+    }
+
+    private function assertTcpPortNotUsedByHost(\Swoole\Server $server): void
+    {
+        foreach ($server->ports as $port) {
+            if ((int) $port->port === $this->serverConfig->listenPort) {
+                throw new RpcException(sprintf(
+                    'Port %d is already registered on the Swoole server.',
+                    $this->serverConfig->listenPort,
+                ));
+            }
+        }
+    }
+
+    private function attachTcpProcesses(\Swoole\Server $server): TcpProcessHeartbeats
+    {
+        $processCount = $this->serverConfig->tcpProcessCount;
+        $heartbeats = new TcpProcessHeartbeats($processCount);
+        $signer = new PayloadSigner($this->securityConfig);
+        for ($index = 0; $index < $processCount; $index++) {
+            // 每个进程配置相同的监听地址和端口，由 AbstractTcpProcess 开启端口复用。
+            $config = new TcpProcessConfig();
+            $config->setProcessName('rpc-tcp-' . $index);
+            $config->setProcessGroup('rpc');
+            $config->setPipeType(TcpProcessConfig::PIPE_TYPE_NONE);
+            $config->setEnableCoroutine(true);
+            $config->setListenAddress($this->serverConfig->listenAddress);
+            $config->setListenPort($this->serverConfig->listenPort);
+            $process = new RpcTcpProcess(
+                $config,
+                $index,
+                $heartbeats,
+                $this->protocolConfig,
+                $signer,
+                $this->handler,
+            );
+            $server->addProcess($process->getProcess());
+        }
+        return $heartbeats;
     }
 
     private function assertUdpAvailable(): void

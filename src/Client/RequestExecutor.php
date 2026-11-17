@@ -28,7 +28,6 @@ final class RequestExecutor
         $excludedNodeId = null;
         $lastResponse = null;
         do {
-            $shouldRetry = false;
             // 有多个节点时排除刚失败的节点；只有一个节点时允许继续尝试同一节点。
             $node = $context->getServiceNode() ?? $this->resolveNode($service, $excludedNodeId);
             if ($node === false) {
@@ -55,13 +54,15 @@ final class RequestExecutor
             if ($action === NodeFailureAction::OFFLINE) {
                 $this->nodeManager->offline($node);
             }
-            if ($action !== NodeFailureAction::KEEP) {
-                $excludedNodeId = $node->getNodeId();
-                $context->setServiceNode(null);
-                $shouldRetry = true;
+            if ($action === NodeFailureAction::KEEP) {
+                return $response;
             }
+
+            // 策略允许换节点时清除当前选择，下一次尝试仍使用同一个截止时间。
+            $excludedNodeId = $node->getNodeId();
+            $context->setServiceNode(null);
             $attempt++;
-        } while ($shouldRetry && $attempt <= $context->getRetryTimes());
+        } while ($attempt <= $context->getRetryTimes());
         return $response;
     }
 

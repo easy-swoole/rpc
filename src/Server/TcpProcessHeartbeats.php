@@ -15,6 +15,7 @@ final class TcpProcessHeartbeats
 
     public function __construct(int $processCount)
     {
+        // 每个进程只更新自己的 index。异常退出的记录由读取方按时间过滤。
         $this->table = new Table($processCount);
         $this->table->column('lastSeen', Table::TYPE_INT, 8);
         if (!$this->table->create()) {

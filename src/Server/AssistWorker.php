@@ -42,13 +42,18 @@ final class AssistWorker extends AbstractProcess
 
     protected function run($arg): void
     {
+        // TCP 子进程可能尚未开始监听，先检查共享表，再定期检查上下线变化。
         $this->refreshAvailability();
         if ($this->tcpHeartbeats !== null) {
             $this->addTick(TcpProcessHeartbeats::INTERVAL_MS, fn () => $this->refreshAvailability());
         }
         $this->heartbeatTimerId = $this->addTick(
             $this->config->heartbeatIntervalMs,
-            fn () => $this->tcpAvailable() && $this->published ? $this->heartbeatServices() : null,
+            function (): void {
+                if ($this->published && $this->tcpAvailable()) {
+                    $this->heartbeatServices();
+                }
+            },
         );
 
         if (!$this->udpEnabled()) {
@@ -62,9 +67,7 @@ final class AssistWorker extends AbstractProcess
     {
         $this->shuttingDown = true;
         // 先通知其他实例下线，再删除本机记录；收不到广播时仍由 NodeManager TTL 兜底。
-        $this->published = false;
-        $this->broadcast(DiscoveryMessage::OFFLINE);
-        $this->offlineServices();
+        $this->withdrawServices();
         if ($this->heartbeatTimerId !== null) {
             $this->clearTick($this->heartbeatTimerId);
             $this->heartbeatTimerId = null;
@@ -228,22 +231,23 @@ final class AssistWorker extends AbstractProcess
         if ($this->shuttingDown) {
             return;
         }
-        if (!$this->tcpAvailable()) {
+        $available = $this->tcpAvailable();
+        if ($available === $this->published) {
+            return;
+        }
+        if (!$available) {
             $this->withdrawServices();
             return;
         }
-        if (!$this->published) {
-            $this->published = true;
-            $this->onlineServices();
-            $this->broadcast();
-        }
+
+        // 多个 TCP 进程共用一个端口，对外只发布一个服务节点。
+        $this->published = true;
+        $this->onlineServices();
+        $this->broadcast();
     }
 
     private function withdrawServices(): void
     {
-        if (!$this->published) {
-            return;
-        }
         $this->published = false;
         $this->broadcast(DiscoveryMessage::OFFLINE);
         $this->offlineServices();

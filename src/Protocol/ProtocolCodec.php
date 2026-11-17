@@ -25,17 +25,14 @@ final class ProtocolCodec
 
     public function inspectRequest(string $json): Request
     {
-        $envelope = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        $payload = $envelope['payload'] ?? null;
-        if (!is_array($payload)) {
-            throw new RpcException('invalid request envelope');
-        }
+        // TCP 包头已通过校验，保留解析和验签错误供服务端回包。
+        [$payload, $signature] = $this->parseEnvelope($json, 'invalid request envelope');
         $invalidField = $this->invalidRequestField($payload);
         if ($invalidField !== null) {
             throw new RpcException(sprintf('invalid request field: %s', $invalidField));
         }
         try {
-            $this->signer->verify($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null);
+            $this->signer->verify($payload, $payload['timestamp'] ?? null, $signature);
         } catch (RpcException $exception) {
             throw new RequestSignatureException($payload['requestUUID'], $exception);
         }
@@ -90,15 +87,21 @@ final class ProtocolCodec
     private function decode(string $json): array
     {
         try {
-            $envelope = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            [$payload, $signature] = $this->parseEnvelope($json, 'Invalid RPC envelope.');
         } catch (\JsonException $exception) {
             throw new RpcException('Unable to decode RPC envelope.', previous: $exception);
         }
-        if (!is_array($envelope) || !is_array($envelope['payload'] ?? null)) { throw new RpcException('Invalid RPC envelope.'); }
-        $payload = $envelope['payload'];
-        // 必须先验证包含 timestamp 的完整载荷，验证通过后再交给业务对象。
-        $this->signer->verify($payload, $payload['timestamp'] ?? null, $envelope['signature'] ?? null);
-        unset($payload['timestamp']);
+        $this->signer->verify($payload, $payload['timestamp'] ?? null, $signature);
         return $payload;
+    }
+
+    /** @return array{array, mixed} */
+    private function parseEnvelope(string $json, string $invalidEnvelopeMessage): array
+    {
+        $envelope = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($envelope['payload'] ?? null)) {
+            throw new RpcException($invalidEnvelopeMessage);
+        }
+        return [$envelope['payload'], $envelope['signature'] ?? null];
     }
 }
